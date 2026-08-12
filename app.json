@@ -1,7 +1,7 @@
-{
+﻿{
   "expo": {
-    "name": "EFactMobile",
-    "slug": "EFactMobile",
+    "name": "e-fact movil",
+    "slug": "efact-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
