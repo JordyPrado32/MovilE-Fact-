@@ -21,12 +21,14 @@ import {
   View,
 } from 'react-native';
 import { ApiError, setSessionToken } from './src/services/apiClient';
+import { API_BASE_URL } from './src/config/api';
+import { AdminMobileItem, getAdminMobileModule } from './src/services/adminMobileService';
 import { changePassword, login, recoverPassword, register } from './src/services/authService';
 import { createCategoria, createSubcategoria, deleteCategoria, deleteSubcategoria, getCategorias, getSubcategorias, updateCategoria, updateSubcategoria } from './src/services/categoriasService';
 import { createCliente, deleteCliente, getCiudades, getClienteLookups, getClientes, getProvincias, updateCliente } from './src/services/clientesService';
 import { createEmisor, deleteEmisor, getEmisor, getEmisores, getFirmaEstado, updateEmisor, uploadFirmaArchivo } from './src/services/emisoresService';
 import { getMenusByRol, hasMenusByRolEndpoint } from './src/services/menuService';
-import { getPerfil, updatePerfil } from './src/services/perfilService';
+import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
 import { createPuntoEmision, deletePuntoEmision, getPuntosEmision, markPuntoPrincipal, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
 import { ChangePasswordRequest, DynamicMenu, LoginResponse, RegisterRequest, ServiceAccess, TipoDocumento } from './src/types/auth';
@@ -47,6 +49,15 @@ type WorkspaceView =
   | 'emisor'
   | 'firma'
   | 'punto-emision'
+  | 'admin-cajas-secuencias'
+  | 'admin-roles-permisos'
+  | 'admin-impuestos'
+  | 'admin-usuarios'
+  | 'admin-identificaciones'
+  | 'admin-formas-pago'
+  | 'admin-logs-inicio'
+  | 'admin-retenciones'
+  | 'admin-sql-auditoria'
   | 'clientes'
   | 'proveedores'
   | 'productos'
@@ -155,6 +166,10 @@ type PerfilFormState = {
   apellidos: string;
   nombreEmpresa: string;
   email: string;
+  avatarUrl: string;
+  avatarUploadUri: string;
+  avatarUploadName: string;
+  avatarUploadMimeType: string;
   identificacion: string;
   tipoCliente: number;
   idTipoIdentificacion: number | null;
@@ -162,6 +177,7 @@ type PerfilFormState = {
   celular: string;
   nuevaPassword: string;
   confirmarPassword: string;
+  cambiarClave: boolean;
 };
 
 type PuntoFormState = {
@@ -169,6 +185,7 @@ type PuntoFormState = {
 };
 
 const NUMERICA_URL = 'https://numericasoftware.com/';
+const EFACT_PUBLIC_URL = 'https://efact.numericasoftware.com';
 const AVATAR_BASE_URL = 'https://efact.numericasoftware.com/images/Avatars';
 const SUPER_ADMIN_TIPO_USUARIO = 2;
 const BASE_EFACT_MOBILE_MENUS: DynamicMenu[] = [
@@ -180,6 +197,17 @@ const BASE_EFACT_MOBILE_MENUS: DynamicMenu[] = [
   { id: -1006, nombre: 'Firma', ruta: '/firma', icono: 'ri-shield-check-line', orden: 6, estado: true },
   { id: -1007, nombre: 'Mi Perfil', ruta: '/perfil', icono: 'ri-user-settings-line', orden: 7, estado: true },
   { id: -1008, nombre: 'Pto. Emision', ruta: '/mi-caja', icono: 'ri-store-2-line', orden: 8, estado: true },
+];
+const ADMIN_EFACT_MOBILE_MENUS: DynamicMenu[] = [
+  { id: -1101, nombre: 'Cajas y secuencias', ruta: '/administracion/cajas-secuencias', icono: 'ri-stack-line', orden: 101, estado: true },
+  { id: -1102, nombre: 'Roles y Permisos', ruta: '/configuracion/seguridad', icono: 'ri-user-shield-line', orden: 102, estado: true },
+  { id: -1103, nombre: 'Impuestos', ruta: '/configuracion/impuestos', icono: 'ri-percent-line', orden: 103, estado: true },
+  { id: -1104, nombre: 'Usuarios', ruta: '/configuracion/usuarios', icono: 'ri-user-line', orden: 104, estado: true },
+  { id: -1105, nombre: 'Identificaciones', ruta: '/configuracion/identificaciones', icono: 'ri-id-card-line', orden: 105, estado: true },
+  { id: -1106, nombre: 'Formas de Pago', ruta: '/configuracion/general', icono: 'ri-bank-card-line', orden: 106, estado: true },
+  { id: -1107, nombre: 'Logs de Inicio', ruta: '/reportes/logs', icono: 'ri-file-list-line', orden: 107, estado: true },
+  { id: -1108, nombre: 'Retenciones', ruta: '/configuracion/retenciones', icono: 'ri-bank-line', orden: 108, estado: true },
+  { id: -1109, nombre: 'SQL Auditoria', ruta: '/reportes/auditoria-sql', icono: 'ri-shield-check-line', orden: 109, estado: true },
 ];
 const SUPER_ADMIN_SERVICE_CATALOG: ServiceAccess[] = [
   { codigo: 'e-fact', nombre: 'E-FACT', ruta: '/dashboard', estado: true, habilitado: true },
@@ -216,6 +244,17 @@ const AVATARS = [
 
 function avatarUrl(fileName: string) {
   return `${AVATAR_BASE_URL}/${fileName}`;
+}
+
+function resolveImageUrl(value?: string | null) {
+  const source = value?.trim();
+  if (!source) return avatarUrl('Avatar-Boy.jpg');
+  if (/^https?:\/\//i.test(source) || source.startsWith('data:image/')) return source;
+  const normalized = source.replace(/\\/g, '/').replace(/^~?\//, '');
+  if (normalized.toLowerCase().startsWith('images/avatars/')) {
+    return `${EFACT_PUBLIC_URL}/${normalized}`;
+  }
+  return `${API_BASE_URL.replace(/\/$/, '')}/${normalized.replace(/^\//, '')}`;
 }
 
 function avatarPath(fileName: string) {
@@ -335,6 +374,10 @@ const initialPerfilForm: PerfilFormState = {
   apellidos: '',
   nombreEmpresa: '',
   email: '',
+  avatarUrl: 'images/Avatars/Avatar-Boy.jpg',
+  avatarUploadUri: '',
+  avatarUploadName: '',
+  avatarUploadMimeType: '',
   identificacion: '',
   tipoCliente: 0,
   idTipoIdentificacion: null,
@@ -342,6 +385,7 @@ const initialPerfilForm: PerfilFormState = {
   celular: '',
   nuevaPassword: '',
   confirmarPassword: '',
+  cambiarClave: false,
 };
 
 const initialPuntoForm: PuntoFormState = {
@@ -374,6 +418,15 @@ const EFACT_MODULES: Omit<MobileModule, 'count' | 'enabled'>[] = [
   { view: 'emisor', title: 'Emisor', description: 'Datos fiscales del emisor.' },
   { view: 'firma', title: 'Firma / certificado', description: 'Certificado digital para emitir documentos.' },
   { view: 'punto-emision', title: 'Punto de emision / caja', description: 'Caja, establecimiento y secuenciales.' },
+  { view: 'admin-cajas-secuencias', title: 'Cajas y secuencias', description: 'Consulta puntos de emision y ultimos secuenciales.' },
+  { view: 'admin-roles-permisos', title: 'Roles y Permisos', description: 'Panel de seguridad, perfiles y permisos.' },
+  { view: 'admin-impuestos', title: 'Impuestos', description: 'Codigos de impuesto y porcentajes IVA.' },
+  { view: 'admin-usuarios', title: 'Usuarios', description: 'Control de usuarios, roles y seguridad operativa.' },
+  { view: 'admin-identificaciones', title: 'Identificaciones', description: 'Catalogo de tipos de identificacion.' },
+  { view: 'admin-formas-pago', title: 'Formas de Pago', description: 'Formas de pago y tipos de documento.' },
+  { view: 'admin-logs-inicio', title: 'Logs de Inicio', description: 'Historial de accesos y eventos fallidos.' },
+  { view: 'admin-retenciones', title: 'Retenciones', description: 'Catalogos fiscales de retenciones IVA, ISD y renta.' },
+  { view: 'admin-sql-auditoria', title: 'SQL Auditoria', description: 'Eventos de auditoria SQL y trazabilidad.' },
   { view: 'centro-normativo', title: 'Centro normativo', description: 'Identificaciones, categorias, impuestos y normativa.' },
   { view: 'soporte', title: 'Soporte', description: 'Canales de ayuda para e-fact.' },
   { view: 'tutoriales', title: 'Tutoriales', description: 'Guias de uso disponibles para el usuario.' },
@@ -384,6 +437,15 @@ const VIEW_ROUTE_ALIASES: Record<Exclude<WorkspaceView, 'portal' | 'dashboard' |
   emisor: ['emisor', 'empresa'],
   firma: ['firma', 'certificado'],
   'punto-emision': ['punto-emision', 'puntos-emision', 'caja', 'secuencial'],
+  'admin-cajas-secuencias': ['cajas-secuencias', 'cajas-y-secuencias', 'caja', 'secuencial'],
+  'admin-roles-permisos': ['roles-permisos', 'roles-y-permisos', 'seguridad', 'permisos'],
+  'admin-impuestos': ['configuracion-impuestos', 'impuestos', 'porcentajes-iva', 'codigos-impuesto'],
+  'admin-usuarios': ['configuracion-usuarios', 'usuarios', 'usuario'],
+  'admin-identificaciones': ['identificaciones', 'tipo-identificacion'],
+  'admin-formas-pago': ['configuracion-general', 'formas-pago', 'formas-de-pago', 'tipo-documento', 'tipos-documento', 'general'],
+  'admin-logs-inicio': ['reportes-logs', 'logs-inicio', 'logs-de-inicio', 'log-inicio'],
+  'admin-retenciones': ['configuracion-retenciones', 'retenciones', 'retencion'],
+  'admin-sql-auditoria': ['reportes-auditoria-sql', 'auditoria-sql', 'sql-auditoria', 'auditoria'],
   clientes: ['clientes', 'cliente'],
   proveedores: ['proveedores', 'proveedor'],
   productos: ['productos', 'producto', 'servicios'],
@@ -401,6 +463,18 @@ const VIEW_ROUTE_ALIASES: Record<Exclude<WorkspaceView, 'portal' | 'dashboard' |
   soporte: ['soporte', 'ayuda'],
   tutoriales: ['tutoriales', 'tutorial'],
   'centro-normativo': ['centro-normativo', 'normativo', 'identificaciones', 'categorias'],
+};
+
+const ADMIN_ROUTE_VIEW_MAP: Record<string, WorkspaceView> = {
+  'administracion-cajas-secuencias': 'admin-cajas-secuencias',
+  'configuracion-seguridad': 'admin-roles-permisos',
+  'configuracion-impuestos': 'admin-impuestos',
+  'configuracion-usuarios': 'admin-usuarios',
+  'configuracion-identificaciones': 'admin-identificaciones',
+  'configuracion-general': 'admin-formas-pago',
+  'reportes-logs': 'admin-logs-inicio',
+  'configuracion-retenciones': 'admin-retenciones',
+  'reportes-auditoria-sql': 'admin-sql-auditoria',
 };
 
 function getClaimNumber(user: LoginResponse, key: 'idTipoUsuario' | 'tipoCliente' | 'idUsuario' | 'idJefe') {
@@ -446,7 +520,10 @@ function normalizeText(value?: string | null) {
 }
 
 function menuMatchesView(menu: DynamicMenu, view: Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado'>) {
-  const source = `${normalizeText(menu.ruta)} ${normalizeText(menu.nombre)} ${normalizeText(menu.descripcion)}`;
+  const normalizedRoute = normalizeText(menu.ruta);
+  if (ADMIN_ROUTE_VIEW_MAP[normalizedRoute] === view) return true;
+
+  const source = `${normalizedRoute} ${normalizeText(menu.nombre)} ${normalizeText(menu.descripcion)}`;
   return VIEW_ROUTE_ALIASES[view].some((alias) => source.includes(alias));
 }
 
@@ -471,9 +548,18 @@ function getLoginMenus(user: LoginResponse) {
   return user.menus ?? user.menuItems ?? [];
 }
 
-function mergeMobileBaseMenus(menus: DynamicMenu[]) {
+function hasAdminMenu(menus: DynamicMenu[]) {
+  return flattenMenus(menus).some((menu) => {
+    const route = normalizeText(menu.ruta);
+    const source = `${route} ${normalizeText(menu.nombre)} ${normalizeText(menu.descripcion)}`;
+    return route.startsWith('administracion') || route.startsWith('configuracion') || source.includes('administracion');
+  });
+}
+
+function mergeMobileBaseMenus(menus: DynamicMenu[], includeAdmin = false) {
   const existingRoutes = new Set(menus.map((menu) => normalizeText(menu.ruta || menu.nombre)));
-  const missingBaseMenus = BASE_EFACT_MOBILE_MENUS.filter((menu) => !existingRoutes.has(normalizeText(menu.ruta || menu.nombre)));
+  const baseMenus = includeAdmin || hasAdminMenu(menus) ? [...BASE_EFACT_MOBILE_MENUS, ...ADMIN_EFACT_MOBILE_MENUS] : BASE_EFACT_MOBILE_MENUS;
+  const missingBaseMenus = baseMenus.filter((menu) => !existingRoutes.has(normalizeText(menu.ruta || menu.nombre)));
 
   return [...menus, ...missingBaseMenus];
 }
@@ -482,10 +568,10 @@ function getInitialMenus(user: LoginResponse) {
   const loginMenus = getLoginMenus(user);
 
   if (loginMenus.length > 0) {
-    return mergeMobileBaseMenus(loginMenus);
+    return mergeMobileBaseMenus(loginMenus, isSuperAdmin(user));
   }
 
-  return getClaimNumber(user, 'idUsuario') ? mergeMobileBaseMenus([]) : [];
+  return getClaimNumber(user, 'idUsuario') ? mergeMobileBaseMenus([], isSuperAdmin(user)) : [];
 }
 
 function getServicesFromUser(user: LoginResponse, menus: DynamicMenu[]) {
@@ -733,6 +819,10 @@ function perfilToForm(perfil?: PerfilUsuario | null): PerfilFormState {
     apellidos: perfil?.apellidos ?? '',
     nombreEmpresa: perfil?.nombreEmpresa ?? '',
     email: perfil?.email ?? '',
+    avatarUrl: perfil?.avatarUrl ?? 'images/Avatars/Avatar-Boy.jpg',
+    avatarUploadUri: '',
+    avatarUploadName: '',
+    avatarUploadMimeType: '',
     identificacion: perfil?.identificacion ?? '',
     tipoCliente: perfil?.tipoCliente ?? 0,
     idTipoIdentificacion: perfil?.idTipoIdentificacion ?? null,
@@ -740,6 +830,7 @@ function perfilToForm(perfil?: PerfilUsuario | null): PerfilFormState {
     celular: perfil?.celular ?? '',
     nuevaPassword: '',
     confirmarPassword: '',
+    cambiarClave: false,
   };
 }
 
@@ -750,14 +841,14 @@ function perfilFormToPayload(form: PerfilFormState, current?: PerfilUsuario | nu
     apellidos: form.apellidos.trim(),
     nombreEmpresa: form.nombreEmpresa.trim() || null,
     email: form.email.trim(),
-    avatarUrl: current?.avatarUrl ?? null,
+    avatarUrl: form.avatarUrl || current?.avatarUrl || null,
     identificacion: form.identificacion.trim(),
     tipoCliente: form.tipoCliente,
     idTipoIdentificacion: form.idTipoIdentificacion,
     direccionEmpresa: form.direccionEmpresa.trim(),
     celular: form.celular.trim(),
-    nuevaPassword: form.nuevaPassword.trim() || null,
-    confirmarPassword: form.confirmarPassword.trim() || null,
+    nuevaPassword: form.cambiarClave ? form.nuevaPassword.trim() || null : null,
+    confirmarPassword: form.cambiarClave ? form.confirmarPassword.trim() || null : null,
   };
 }
 
@@ -1140,11 +1231,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [loadingEmisores, setLoadingEmisores] = useState(false);
   const [loadingPerfil, setLoadingPerfil] = useState(false);
   const [loadingPuntos, setLoadingPuntos] = useState(false);
+  const [loadingAdminItems, setLoadingAdminItems] = useState(false);
   const [loadingClienteLookups, setLoadingClienteLookups] = useState(false);
   const [loadingProductoLookups, setLoadingProductoLookups] = useState(false);
   const [directoryMessage, setDirectoryMessage] = useState<MessageState>(null);
   const [search, setSearch] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [adminItems, setAdminItems] = useState<AdminMobileItem[]>([]);
+  const [adminTabByView, setAdminTabByView] = useState<Record<string, string>>({});
   const [clienteFormMode, setClienteFormMode] = useState<ClienteFormMode>(null);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
   const [clienteForm, setClienteForm] = useState<ClienteFormState>(initialClienteForm);
@@ -1190,7 +1284,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
     getMenusByRol(userId, idTipoUsuario)
       .then((data) => {
-        if (mounted) setMenus(mergeMobileBaseMenus(data));
+        if (mounted) setMenus(mergeMobileBaseMenus(data, isSuperAdmin(currentUser)));
       })
       .catch((error) => {
         const text = error instanceof ApiError ? error.message : 'No se pudieron cargar los menus asignados.';
@@ -1204,6 +1298,35 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       mounted = false;
     };
   }, [idTipoUsuario, userId]);
+
+  useEffect(() => {
+    const module = getAdminModuleSlug(activeView);
+    if (!module || !authorizedViews.has(activeView)) return;
+
+    let mounted = true;
+    const activeTab = adminTabByView[activeView] ?? getAdminModuleConfig(activeView).tabs?.[0] ?? '';
+    setLoadingAdminItems(true);
+    setDirectoryMessage(null);
+
+    getAdminMobileModule(module, search, activeTab)
+      .then((data) => {
+        if (mounted) setAdminItems(data.items ?? []);
+      })
+      .catch((error) => {
+        const text = error instanceof ApiError ? error.message : 'No se pudo cargar el modulo administrativo.';
+        if (mounted) {
+          setAdminItems([]);
+          setDirectoryMessage({ type: 'error', text });
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoadingAdminItems(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeView, adminTabByView, authorizedViews, reloadKey, search]);
 
   useEffect(() => {
     if (loadingMenus) return;
@@ -1721,6 +1844,25 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setPerfilForm((current) => ({ ...current, [key]: value }));
   };
 
+  const selectPerfilAvatar = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      base64: true,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.75,
+    });
+
+    if (result.canceled || !result.assets[0]) return;
+
+    const asset = result.assets[0];
+    const mimeType = asset.mimeType ?? 'image/jpeg';
+    updatePerfilForm('avatarUrl', asset.uri);
+    updatePerfilForm('avatarUploadUri', asset.uri);
+    updatePerfilForm('avatarUploadName', asset.fileName ?? `avatar.${mimeType.includes('png') ? 'png' : 'jpg'}`);
+    updatePerfilForm('avatarUploadMimeType', mimeType);
+  };
+
   const updatePuntoForm = <K extends keyof PuntoFormState>(key: K, value: PuntoFormState[K]) => {
     setPuntoForm((current) => ({ ...current, [key]: value }));
   };
@@ -2094,7 +2236,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       return;
     }
 
-    if (perfilForm.nuevaPassword || perfilForm.confirmarPassword) {
+    if (perfilForm.cambiarClave) {
+      if (!perfilForm.nuevaPassword || !perfilForm.confirmarPassword) {
+        setDirectoryMessage({ type: 'error', text: 'Completa la nueva clave y su confirmacion.' });
+        return;
+      }
+
       if (perfilForm.nuevaPassword !== perfilForm.confirmarPassword) {
         setDirectoryMessage({ type: 'error', text: 'Las claves no coinciden.' });
         return;
@@ -2110,7 +2257,25 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setDirectoryMessage(null);
 
     try {
-      await updatePerfil(userId, perfilFormToPayload(perfilForm, perfilData?.perfil));
+      let formToSave = perfilForm;
+      if (perfilForm.avatarUploadUri) {
+        const uploaded = await uploadPerfilAvatar(
+          userId,
+          perfilForm.avatarUploadUri,
+          perfilForm.avatarUploadName || 'avatar.jpg',
+          perfilForm.avatarUploadMimeType || 'image/jpeg',
+        );
+        formToSave = {
+          ...perfilForm,
+          avatarUrl: uploaded.avatarUrl,
+          avatarUploadUri: '',
+          avatarUploadName: '',
+          avatarUploadMimeType: '',
+        };
+        setPerfilForm(formToSave);
+      }
+
+      await updatePerfil(userId, perfilFormToPayload(formToSave, perfilData?.perfil));
       setDirectoryMessage({ type: 'success', text: 'Perfil actualizado correctamente.' });
       setReloadKey((value) => value + 1);
     } catch (error) {
@@ -2484,7 +2649,24 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     return {
       ...module,
       count,
-      enabled: ['clientes', 'productos', 'categorias', 'emisor', 'firma', 'perfil', 'punto-emision'].includes(module.view),
+      enabled: [
+        'clientes',
+        'productos',
+        'categorias',
+        'emisor',
+        'firma',
+        'perfil',
+        'punto-emision',
+        'admin-cajas-secuencias',
+        'admin-roles-permisos',
+        'admin-impuestos',
+        'admin-usuarios',
+        'admin-identificaciones',
+        'admin-formas-pago',
+        'admin-logs-inicio',
+        'admin-retenciones',
+        'admin-sql-auditoria',
+      ].includes(module.view),
     };
   });
 
@@ -2944,6 +3126,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     saving={savingPerfil}
                     onChange={updatePerfilForm}
                     onReset={() => setPerfilForm(perfilToForm(perfilData?.perfil))}
+                    onSelectAvatar={selectPerfilAvatar}
                     onSave={savePerfil}
                   />
                 ) : null}
@@ -2952,17 +3135,36 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
             {activeView === 'punto-emision' ? (
               <>
-                <View style={styles.actionRow}>
-                  <PrimaryButton label="Nuevo punto" loading={false} onPress={openNewPunto} />
+                {puntosData?.emisor ? (
+                  <View style={styles.puntoHero}>
+                    <Text style={styles.puntoHeroEyebrow}>Configuracion tributaria</Text>
+                    <Text style={styles.puntoHeroTitle}>Establecimientos y puntos de emision</Text>
+                    <Text style={styles.puntoHeroText}>Administra las series electronicas que utilizaras para emitir documentos.</Text>
+                    <View style={styles.puntoHeroBadge}>
+                      <Text style={styles.puntoHeroBadgeLabel}>Serie en uso</Text>
+                      <Text style={styles.puntoHeroBadgeValue}>
+                        {getPuntoSerie((puntosData.cajas ?? []).find((punto) => punto.esPrincipal) ?? (puntosData.cajas ?? [])[0] ?? { sec: 0 }) || '001-000'}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+                <View style={styles.metricGrid}>
+                  <MetricBox value={puntosData?.emisor ? 1 : 0} label="Emisor activo" />
+                  <MetricBox value={puntosData?.cajas.length ?? 0} label="Puntos" />
                 </View>
                 {puntosData?.emisor ? (
                   <View style={styles.profileBox}>
+                    <Text style={styles.profileLabel}>Establecimiento seleccionado</Text>
+                    <Text style={styles.profileValue}>{`${normalizeSerieCode(puntosData.emisor.codEstablecimiento) || '001'} - Matriz`}</Text>
                     <Text style={styles.profileLabel}>Emisor</Text>
                     <Text style={styles.profileValue}>{puntosData.emisor.razonSocial || puntosData.emisor.nomComercial || 'Emisor registrado'}</Text>
-                    <Text style={styles.profileLabel}>Establecimiento</Text>
-                    <Text style={styles.profileValue}>{normalizeSerieCode(puntosData.emisor.codEstablecimiento) || 'Sin establecimiento configurado'}</Text>
+                    <Text style={styles.profileLabel}>Direccion</Text>
+                    <Text style={styles.profileValue}>{puntosData.emisor.dirEstablecimiento || puntosData.emisor.direccionMatriz || 'Sin direccion configurada'}</Text>
                   </View>
                 ) : null}
+                <View style={styles.actionRow}>
+                  <PrimaryButton label="Agregar punto de emision" loading={false} onPress={openNewPunto} />
+                </View>
                 {puntoFormMode ? (
                   <PuntoEmisionForm
                     form={puntoForm}
@@ -3009,7 +3211,21 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </>
             ) : null}
 
-            {activeView !== 'clientes' && activeView !== 'productos' && activeView !== 'categorias' && activeView !== 'emisor' && activeView !== 'firma' && activeView !== 'perfil' && activeView !== 'punto-emision' ? (
+            {isAdminMobileView(activeView) ? (
+              <AdminModuleScreen
+                view={activeView}
+                search={search}
+                items={adminItems}
+                loading={loadingAdminItems}
+                message={directoryMessage}
+                activeTab={adminTabByView[activeView]}
+                onRefresh={() => setReloadKey((value) => value + 1)}
+                onSearch={setSearch}
+                onTabChange={(tab) => setAdminTabByView((current) => ({ ...current, [activeView]: tab }))}
+              />
+            ) : null}
+
+            {activeView !== 'clientes' && activeView !== 'productos' && activeView !== 'categorias' && activeView !== 'emisor' && activeView !== 'firma' && activeView !== 'perfil' && activeView !== 'punto-emision' && !isAdminMobileView(activeView) ? (
               <EmptyState title="Modulo autorizado" text="Esta seccion queda preparada para conectar la operacion e-fact correspondiente desde backend." />
             ) : null}
           </View>
@@ -3070,6 +3286,15 @@ function getWorkspaceTitle(view: WorkspaceView) {
     emisor: 'Emisor',
     firma: 'Firma / certificado',
     'punto-emision': 'Punto de emision / caja',
+    'admin-cajas-secuencias': 'Cajas y secuencias',
+    'admin-roles-permisos': 'Roles y Permisos',
+    'admin-impuestos': 'Impuestos',
+    'admin-usuarios': 'Usuarios',
+    'admin-identificaciones': 'Identificaciones',
+    'admin-formas-pago': 'Formas de Pago',
+    'admin-logs-inicio': 'Logs de Inicio',
+    'admin-retenciones': 'Retenciones',
+    'admin-sql-auditoria': 'SQL Auditoria',
     clientes: 'Clientes',
     proveedores: 'Proveedores',
     productos: 'Productos',
@@ -3091,6 +3316,146 @@ function getWorkspaceTitle(view: WorkspaceView) {
   };
 
   return titles[view];
+}
+
+function isAdminMobileView(view: WorkspaceView) {
+  return view.startsWith('admin-');
+}
+
+function getAdminModuleSlug(view: WorkspaceView) {
+  const modules: Partial<Record<WorkspaceView, string>> = {
+    'admin-cajas-secuencias': 'cajas-secuencias',
+    'admin-roles-permisos': 'roles-permisos',
+    'admin-impuestos': 'impuestos',
+    'admin-usuarios': 'usuarios',
+    'admin-identificaciones': 'identificaciones',
+    'admin-formas-pago': 'formas-pago',
+    'admin-logs-inicio': 'logs-inicio',
+    'admin-retenciones': 'retenciones',
+    'admin-sql-auditoria': 'sql-auditoria',
+  };
+
+  return modules[view];
+}
+
+function getAdminModuleConfig(view: WorkspaceView) {
+  const configs: Partial<Record<WorkspaceView, { eyebrow: string; title: string; description: string; tabs?: string[]; placeholder: string; action?: string }>> = {
+    'admin-cajas-secuencias': { eyebrow: 'Administracion', title: 'Cajas y secuencias', description: 'Consulta puntos de emision y ultimos secuenciales de todos los clientes.', placeholder: 'Cliente, correo, RUC, empresa, serie o SEC', action: 'Refrescar' },
+    'admin-roles-permisos': { eyebrow: 'Control de accesos', title: 'Panel de seguridad', description: 'Consulta roles y perfiles registrados.', placeholder: 'Buscar perfil, modulo o permiso', action: 'Refrescar' },
+    'admin-impuestos': { eyebrow: 'Listado activo', title: 'Impuestos', description: 'Administra codigos de impuesto y porcentajes IVA.', tabs: ['Codigos de Impuesto', 'Porcentajes IVA'], placeholder: 'Buscar por codigo, descripcion o valor', action: 'Refrescar' },
+    'admin-usuarios': { eyebrow: 'Administracion de accesos', title: 'Usuarios del sistema', description: 'Gestiona perfiles, roles y seguridad operativa.', placeholder: 'Buscar usuario, correo o rol', action: 'Refrescar' },
+    'admin-identificaciones': { eyebrow: 'Busqueda y control', title: 'Identificaciones registradas', description: 'Filtra por codigo o descripcion y administra tus registros.', placeholder: 'Buscar por codigo o descripcion', action: 'Refrescar' },
+    'admin-formas-pago': { eyebrow: 'Catalogo transaccional', title: 'Configuracion general', description: 'Gestiona formas de pago y tipos de documento.', tabs: ['Formas de Pago', 'Tipos de Documento'], placeholder: 'Buscar por codigo, descripcion o SRI', action: 'Refrescar' },
+    'admin-logs-inicio': { eyebrow: 'Auditoria de seguridad', title: 'Historial de accesos', description: 'Revisa inicios de sesion, eventos fallidos y actividad reciente.', tabs: ['Hoy', 'Ultimos 7 dias', 'Ultimos 30 dias'], placeholder: 'Usuario, correo, IP o estado', action: 'Refrescar' },
+    'admin-retenciones': { eyebrow: 'Panel fiscal', title: 'Retenciones', description: 'Filtra por codigo o descripcion y administra IVA, ISD y renta.', tabs: ['IVA', 'ISD', 'Renta'], placeholder: 'Buscar por codigo o descripcion', action: 'Refrescar' },
+    'admin-sql-auditoria': { eyebrow: 'Bitacora', title: 'Eventos de auditoria SQL', description: 'Consulta acciones, entidades, campos y ruta/IP de auditoria.', placeholder: 'Entidad, tabla, campo, ruta o IP', action: 'Refrescar' },
+  };
+
+  return configs[view] ?? { eyebrow: 'Administracion', title: getWorkspaceTitle(view), description: 'Modulo administrativo preparado para movil.', placeholder: 'Buscar' };
+}
+
+function AdminModuleScreen({
+  view,
+  search,
+  items,
+  loading,
+  message,
+  activeTab,
+  onRefresh,
+  onSearch,
+  onTabChange,
+}: {
+  view: WorkspaceView;
+  search: string;
+  items: AdminMobileItem[];
+  loading: boolean;
+  message?: MessageState;
+  activeTab?: string;
+  onRefresh: () => void;
+  onSearch: (value: string) => void;
+  onTabChange: (tab: string) => void;
+}) {
+  const config = getAdminModuleConfig(view);
+  const selectedTab = activeTab ?? config.tabs?.[0];
+
+  return (
+    <>
+      <View style={styles.adminHeroCard}>
+        <Text style={styles.heroEyebrow}>{config.eyebrow}</Text>
+        <Text style={styles.heroTitle}>{config.title}</Text>
+        <Text style={styles.heroText}>{config.description}</Text>
+      </View>
+      {config.tabs ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.adminTabs}>
+          {config.tabs.map((tab) => (
+            <Pressable key={tab} style={[styles.adminTab, selectedTab === tab && styles.adminTabActive]} onPress={() => onTabChange(tab)}>
+              <Text style={[styles.adminTabText, selectedTab === tab && styles.adminTabTextActive]}>{tab}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
+      <View style={styles.formSectionBox}>
+        <View style={styles.adminSearchHeader}>
+          <View style={styles.adminSearchTitleBlock}>
+            <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
+            <Text style={styles.clientFormTitle}>{config.title}</Text>
+          </View>
+          {config.action ? (
+            <Pressable style={styles.adminActionPill} onPress={onRefresh}>
+              <Text style={styles.adminActionText}>{config.action}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        <Text style={styles.mutedText}>{config.placeholder}</Text>
+        <Field label="Buscar" value={search} onChangeText={onSearch} autoCapitalize="none" />
+        {message ? <MessageBox message={message} /> : null}
+        {loading ? <EmptyState title="Cargando registros" text="Consultando la informacion administrativa..." /> : null}
+        {!loading && !message && items.length === 0 ? <EmptyState title="Sin registros para mostrar" text="Cuando existan registros, apareceran aqui." /> : null}
+        {!loading && items.length > 0 ? (
+          <View style={styles.listStack}>
+            {items.map((item, index) => (
+              <AdminMobileItemCard key={`${view}-${item.id || 'item'}-${index}`} item={item} />
+            ))}
+          </View>
+        ) : null}
+      </View>
+    </>
+  );
+}
+
+function AdminMobileItemCard({ item }: { item: AdminMobileItem }) {
+  return (
+    <View style={styles.clientCard}>
+      <View style={styles.clientCardHeader}>
+        <View style={styles.clientAvatar}>
+          <Text style={styles.clientAvatarText}>{(item.title || item.id || 'A').charAt(0).toUpperCase()}</Text>
+        </View>
+        <View style={styles.clientInfo}>
+          <Text style={styles.clientName}>{item.title || item.id}</Text>
+          {item.subtitle ? <Text style={styles.clientMeta}>{item.subtitle}</Text> : null}
+        </View>
+        {item.status ? (
+          <View style={styles.systemPill}>
+            <Text style={styles.systemPillText}>{item.status}</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={styles.clientDetailGrid}>
+        {item.meta ? (
+          <View style={styles.clientDetailItem}>
+            <Text style={styles.clientDetailLabel}>Dato</Text>
+            <Text style={styles.clientDetailValue}>{item.meta}</Text>
+          </View>
+        ) : null}
+        {item.detail ? (
+          <View style={styles.clientDetailItem}>
+            <Text style={styles.clientDetailLabel}>Detalle</Text>
+            <Text style={styles.clientDetailValue}>{item.detail}</Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
 }
 
 function MetricBox({ value, label }: { value: string | number; label: string }) {
@@ -4047,6 +4412,7 @@ function PerfilForm({
   saving,
   onChange,
   onReset,
+  onSelectAvatar,
   onSave,
 }: {
   form: PerfilFormState;
@@ -4054,6 +4420,7 @@ function PerfilForm({
   saving: boolean;
   onChange: <K extends keyof PerfilFormState>(key: K, value: PerfilFormState[K]) => void;
   onReset: () => void;
+  onSelectAvatar: () => void;
   onSave: () => void;
 }) {
   const tiposCliente = lookup?.tiposCliente.length ? lookup.tiposCliente : [
@@ -4062,13 +4429,51 @@ function PerfilForm({
   ];
   const identificaciones = lookup?.tiposIdentificacion ?? [];
   const esEmpresa = form.tipoCliente === 2;
+  const selectedAvatar = form.avatarUrl.toLowerCase().includes('images/avatars/') ? form.avatarUrl.split('/').pop() || 'Avatar-Boy.jpg' : '';
+  const displayName = esEmpresa
+    ? form.nombreEmpresa || 'Empresa'
+    : [form.nombres, form.apellidos].filter(Boolean).join(' ') || 'Usuario';
 
   return (
     <View style={styles.clientFormCard}>
       <Text style={styles.clientFormTitle}>Mi perfil</Text>
 
+      <View style={styles.profileAvatarPanel}>
+        <Image source={{ uri: resolveImageUrl(form.avatarUrl) }} style={styles.profileAvatarImage} />
+        <View style={styles.profileAvatarInfo}>
+          <Text style={styles.profileAvatarName} numberOfLines={2}>{displayName}</Text>
+          <Text style={styles.profileAvatarMeta}>Avatar seleccionado</Text>
+          <Text style={styles.profileAvatarCount}>{AVATARS.length} opciones</Text>
+          <Pressable style={styles.profileUploadButton} onPress={onSelectAvatar}>
+            <Text style={styles.profileUploadText}>Subir foto propia</Text>
+          </Pressable>
+        </View>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.avatarStrip}>
+        {AVATARS.map((avatar) => (
+          <Pressable
+            key={`perfil-${avatar}`}
+            style={[styles.avatarChoice, selectedAvatar === avatar && styles.avatarChoiceActive]}
+            onPress={() => onChange('avatarUrl', avatarPath(avatar))}
+          >
+            <Image source={{ uri: avatarUrl(avatar) }} style={styles.avatarChoiceImage} />
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      <View style={styles.infoNotice}>
+        <View style={styles.infoNoticeIcon}>
+          <Text style={styles.infoNoticeIconText}>i</Text>
+        </View>
+        <View style={styles.infoNoticeBody}>
+          <Text style={styles.infoNoticeTitle}>Datos para facturacion</Text>
+          <Text style={styles.infoNoticeText}>Esta informacion se utilizara para emitir correctamente tus comprobantes.</Text>
+        </View>
+      </View>
+
       <View style={styles.formSectionBox}>
-        <Text style={styles.clientFormSubtitle}>Informacion basica</Text>
+        <Text style={styles.clientFormSubtitle}>Cuenta</Text>
+        <Field label="Correo Electronico" value={form.email} onChangeText={(value) => onChange('email', value)} autoCapitalize="none" keyboardType="email-address" />
         <DropdownField
           label="Tipo de cliente *"
           options={tiposCliente.map((tipo) => ({ label: getTipoClienteLabel(tipo.tclCodigo), value: tipo.tclCodigo }))}
@@ -4086,6 +4491,10 @@ function PerfilForm({
           onChange={(value) => onChange('idTipoIdentificacion', value)}
         />
         <Field label="Identificacion *" value={form.identificacion} onChangeText={(value) => onChange('identificacion', value)} />
+      </View>
+
+      <View style={styles.formSectionBox}>
+        <Text style={styles.clientFormSubtitle}>Datos personales</Text>
         {esEmpresa ? (
           <Field label="Razon social *" value={form.nombreEmpresa} onChangeText={(value) => onChange('nombreEmpresa', value)} />
         ) : (
@@ -4098,15 +4507,47 @@ function PerfilForm({
 
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Contacto</Text>
-        <Field label="Correo Electronico" value={form.email} onChangeText={(value) => onChange('email', value)} autoCapitalize="none" keyboardType="email-address" />
         <Field label="Celular" value={form.celular} onChangeText={(value) => onChange('celular', value)} keyboardType="phone-pad" />
         <Field label="Direccion *" value={form.direccionEmpresa} onChangeText={(value) => onChange('direccionEmpresa', value)} />
       </View>
 
       <View style={styles.formSectionBox}>
-        <Text style={styles.clientFormSubtitle}>Clave de acceso</Text>
-        <Field label="Nueva clave" value={form.nuevaPassword} onChangeText={(value) => onChange('nuevaPassword', value)} secureTextEntry />
-        <Field label="Confirmar clave" value={form.confirmarPassword} onChangeText={(value) => onChange('confirmarPassword', value)} secureTextEntry />
+        <View style={styles.securityHeaderRow}>
+          <View style={styles.securityTitleBlock}>
+            <Text style={styles.clientFormSubtitle}>Seguridad</Text>
+            <Text style={styles.clientFormTitle}>Clave de acceso</Text>
+          </View>
+          <View style={styles.securityToggleRow}>
+            <Text style={styles.securityStablePill}>{form.cambiarClave ? 'Cambio' : 'Estable'}</Text>
+            <Pressable
+              style={[styles.securitySwitch, form.cambiarClave && styles.securitySwitchActive]}
+              onPress={() => {
+                const next = !form.cambiarClave;
+                onChange('cambiarClave', next);
+                if (!next) {
+                  onChange('nuevaPassword', '');
+                  onChange('confirmarPassword', '');
+                }
+              }}
+            >
+              <View style={[styles.securitySwitchKnob, form.cambiarClave && styles.securitySwitchKnobActive]} />
+            </Pressable>
+            <Text style={styles.securityToggleText}>Cambiar</Text>
+          </View>
+        </View>
+        {form.cambiarClave ? (
+          <>
+            <Field label="Nueva clave" value={form.nuevaPassword} onChangeText={(value) => onChange('nuevaPassword', value)} secureTextEntry />
+            <Field label="Confirmar clave" value={form.confirmarPassword} onChangeText={(value) => onChange('confirmarPassword', value)} secureTextEntry />
+          </>
+        ) : (
+          <View style={styles.securityNoChangeBox}>
+            <View style={styles.infoNoticeIcon}>
+              <Text style={styles.infoNoticeIconText}>✓</Text>
+            </View>
+            <Text style={styles.securityNoChangeText}>Sin cambios en contraseña</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.formActions}>
@@ -4185,14 +4626,14 @@ function PuntoEmisionCard({
   const serie = getPuntoSerie(punto);
 
   return (
-    <View style={styles.clientCard}>
+    <View style={[styles.clientCard, punto.esPrincipal && styles.puntoCardPrincipal]}>
       <View style={styles.clientCardHeader}>
         <View style={styles.clientAvatar}>
           <Text style={styles.clientAvatarText}>P</Text>
         </View>
         <View style={styles.clientInfo}>
-          <Text style={styles.clientName}>{serie || 'Punto de emision'}</Text>
-          <Text style={styles.clientMeta}>{punto.esPrincipal ? 'Principal' : 'Caja secundaria'}</Text>
+          <Text style={styles.clientName}>{punto.esPrincipal ? 'Caja principal' : `Caja ${punto.numCaja ?? punto.puntoEmision ?? ''}`}</Text>
+          <Text style={styles.clientMeta}>{serie || 'Serie no configurada'}</Text>
         </View>
         {punto.esPrincipal ? (
           <View style={styles.systemPill}>
@@ -4203,12 +4644,12 @@ function PuntoEmisionCard({
 
       <View style={styles.clientDetailGrid}>
         <View style={styles.clientDetailItem}>
-          <Text style={styles.clientDetailLabel}>Factura</Text>
+          <Text style={styles.clientDetailLabel}>Serie factura</Text>
           <Text style={styles.clientDetailValue}>{punto.serieFactura || serie || 'Sin serie'}</Text>
         </View>
         <View style={styles.clientDetailItem}>
-          <Text style={styles.clientDetailLabel}>Notas credito</Text>
-          <Text style={styles.clientDetailValue}>{punto.serieNotasCred || serie || 'Sin serie'}</Text>
+          <Text style={styles.clientDetailLabel}>Estado</Text>
+          <Text style={styles.clientDetailValue}>{punto.estado === false ? 'Inactivo' : 'Activo'}</Text>
         </View>
       </View>
 
@@ -5334,6 +5775,60 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     textTransform: 'uppercase',
   },
+  adminHeroCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#DCE8F1',
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 8,
+    padding: 18,
+  },
+  adminTabs: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#DCE8F1',
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 8,
+    padding: 6,
+  },
+  adminTab: {
+    alignItems: 'center',
+    borderRadius: 12,
+    justifyContent: 'center',
+    minHeight: 42,
+    paddingHorizontal: 14,
+  },
+  adminTabActive: {
+    backgroundColor: '#0072BD',
+  },
+  adminTabText: {
+    color: '#6F7F90',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  adminTabTextActive: {
+    color: '#FFFFFF',
+  },
+  adminSearchHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  adminSearchTitleBlock: {
+    flex: 1,
+  },
+  adminActionPill: {
+    backgroundColor: '#0072BD',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  adminActionText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
   bottomNav: {
     backgroundColor: 'rgba(255,255,255,0.96)',
     borderRadius: 18,
@@ -5815,6 +6310,216 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     marginBottom: 8,
+  },
+  profileAvatarPanel: {
+    alignItems: 'center',
+    backgroundColor: '#EEF6FF',
+    borderColor: '#B9D8EE',
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 14,
+    padding: 14,
+  },
+  profileAvatarImage: {
+    borderRadius: 16,
+    height: 76,
+    width: 76,
+  },
+  profileAvatarInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  profileAvatarName: {
+    color: '#263A4F',
+    fontSize: 16,
+    fontWeight: '900',
+    lineHeight: 20,
+  },
+  profileAvatarMeta: {
+    color: '#6F7F90',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  profileAvatarCount: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#DFF1FB',
+    borderRadius: 999,
+    color: '#00649D',
+    fontSize: 11,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  profileUploadButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#9BCBE9',
+    borderRadius: 9,
+    borderWidth: 1,
+    marginTop: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  profileUploadText: {
+    color: '#00649D',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  infoNotice: {
+    alignItems: 'center',
+    backgroundColor: '#EAFBF3',
+    borderColor: '#BDEED2',
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 14,
+  },
+  infoNoticeIcon: {
+    alignItems: 'center',
+    backgroundColor: '#16A163',
+    borderRadius: 12,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  infoNoticeIconText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  infoNoticeBody: {
+    flex: 1,
+    gap: 2,
+  },
+  infoNoticeTitle: {
+    color: '#145A36',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  infoNoticeText: {
+    color: '#32724E',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  puntoHero: {
+    backgroundColor: '#0876BE',
+    borderRadius: 18,
+    gap: 8,
+    overflow: 'hidden',
+    padding: 16,
+  },
+  puntoHeroEyebrow: {
+    color: '#BFE7FF',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  puntoHeroTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '900',
+    lineHeight: 27,
+  },
+  puntoHeroText: {
+    color: '#D5EEFF',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+  },
+  puntoHeroBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  puntoHeroBadgeLabel: {
+    color: '#CFEFFF',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  puntoHeroBadgeValue: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  puntoCardPrincipal: {
+    borderColor: '#72B7F2',
+    borderWidth: 1.5,
+  },
+  securityHeaderRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  securityTitleBlock: {
+    flex: 1,
+  },
+  securityToggleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  securityStablePill: {
+    backgroundColor: '#EAF5FC',
+    borderRadius: 999,
+    color: '#00649D',
+    fontSize: 11,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  securitySwitch: {
+    backgroundColor: '#A8D6F1',
+    borderRadius: 999,
+    height: 30,
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    width: 58,
+  },
+  securitySwitchActive: {
+    backgroundColor: '#0072BD',
+  },
+  securitySwitchKnob: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+    height: 24,
+    width: 24,
+  },
+  securitySwitchKnobActive: {
+    alignSelf: 'flex-end',
+  },
+  securityToggleText: {
+    color: '#263A4F',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  securityNoChangeBox: {
+    alignItems: 'center',
+    backgroundColor: '#EAF5FC',
+    borderColor: '#A8D6F1',
+    borderRadius: 14,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 14,
+  },
+  securityNoChangeText: {
+    color: '#263A4F',
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '900',
   },
 });
 

@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-const DEFAULT_API_PORT = '5196';
+const DEFAULT_API_PORT = '5184';
 
 function getDefaultApiBaseUrl() {
   if (Platform.OS === 'android') {

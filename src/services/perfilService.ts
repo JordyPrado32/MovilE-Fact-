@@ -37,3 +37,17 @@ export function updatePerfil(userId: number, perfil: PerfilUpsert) {
     body: JSON.stringify(perfil),
   });
 }
+
+export function uploadPerfilAvatar(userId: number, uri: string, fileName = 'avatar.jpg', mimeType = 'image/jpeg') {
+  const formData = new FormData();
+  formData.append('file', {
+    uri,
+    name: fileName,
+    type: mimeType,
+  } as unknown as Blob);
+
+  return apiRequest<{ avatarUrl: string }>(`/api/perfil/${userId}/avatar?idUsuario=${userId}`, {
+    method: 'POST',
+    body: formData,
+  });
+}
