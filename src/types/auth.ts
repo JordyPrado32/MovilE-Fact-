@@ -121,4 +121,4 @@ export type ChangePasswordResponse = {
 export type AuthCheckResponse = {
   authenticated: boolean;
   idUsuario: number;
-};
+} & LoginResponse;

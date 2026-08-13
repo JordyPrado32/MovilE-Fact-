@@ -6,8 +6,10 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   Easing,
   Image,
+  ImageSourcePropType,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -23,11 +25,13 @@ import {
 import { ApiError, setSessionToken } from './src/services/apiClient';
 import { API_BASE_URL } from './src/config/api';
 import { AdminMobileItem, getAdminMobileModule } from './src/services/adminMobileService';
-import { changePassword, login, recoverPassword, register } from './src/services/authService';
+import { changePassword, checkAuth, login, recoverPassword, register } from './src/services/authService';
 import { createCategoria, createSubcategoria, deleteCategoria, deleteSubcategoria, getCategorias, getSubcategorias, updateCategoria, updateSubcategoria } from './src/services/categoriasService';
 import { createCliente, deleteCliente, getCiudades, getClienteLookups, getClientes, getProvincias, updateCliente } from './src/services/clientesService';
 import { createEmisor, deleteEmisor, getEmisor, getEmisores, getFirmaEstado, updateEmisor, uploadFirmaArchivo } from './src/services/emisoresService';
+import { anularFactura, buscarFacturaClientes, buscarFacturaProductos, enviarFacturaCorreo, FacturaListItem, FacturaPreparacion, FacturaProducto, getFacturaPdf, getFacturas, getFacturaPreparacion, getFacturaXml, guardarFactura } from './src/services/facturasMobileService';
 import { getMenusByRol, hasMenusByRolEndpoint } from './src/services/menuService';
+import { createOperationalItem, deleteOperationalItem, getOperationalMobileModule, getOperationalModuleConfig, OperationalMobileItem, OperationalModule, updateOperationalItem } from './src/services/operationalMobileService';
 import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
 import { createPuntoEmision, deletePuntoEmision, getPuntosEmision, markPuntoPrincipal, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
@@ -63,14 +67,19 @@ type WorkspaceView =
   | 'productos'
   | 'categorias'
   | 'facturacion'
+  | 'nueva-factura'
+  | 'mis-facturas'
   | 'notas-credito'
   | 'notas-debito'
   | 'retenciones'
   | 'guias-remision'
   | 'compras'
   | 'cuentas-cobrar'
+  | 'estado-cuenta'
   | 'recargas'
+  | 'comprar-documentos'
   | 'reportes'
+  | 'reporte-documentos'
   | 'configuracion'
   | 'soporte'
   | 'tutoriales'
@@ -82,6 +91,7 @@ type CategoriaFormMode = 'create' | 'edit' | null;
 type CategoriaCatalogTab = 'categorias' | 'subcategorias';
 type EmisorFormMode = 'create' | 'edit' | null;
 type PuntoFormMode = 'create' | 'edit' | null;
+type OperationalFormMode = 'create' | 'edit' | null;
 type ClienteFormState = {
   tipoCliente: number;
   tipoidentificacion: number;
@@ -113,6 +123,27 @@ type MessageState = {
   type: 'success' | 'error' | 'info';
   text: string;
 } | null;
+type OperationalFormState = {
+  codigo: string;
+  descripcion: string;
+  valor: string;
+  observacion: string;
+};
+type NuevaFacturaLinea = {
+  producto: FacturaProducto;
+  cantidad: string;
+  precio: string;
+  descuento: string;
+  tarifa: string;
+};
+type NuevaFacturaFormState = {
+  clienteBusqueda: string;
+  productoBusqueda: string;
+  serie: string;
+  formaPago: string;
+  referencia: string;
+  correoAdicional: string;
+};
 
 type ProductoFormState = {
   tipo: ProductoTipo;
@@ -190,13 +221,28 @@ const AVATAR_BASE_URL = 'https://efact.numericasoftware.com/images/Avatars';
 const SUPER_ADMIN_TIPO_USUARIO = 2;
 const BASE_EFACT_MOBILE_MENUS: DynamicMenu[] = [
   { id: -1001, nombre: 'Inicio', ruta: '/dashboard', icono: 'ri-dashboard-line', orden: 1, estado: true },
-  { id: -1002, nombre: 'Clientes / Proveedores', ruta: '/clientes', icono: 'ri-group-line', orden: 2, estado: true },
-  { id: -1003, nombre: 'Productos', ruta: '/productos', icono: 'ri-shopping-bag-line', orden: 3, estado: true },
-  { id: -1004, nombre: 'Categorias', ruta: '/categorias', icono: 'ri-grid-line', orden: 4, estado: true },
-  { id: -1005, nombre: 'Emisor', ruta: '/emisor', icono: 'ri-building-line', orden: 5, estado: true },
-  { id: -1006, nombre: 'Firma', ruta: '/firma', icono: 'ri-shield-check-line', orden: 6, estado: true },
-  { id: -1007, nombre: 'Mi Perfil', ruta: '/perfil', icono: 'ri-user-settings-line', orden: 7, estado: true },
-  { id: -1008, nombre: 'Pto. Emision', ruta: '/mi-caja', icono: 'ri-store-2-line', orden: 8, estado: true },
+  { id: -1002, nombre: 'Mi Perfil', ruta: '/perfil', icono: 'ri-user-settings-line', orden: 2, estado: true },
+  { id: -1003, nombre: 'Emisor', ruta: '/emisor', icono: 'ri-building-line', orden: 3, estado: true },
+  { id: -1004, nombre: 'Firma', ruta: '/firma', icono: 'ri-shield-check-line', orden: 4, estado: true },
+  { id: -1005, nombre: 'Pto. Emision', ruta: '/mi-caja', icono: 'ri-store-2-line', orden: 5, estado: true },
+  { id: -1006, nombre: 'Clientes / Proveedores', ruta: '/clientes', icono: 'ri-group-line', orden: 6, estado: true },
+  { id: -1007, nombre: 'Productos', ruta: '/productos', icono: 'ri-shopping-bag-line', orden: 7, estado: true },
+  { id: -1008, nombre: 'Categorias', ruta: '/categorias', icono: 'ri-grid-line', orden: 8, estado: true },
+  { id: -1009, nombre: 'Facturacion', ruta: '/facturacion', icono: 'ri-file-text-line', orden: 9, estado: true },
+  { id: -1010, nombre: 'Notas de credito', ruta: '/notas-credito', icono: 'ri-refund-line', orden: 10, estado: true },
+  { id: -1011, nombre: 'Notas de debito', ruta: '/notas-debito', icono: 'ri-bill-line', orden: 11, estado: true },
+  { id: -1012, nombre: 'Retenciones', ruta: '/retenciones', icono: 'ri-bank-line', orden: 12, estado: true },
+  { id: -1013, nombre: 'Guias de remision', ruta: '/guias-remision', icono: 'ri-truck-line', orden: 13, estado: true },
+  { id: -1014, nombre: 'Cuentas por cobrar', ruta: '/cuentas-cobrar', icono: 'ri-money-dollar-circle-line', orden: 14, estado: true },
+  { id: -1015, nombre: 'Estado de cuenta', ruta: '/estado-cuenta', icono: 'ri-file-chart-line', orden: 15, estado: true },
+  { id: -1016, nombre: 'Comprar documentos', ruta: '/comprar-documentos', icono: 'ri-file-add-line', orden: 16, estado: true },
+  { id: -1017, nombre: 'Reporte documentos', ruta: '/reporte-documentos', icono: 'ri-file-list-3-line', orden: 17, estado: true },
+  { id: -1018, nombre: 'Historial de recargas', ruta: '/recargas', icono: 'ri-history-line', orden: 18, estado: true },
+  { id: -1019, nombre: 'Centro normativo', ruta: '/centro-normativo', icono: 'ri-book-open-line', orden: 19, estado: true },
+  { id: -1020, nombre: 'Configuracion', ruta: '/configuracion', icono: 'ri-settings-3-line', orden: 20, estado: true },
+  { id: -1021, nombre: 'Soporte', ruta: '/soporte', icono: 'ri-customer-service-2-line', orden: 21, estado: true },
+  { id: -1022, nombre: 'Tutoriales', ruta: '/tutoriales', icono: 'ri-graduation-cap-line', orden: 22, estado: true },
+  { id: -1023, nombre: 'Liquidacion de Compra', ruta: '/compras', icono: 'ri-file-add-line', orden: 23, estado: true },
 ];
 const ADMIN_EFACT_MOBILE_MENUS: DynamicMenu[] = [
   { id: -1101, nombre: 'Cajas y secuencias', ruta: '/administracion/cajas-secuencias', icono: 'ri-stack-line', orden: 101, estado: true },
@@ -217,7 +263,6 @@ const SUPER_ADMIN_SERVICE_CATALOG: ServiceAccess[] = [
   { codigo: 'backoffice', nombre: 'BACKOFFICE', ruta: '/backoffice', estado: true, habilitado: true },
 ];
 const AVATARS = [
-  'Avatar-Boy.jpg',
   'Bandera-Argentina.png',
   'Bandera-Bolivia.png',
   'Bandera-Brazil.png',
@@ -240,10 +285,18 @@ const AVATARS = [
   'avatar9.png',
   'avatar10.png',
   'avatar11.png',
+  'numi-efact.jpg',
 ];
+const LOCAL_AVATAR_SOURCES: Record<string, ImageSourcePropType> = {
+  'numi-efact.jpg': require('./assets/numi-efact.jpg'),
+};
 
 function avatarUrl(fileName: string) {
   return `${AVATAR_BASE_URL}/${fileName}`;
+}
+
+function avatarImageSource(fileName: string): ImageSourcePropType {
+  return LOCAL_AVATAR_SOURCES[fileName] ?? { uri: avatarUrl(fileName) };
 }
 
 function resolveImageUrl(value?: string | null) {
@@ -261,6 +314,35 @@ function avatarPath(fileName: string) {
   return `images/Avatars/${fileName}`;
 }
 
+function getInitials(nombres?: string | null, apellidos?: string | null, razonSocial?: string | null) {
+  const first = nombres?.trim().split(/\s+/)[0]?.charAt(0) ?? razonSocial?.trim().split(/\s+/)[0]?.charAt(0) ?? '';
+  const last = apellidos?.trim().split(/\s+/)[0]?.charAt(0) ?? razonSocial?.trim().split(/\s+/)[1]?.charAt(0) ?? '';
+  return `${first}${last}`.toUpperCase() || '?';
+}
+
+function getInitialsColor(initials: string) {
+  const colors = ['#6C63FF', '#006BB5', '#2C3E50', '#E67E22', '#27AE60', '#9B59B6', '#E74C3C', '#1ABC9C', '#34495E', '#2980B9'];
+  const hash = initials.split('').reduce((total, letter) => total + letter.charCodeAt(0), 0);
+  return colors[Math.abs(hash) % colors.length];
+}
+
+function initialsAvatarDataUri(nombres?: string | null, apellidos?: string | null, razonSocial?: string | null) {
+  const initials = getInitials(nombres, apellidos, razonSocial);
+  const bgColor = getInitialsColor(initials);
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' width='100' height='100'><rect width='100' height='100' fill='${bgColor}'/><text x='50%' y='55%' font-family='Arial, sans-serif' font-size='40' font-weight='bold' fill='#ffffff' text-anchor='middle' dominant-baseline='middle'>${initials}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+function isInitialsAvatar(value?: string | null) {
+  const source = value?.trim().toLowerCase() ?? '';
+  return !source || source.includes('avatar_initials_') || source.startsWith('data:image/svg+xml');
+}
+
+function isPersonalPhoto(value?: string | null) {
+  const source = value?.trim().toLowerCase() ?? '';
+  return source.includes('images/avatars/uploads/') && !source.includes('avatar_initials_');
+}
+
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -275,7 +357,7 @@ const initialRegisterForm: RegisterRequest = {
   tipoDocumento: 'CEDULA',
   identificacion: '',
   password: '',
-  avatarUrl: 'images/Avatars/Avatar-Boy.jpg',
+  avatarUrl: '',
   tipoCliente: 1,
 };
 
@@ -368,13 +450,27 @@ const initialEmisorForm: EmisorFormState = {
   retenciones: 'NO',
   claveInterna: '',
 };
+const initialOperationalForm: OperationalFormState = {
+  codigo: '',
+  descripcion: '',
+  valor: '',
+  observacion: '',
+};
+const initialNuevaFacturaForm: NuevaFacturaFormState = {
+  clienteBusqueda: '',
+  productoBusqueda: '',
+  serie: '',
+  formaPago: '',
+  referencia: '',
+  correoAdicional: '',
+};
 
 const initialPerfilForm: PerfilFormState = {
   nombres: '',
   apellidos: '',
   nombreEmpresa: '',
   email: '',
-  avatarUrl: 'images/Avatars/Avatar-Boy.jpg',
+  avatarUrl: '',
   avatarUploadUri: '',
   avatarUploadName: '',
   avatarUploadMimeType: '',
@@ -399,25 +495,39 @@ type MobileModule = {
   count?: number;
   enabled: boolean;
 };
+type DrawerMenuNode = {
+  key: string;
+  label: string;
+  view?: WorkspaceView;
+  count?: number;
+  disabled?: boolean;
+  children?: DrawerMenuNode[];
+};
 
 const EFACT_MODULES: Omit<MobileModule, 'count' | 'enabled'>[] = [
+  { view: 'perfil', title: 'Perfil', description: 'Datos de usuario, avatar y preferencias.' },
+  { view: 'emisor', title: 'Emisor', description: 'Datos fiscales del emisor.' },
+  { view: 'firma', title: 'Firma / certificado', description: 'Certificado digital para emitir documentos.' },
+  { view: 'punto-emision', title: 'Punto de emision / caja', description: 'Caja, establecimiento y secuenciales.' },
   { view: 'clientes', title: 'Clientes', description: 'Clientes, proveedores y contactos comerciales.' },
   { view: 'productos', title: 'Productos', description: 'Catalogo de productos y servicios.' },
   { view: 'categorias', title: 'Categorias', description: 'Categorias y subcategorias del catalogo comercial.' },
   { view: 'facturacion', title: 'Facturacion', description: 'Facturas, secuenciales, PDF, correo y autorizacion.' },
+  { view: 'nueva-factura', title: 'Nueva Factura', description: 'Emision de facturas desde el movil.' },
+  { view: 'mis-facturas', title: 'Mis Facturas', description: 'Consulta, PDF, XML, correo y anulacion.' },
   { view: 'notas-credito', title: 'Notas de credito', description: 'Crear, listar y previsualizar notas de credito.' },
   { view: 'notas-debito', title: 'Notas de debito', description: 'Crear y listar notas de debito generadas.' },
   { view: 'retenciones', title: 'Retenciones', description: 'Configuracion, generadas, PDF y correo.' },
   { view: 'guias-remision', title: 'Guias de remision', description: 'Crear, consultar y descargar guias.' },
-  { view: 'compras', title: 'Compras', description: 'XML, historial y liquidaciones de compra.' },
-  { view: 'cuentas-cobrar', title: 'Cuentas por cobrar', description: 'Abonos, estado de cuenta y exportaciones.' },
-  { view: 'recargas', title: 'Documentos / recargas', description: 'Compra de documentos y recargas.' },
-  { view: 'reportes', title: 'Reportes', description: 'Documentos, logs y auditoria segun rol.' },
+  { view: 'cuentas-cobrar', title: 'Cuentas por cobrar', description: 'Facturas pendientes y registro de abonos.' },
+  { view: 'estado-cuenta', title: 'Estado de cuenta', description: 'Saldos, movimientos y resumen por cliente.' },
+  { view: 'comprar-documentos', title: 'Comprar documentos', description: 'Compra paquetes y revisa el saldo disponible.' },
+  { view: 'reporte-documentos', title: 'Reporte documentos', description: 'Documentos emitidos, recibidos y autorizaciones.' },
+  { view: 'recargas', title: 'Historial de recargas', description: 'Recargas y paquetes de documentos.' },
+  { view: 'centro-normativo', title: 'Centro normativo', description: 'Identificaciones, categorias, impuestos y normativa.' },
   { view: 'configuracion', title: 'Configuracion', description: 'Usuarios, roles, permisos, impuestos y parametros.' },
-  { view: 'perfil', title: 'Perfil', description: 'Datos de usuario y preferencias.' },
-  { view: 'emisor', title: 'Emisor', description: 'Datos fiscales del emisor.' },
-  { view: 'firma', title: 'Firma / certificado', description: 'Certificado digital para emitir documentos.' },
-  { view: 'punto-emision', title: 'Punto de emision / caja', description: 'Caja, establecimiento y secuenciales.' },
+  { view: 'soporte', title: 'Soporte', description: 'Canales de ayuda para e-fact.' },
+  { view: 'tutoriales', title: 'Tutoriales', description: 'Guias de uso disponibles para el usuario.' },
   { view: 'admin-cajas-secuencias', title: 'Cajas y secuencias', description: 'Consulta puntos de emision y ultimos secuenciales.' },
   { view: 'admin-roles-permisos', title: 'Roles y Permisos', description: 'Panel de seguridad, perfiles y permisos.' },
   { view: 'admin-impuestos', title: 'Impuestos', description: 'Codigos de impuesto y porcentajes IVA.' },
@@ -427,9 +537,6 @@ const EFACT_MODULES: Omit<MobileModule, 'count' | 'enabled'>[] = [
   { view: 'admin-logs-inicio', title: 'Logs de Inicio', description: 'Historial de accesos y eventos fallidos.' },
   { view: 'admin-retenciones', title: 'Retenciones', description: 'Catalogos fiscales de retenciones IVA, ISD y renta.' },
   { view: 'admin-sql-auditoria', title: 'SQL Auditoria', description: 'Eventos de auditoria SQL y trazabilidad.' },
-  { view: 'centro-normativo', title: 'Centro normativo', description: 'Identificaciones, categorias, impuestos y normativa.' },
-  { view: 'soporte', title: 'Soporte', description: 'Canales de ayuda para e-fact.' },
-  { view: 'tutoriales', title: 'Tutoriales', description: 'Guias de uso disponibles para el usuario.' },
 ];
 
 const VIEW_ROUTE_ALIASES: Record<Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado'>, string[]> = {
@@ -451,13 +558,18 @@ const VIEW_ROUTE_ALIASES: Record<Exclude<WorkspaceView, 'portal' | 'dashboard' |
   productos: ['productos', 'producto', 'servicios'],
   categorias: ['categorias', 'categoria', 'subcategorias', 'subcategoria'],
   facturacion: ['facturacion', 'factura', 'facturas'],
+  'nueva-factura': ['facturacion/nueva', 'nueva-factura', 'facturacion', 'factura'],
+  'mis-facturas': ['facturas', 'mis-facturas', 'facturacion'],
   'notas-credito': ['nota-credito', 'notas-credito', 'credito'],
   'notas-debito': ['nota-debito', 'notas-debito', 'debito'],
   retenciones: ['retenciones', 'retencion'],
   'guias-remision': ['guia-remision', 'guias-remision', 'remision'],
   compras: ['compras', 'compra', 'liquidacion'],
-  'cuentas-cobrar': ['cuentas-cobrar', 'cxc', 'abonos'],
-  recargas: ['recargas', 'documentos'],
+  'cuentas-cobrar': ['cuentas-cobrar', 'cxc', 'abonos', 'registro-abonos'],
+  'estado-cuenta': ['estado-cuenta', 'cuentas-por-cobrar/estado-cuenta'],
+  'comprar-documentos': ['compra-documentos', 'comprar-documentos', 'documentos-compra'],
+  'reporte-documentos': ['reporte-documentos', 'reportes-documentos', 'reportes/documentos'],
+  recargas: ['recargas', 'historial-recargas'],
   reportes: ['reportes', 'logs', 'auditoria'],
   configuracion: ['configuracion', 'usuarios', 'roles', 'permisos', 'impuestos'],
   soporte: ['soporte', 'ayuda'],
@@ -536,6 +648,10 @@ function getAuthorizedViews(menus: DynamicMenu[]) {
       views.add(module.view);
     }
   });
+
+  if (activeMenus.some((menu) => menuMatchesView(menu, 'compras'))) {
+    views.add('compras');
+  }
 
   if (views.size > 0) {
     views.add('dashboard');
@@ -803,6 +919,49 @@ function hasFirmaConfigured(emisor: Emisor) {
   return Boolean(emisor.pathCertificado?.trim() && emisor.tieneClaveCertificadoConfigurada);
 }
 
+function operationalItemToForm(item: OperationalMobileItem): OperationalFormState {
+  return {
+    codigo: item.id ?? '',
+    descripcion: item.title ?? '',
+    valor: item.meta ?? '',
+    observacion: item.detail ?? '',
+  };
+}
+
+function operationalFormToPayload(form: OperationalFormState) {
+  return {
+    codigo: form.codigo.trim() || null,
+    descripcion: form.descripcion.trim(),
+    valor: form.valor.trim() || null,
+    observacion: form.observacion.trim() || null,
+  };
+}
+
+function operationalFormToPayloadForContext(module: OperationalModule, tab: string, form: OperationalFormState) {
+  const codigo = Number(form.codigo.trim());
+  const valor = Number(form.valor.replace(',', '.'));
+
+  if (module === 'cuentas-cobrar' && tab === 'Abonos') {
+    return {
+      idCliente: Number.isFinite(codigo) ? codigo : 0,
+      montoRecibido: Number.isFinite(valor) ? valor : 0,
+      observacion: form.observacion.trim() || form.descripcion.trim(),
+    };
+  }
+
+  if (module === 'recargas' && tab === 'Comprar documentos') {
+    return {
+      documentos: Number.isFinite(codigo) ? codigo : 0,
+      montoTotal: Number.isFinite(valor) ? valor : 0,
+      descripcion: form.descripcion.trim(),
+      emailDestino: form.observacion.trim() || null,
+      esIlimitado: form.descripcion.toLowerCase().includes('ilimit'),
+    };
+  }
+
+  return operationalFormToPayload(form);
+}
+
 function getTipoClienteLabel(tipoCliente?: number | null, lookups?: ClienteLookups | null) {
   if (tipoCliente === 1) return 'Persona Natural';
   if (tipoCliente === 2) return 'Persona Juridica';
@@ -819,7 +978,7 @@ function perfilToForm(perfil?: PerfilUsuario | null): PerfilFormState {
     apellidos: perfil?.apellidos ?? '',
     nombreEmpresa: perfil?.nombreEmpresa ?? '',
     email: perfil?.email ?? '',
-    avatarUrl: perfil?.avatarUrl ?? 'images/Avatars/Avatar-Boy.jpg',
+    avatarUrl: perfil?.avatarUrl ?? '',
     avatarUploadUri: '',
     avatarUploadName: '',
     avatarUploadMimeType: '',
@@ -907,8 +1066,24 @@ export default function App() {
   const [changeForm, setChangeForm] = useState<ChangePasswordRequest>(initialChangeForm);
 
   useEffect(() => {
-    const timer = setTimeout(() => setBooting(false), 8000);
-    return () => clearTimeout(timer);
+    let mounted = true;
+    const minSplash = delay(6000);
+
+    const authCheck = checkAuth()
+      .then((response) => {
+        if (!mounted || !response.authenticated) return;
+        setSessionToken(getLoginToken(response));
+        setCurrentUser(response);
+      })
+      .catch(() => undefined);
+
+    Promise.all([minSplash, authCheck]).finally(() => {
+        if (mounted) setBooting(false);
+    });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const runRequest = async (action: () => Promise<void>) => {
@@ -969,7 +1144,10 @@ export default function App() {
         return;
       }
 
-      const response = await register(registerForm);
+      const response = await register({
+        ...registerForm,
+        avatarUrl: registerForm.avatarUrl || initialsAvatarDataUri(registerForm.nombres, registerForm.apellidos, registerForm.razonSocial),
+      });
       setMessage({ type: 'success', text: response.message ?? 'Cuenta creada correctamente.' });
       setRegisterStep(0);
       setMode('login');
@@ -986,13 +1164,13 @@ export default function App() {
       const response = await recoverPassword({ email: recoverEmail });
       if (response.idUsuario) {
         setChangeForm((current) => ({ ...current, idUsuario: response.idUsuario ?? 0 }));
+        setMode('change');
       }
 
       setMessage({
         type: 'success',
         text: response.message ?? 'Se envio un mensaje a tu correo para recuperar tu clave.',
       });
-      setMode('change');
     });
 
   const submitChangePassword = () =>
@@ -1017,7 +1195,8 @@ export default function App() {
     setChangeForm((current) => ({ ...current, [key]: value }));
   };
 
-  const selectedAvatar = registerForm.avatarUrl.split('/').pop() || 'Avatar-Boy.jpg';
+  const selectedAvatar = registerForm.avatarUrl.split('/').pop() || '';
+  const registerInitials = getInitials(registerForm.nombres, registerForm.apellidos, registerForm.razonSocial);
 
   if (booting) {
     return <AppLaunchScreen />;
@@ -1139,20 +1318,30 @@ export default function App() {
                 <Text style={styles.sectionTitle}>Seguridad y perfil</Text>
                 <Field label="Contrasena" value={registerForm.password} onChangeText={(value) => updateRegister('password', value)} secureTextEntry />
                 <View style={styles.avatarPreview}>
-                  <Image source={{ uri: avatarUrl(selectedAvatar) }} style={styles.avatarTileImage} />
+                  {isInitialsAvatar(registerForm.avatarUrl) ? (
+                    <InitialsAvatar initials={registerInitials} size={56} />
+                  ) : (
+                    <Image source={avatarImageSource(selectedAvatar)} style={styles.avatarTileImage} />
+                  )}
                   <View style={styles.avatarInfo}>
-                    <Text style={styles.avatarTitle}>Avatar seleccionado</Text>
+                    <Text style={styles.avatarTitle}>{isInitialsAvatar(registerForm.avatarUrl) ? 'Iniciales del nombre' : 'Avatar seleccionado'}</Text>
                     <Text style={styles.mutedText}>{AVATARS.length} avatares disponibles</Text>
                   </View>
                 </View>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.avatarStrip}>
+                  <Pressable
+                    style={[styles.avatarChoice, isInitialsAvatar(registerForm.avatarUrl) && styles.avatarChoiceActive]}
+                    onPress={() => updateRegister('avatarUrl', '')}
+                  >
+                    <InitialsAvatar initials={registerInitials} size={42} />
+                  </Pressable>
                   {AVATARS.map((avatar) => (
                     <Pressable
                       key={avatar}
                       style={[styles.avatarChoice, selectedAvatar === avatar && styles.avatarChoiceActive]}
                       onPress={() => updateRegister('avatarUrl', avatarPath(avatar))}
                     >
-                      <Image source={{ uri: avatarUrl(avatar) }} style={styles.avatarChoiceImage} />
+                      <Image source={avatarImageSource(avatar)} style={styles.avatarChoiceImage} />
                     </Pressable>
                   ))}
                 </ScrollView>
@@ -1232,6 +1421,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [loadingPerfil, setLoadingPerfil] = useState(false);
   const [loadingPuntos, setLoadingPuntos] = useState(false);
   const [loadingAdminItems, setLoadingAdminItems] = useState(false);
+  const [loadingOperationalItems, setLoadingOperationalItems] = useState(false);
   const [loadingClienteLookups, setLoadingClienteLookups] = useState(false);
   const [loadingProductoLookups, setLoadingProductoLookups] = useState(false);
   const [directoryMessage, setDirectoryMessage] = useState<MessageState>(null);
@@ -1239,6 +1429,22 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [reloadKey, setReloadKey] = useState(0);
   const [adminItems, setAdminItems] = useState<AdminMobileItem[]>([]);
   const [adminTabByView, setAdminTabByView] = useState<Record<string, string>>({});
+  const [operationalItems, setOperationalItems] = useState<OperationalMobileItem[]>([]);
+  const [operationalCounts, setOperationalCounts] = useState<Partial<Record<WorkspaceView, number>>>({});
+  const [operationalTabByView, setOperationalTabByView] = useState<Record<string, string>>({});
+  const [operationalFormMode, setOperationalFormMode] = useState<OperationalFormMode>(null);
+  const [selectedOperationalItem, setSelectedOperationalItem] = useState<OperationalMobileItem | null>(null);
+  const [operationalForm, setOperationalForm] = useState<OperationalFormState>(initialOperationalForm);
+  const [savingOperational, setSavingOperational] = useState(false);
+  const [facturaPreparacion, setFacturaPreparacion] = useState<FacturaPreparacion | null>(null);
+  const [facturasList, setFacturasList] = useState<FacturaListItem[]>([]);
+  const [loadingFacturas, setLoadingFacturas] = useState(false);
+  const [savingFactura, setSavingFactura] = useState(false);
+  const [facturaForm, setFacturaForm] = useState<NuevaFacturaFormState>(initialNuevaFacturaForm);
+  const [facturaCliente, setFacturaCliente] = useState<Cliente | null>(null);
+  const [facturaClientes, setFacturaClientes] = useState<Cliente[]>([]);
+  const [facturaProductos, setFacturaProductos] = useState<FacturaProducto[]>([]);
+  const [facturaLineas, setFacturaLineas] = useState<NuevaFacturaLinea[]>([]);
   const [clienteFormMode, setClienteFormMode] = useState<ClienteFormMode>(null);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
   const [clienteForm, setClienteForm] = useState<ClienteFormState>(initialClienteForm);
@@ -1274,6 +1480,16 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const canUsePortal = isSuperAdmin(currentUser);
   const canUseEfact = authorizedViews.has('dashboard');
   const services = useMemo(() => getServicesFromUser(currentUser, menus), [currentUser, menus]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        setReloadKey((value) => value + 1);
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     if (!userId || !hasMenusByRolEndpoint()) return;
@@ -1327,6 +1543,104 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       mounted = false;
     };
   }, [activeView, adminTabByView, authorizedViews, reloadKey, search]);
+
+  useEffect(() => {
+    const module = getOperationalModuleSlug(activeView);
+    if (!module || !authorizedViews.has(activeView)) return;
+
+    let mounted = true;
+    const config = getOperationalScreenConfig(activeView, module);
+    const activeTab = operationalTabByView[activeView] ?? getOperationalDefaultTab(activeView, module);
+    setLoadingOperationalItems(true);
+    setDirectoryMessage(null);
+
+    getOperationalMobileModule(module, search, activeTab, { userId: catalogUserId })
+      .then((data) => {
+        if (mounted) setOperationalItems(data.items ?? []);
+      })
+      .catch((error) => {
+        const text = error instanceof ApiError ? error.message : 'No se pudo cargar el modulo operativo.';
+        if (mounted) {
+          setOperationalItems([]);
+          setDirectoryMessage({ type: 'error', text });
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoadingOperationalItems(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeView, operationalTabByView, authorizedViews, catalogUserId, reloadKey, search]);
+
+  useEffect(() => {
+    if (!catalogUserId || !authorizedViews.has(activeView)) return;
+    if (activeView !== 'nueva-factura' && activeView !== 'mis-facturas') return;
+
+    let mounted = true;
+    setLoadingFacturas(true);
+    setDirectoryMessage(null);
+
+    const request = activeView === 'nueva-factura'
+      ? getFacturaPreparacion(catalogUserId).then((data) => {
+          if (!mounted) return;
+          setFacturaPreparacion(data);
+          const serie = data.series?.[0]?.serieRaw ?? data.series?.[0]?.serieVisual ?? data.caja?.serieFactura ?? '';
+          const formaPago = data.formasPago?.[0]?.codigo ?? '';
+          setFacturaForm((current) => ({ ...current, serie, formaPago }));
+        })
+      : getFacturas(catalogUserId, 0).then((data) => {
+          if (mounted) setFacturasList(data ?? []);
+        });
+
+    request
+      .catch((error) => {
+        const text = error instanceof ApiError ? error.message : 'No se pudo cargar facturacion.';
+        if (mounted) setDirectoryMessage({ type: 'error', text });
+      })
+      .finally(() => {
+        if (mounted) setLoadingFacturas(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeView, authorizedViews, catalogUserId, reloadKey]);
+
+  useEffect(() => {
+    if (!catalogUserId || !authorizedViews.has('dashboard')) return;
+
+    let mounted = true;
+    const views: WorkspaceView[] = ['cuentas-cobrar', 'estado-cuenta', 'comprar-documentos', 'recargas', 'reporte-documentos', 'centro-normativo'];
+
+    Promise.all(
+      views.map(async (view) => {
+        const module = getOperationalModuleSlug(view);
+        if (!module || !authorizedViews.has(view)) return [view, undefined] as const;
+
+        const tab = getOperationalDefaultTab(view, module);
+        try {
+          const data = await getOperationalMobileModule(module, '', tab, { userId: catalogUserId });
+          return [view, data.items?.length ?? 0] as const;
+        } catch {
+          return [view, undefined] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!mounted) return;
+      setOperationalCounts(
+        entries.reduce<Partial<Record<WorkspaceView, number>>>((acc, [view, count]) => {
+          if (typeof count === 'number') acc[view] = count;
+          return acc;
+        }, {}),
+      );
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [authorizedViews, catalogUserId, reloadKey]);
 
   useEffect(() => {
     if (loadingMenus) return;
@@ -1857,10 +2171,87 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
     const asset = result.assets[0];
     const mimeType = asset.mimeType ?? 'image/jpeg';
-    updatePerfilForm('avatarUrl', asset.uri);
-    updatePerfilForm('avatarUploadUri', asset.uri);
-    updatePerfilForm('avatarUploadName', asset.fileName ?? `avatar.${mimeType.includes('png') ? 'png' : 'jpg'}`);
-    updatePerfilForm('avatarUploadMimeType', mimeType);
+    setSavingPerfil(true);
+    setDirectoryMessage(null);
+
+    try {
+      const uploaded = await uploadPerfilAvatar(
+        userId,
+        asset.uri,
+        asset.fileName ?? `avatar.${mimeType.includes('png') ? 'png' : 'jpg'}`,
+        mimeType,
+      );
+      const nextForm = {
+        ...perfilForm,
+        avatarUrl: uploaded.avatarUrl,
+        avatarUploadUri: '',
+        avatarUploadName: '',
+        avatarUploadMimeType: '',
+      };
+      setPerfilForm(nextForm);
+      setPerfilData((current) => current ? { ...current, perfil: { ...current.perfil, avatarUrl: uploaded.avatarUrl } } : current);
+      setDirectoryMessage({ type: 'success', text: 'Foto actualizada correctamente.' });
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo subir la foto.';
+      setDirectoryMessage({ type: 'error', text });
+    } finally {
+      setSavingPerfil(false);
+    }
+  };
+
+  const selectPresetPerfilAvatar = async (avatar: string) => {
+    const avatarUrl = avatarPath(avatar);
+    const nextForm = {
+      ...perfilForm,
+      avatarUrl,
+      avatarUploadUri: '',
+      avatarUploadName: '',
+      avatarUploadMimeType: '',
+    };
+
+    setPerfilForm(nextForm);
+    setSavingPerfil(true);
+    setDirectoryMessage(null);
+
+    try {
+      await updatePerfil(userId, perfilFormToPayload(nextForm, perfilData?.perfil));
+      setPerfilData((current) => current ? { ...current, perfil: { ...current.perfil, avatarUrl } } : current);
+      setDirectoryMessage({ type: 'success', text: 'Avatar actualizado correctamente.' });
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo guardar el avatar.';
+      setDirectoryMessage({ type: 'error', text });
+    } finally {
+      setSavingPerfil(false);
+    }
+  };
+
+  const selectInitialsPerfilAvatar = async () => {
+    const initialsUrl = initialsAvatarDataUri(perfilForm.nombres, perfilForm.apellidos, perfilForm.nombreEmpresa);
+    const nextForm = {
+      ...perfilForm,
+      avatarUrl: initialsUrl,
+      avatarUploadUri: '',
+      avatarUploadName: '',
+      avatarUploadMimeType: '',
+    };
+
+    setPerfilForm(nextForm);
+    setSavingPerfil(true);
+    setDirectoryMessage(null);
+
+    try {
+      await updatePerfil(userId, perfilFormToPayload(nextForm, perfilData?.perfil));
+      setPerfilData((current) => current ? { ...current, perfil: { ...current.perfil, avatarUrl: initialsUrl } } : current);
+      setDirectoryMessage({ type: 'success', text: 'Iniciales actualizadas correctamente.' });
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo guardar el avatar de iniciales.';
+      setDirectoryMessage({ type: 'error', text });
+    } finally {
+      setSavingPerfil(false);
+    }
   };
 
   const updatePuntoForm = <K extends keyof PuntoFormState>(key: K, value: PuntoFormState[K]) => {
@@ -2642,14 +3033,256 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     Alert.alert(item.title || 'Detalle', [item.subtitle, item.meta, item.detail].filter(Boolean).join('\n') || item.id);
   };
 
-  const modules: MobileModule[] = EFACT_MODULES.filter((module) => authorizedViews.has(module.view)).map((module) => {
+  const openNewOperational = () => {
+    setSelectedOperationalItem(null);
+    setOperationalForm(initialOperationalForm);
+    setOperationalFormMode('create');
+    setDirectoryMessage(null);
+  };
+
+  const openEditOperational = (item: OperationalMobileItem) => {
+    setSelectedOperationalItem(item);
+    setOperationalForm(operationalItemToForm(item));
+    setOperationalFormMode('edit');
+    setDirectoryMessage(null);
+  };
+
+  const closeOperationalForm = () => {
+    setOperationalFormMode(null);
+    setSelectedOperationalItem(null);
+    setOperationalForm(initialOperationalForm);
+  };
+
+  const updateOperationalForm = (field: keyof OperationalFormState, value: string) => {
+    setOperationalForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const getCurrentOperationalContext = () => {
+    const module = getOperationalModuleSlug(activeView);
+    if (!module) return null;
+    const tab = operationalTabByView[activeView] ?? getOperationalDefaultTab(activeView, module);
+
+    return { module, tab };
+  };
+
+  const saveOperational = async () => {
+    const context = getCurrentOperationalContext();
+    if (!context) return;
+
+    if (!operationalForm.descripcion.trim()) {
+      setDirectoryMessage({ type: 'error', text: 'Completa la descripcion del registro.' });
+      return;
+    }
+
+    setSavingOperational(true);
+    setDirectoryMessage(null);
+
+    try {
+      const payload = operationalFormToPayloadForContext(context.module, context.tab, operationalForm);
+      if (operationalFormMode === 'edit' && selectedOperationalItem?.id) {
+        await updateOperationalItem(context.module, context.tab, selectedOperationalItem.id, payload, { userId: catalogUserId });
+      } else {
+        await createOperationalItem(context.module, context.tab, payload, { userId: catalogUserId });
+      }
+
+      setDirectoryMessage({ type: 'success', text: 'Registro guardado correctamente.' });
+      closeOperationalForm();
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo guardar el registro.';
+      setDirectoryMessage({ type: 'error', text });
+    } finally {
+      setSavingOperational(false);
+    }
+  };
+
+  const showOperationalItemDetail = (item: OperationalMobileItem) => {
+    Alert.alert(item.title || 'Detalle', [item.subtitle, item.meta, item.status, item.detail].filter(Boolean).join('\n') || item.id);
+  };
+
+  const confirmDeleteOperational = (item: OperationalMobileItem) => {
+    const context = getCurrentOperationalContext();
+    if (!context) return;
+
+    Alert.alert('Eliminar registro', `Deseas eliminar ${item.title || item.id || 'este registro'}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteOperationalItem(context.module, context.tab, item.id, { userId: catalogUserId });
+            setDirectoryMessage({ type: 'success', text: 'Registro eliminado correctamente.' });
+            setReloadKey((value) => value + 1);
+          } catch (error) {
+            const text = error instanceof ApiError ? error.message : 'No se pudo eliminar el registro.';
+            setDirectoryMessage({ type: 'error', text });
+          }
+        },
+      },
+    ]);
+  };
+
+  const updateFacturaForm = (field: keyof NuevaFacturaFormState, value: string) => {
+    setFacturaForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const searchFacturaClientes = async () => {
+    if (!catalogUserId || !facturaForm.clienteBusqueda.trim()) return;
+    setLoadingFacturas(true);
+    setDirectoryMessage(null);
+    try {
+      setFacturaClientes(await buscarFacturaClientes(catalogUserId, facturaForm.clienteBusqueda));
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo buscar clientes.';
+      setDirectoryMessage({ type: 'error', text });
+    } finally {
+      setLoadingFacturas(false);
+    }
+  };
+
+  const searchFacturaProductos = async () => {
+    if (!catalogUserId || !facturaForm.productoBusqueda.trim()) return;
+    setLoadingFacturas(true);
+    setDirectoryMessage(null);
+    try {
+      setFacturaProductos(await buscarFacturaProductos(catalogUserId, facturaForm.productoBusqueda));
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo buscar productos.';
+      setDirectoryMessage({ type: 'error', text });
+    } finally {
+      setLoadingFacturas(false);
+    }
+  };
+
+  const addFacturaProducto = (producto: FacturaProducto) => {
+    setFacturaLineas((current) => [
+      ...current,
+      {
+        producto,
+        cantidad: '1',
+        precio: String(producto.precioUnitario ?? 0),
+        descuento: '0',
+        tarifa: String(producto.tarifaIva ?? 15),
+      },
+    ]);
+    setFacturaProductos([]);
+    setFacturaForm((current) => ({ ...current, productoBusqueda: '' }));
+  };
+
+  const updateFacturaLinea = (index: number, field: keyof Omit<NuevaFacturaLinea, 'producto'>, value: string) => {
+    setFacturaLineas((current) => current.map((linea, currentIndex) => currentIndex === index ? { ...linea, [field]: value } : linea));
+  };
+
+  const removeFacturaLinea = (index: number) => {
+    setFacturaLineas((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  };
+
+  const clearFacturaForm = () => {
+    setFacturaForm(initialNuevaFacturaForm);
+    setFacturaCliente(null);
+    setFacturaClientes([]);
+    setFacturaProductos([]);
+    setFacturaLineas([]);
+    setDirectoryMessage(null);
+  };
+
+  const saveNuevaFactura = async () => {
+    if (!catalogUserId) return;
+    if (!facturaCliente) {
+      setDirectoryMessage({ type: 'error', text: 'Selecciona un cliente para la factura.' });
+      return;
+    }
+    if (facturaLineas.length === 0) {
+      setDirectoryMessage({ type: 'error', text: 'Agrega al menos un producto o servicio.' });
+      return;
+    }
+
+    setSavingFactura(true);
+    setDirectoryMessage(null);
+    try {
+      const result = await guardarFactura({
+        idUsuario: catalogUserId,
+        cliente: facturaCliente,
+        serie: facturaForm.serie,
+        codemisor: facturaPreparacion?.series?.[0]?.codemisor ?? facturaPreparacion?.caja?.codemisor,
+        formaPago: facturaForm.formaPago,
+        referencia: facturaForm.referencia,
+        correos: facturaForm.correoAdicional ? [facturaForm.correoAdicional] : [],
+        detalles: facturaLineas.map((linea) => ({
+          producto: linea.producto,
+          cantidad: Number(linea.cantidad.replace(',', '.')) || 0,
+          precio: Number(linea.precio.replace(',', '.')) || 0,
+          descuento: Number(linea.descuento.replace(',', '.')) || 0,
+          tarifa: Number(linea.tarifa.replace(',', '.')) || 0,
+        })),
+      });
+      setDirectoryMessage({ type: 'success', text: `${result.mensaje} ${result.numeroComprobante ?? ''}`.trim() });
+      clearFacturaForm();
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo guardar la factura.';
+      setDirectoryMessage({ type: 'error', text });
+    } finally {
+      setSavingFactura(false);
+    }
+  };
+
+  const openFacturaAsset = async (loader: () => Promise<{ url: string }>) => {
+    try {
+      const response = await loader();
+      const url = response.url?.startsWith('http') ? response.url : `${API_BASE_URL.replace(/\/$/, '')}/${response.url.replace(/^\//, '')}`;
+      await Linking.openURL(url);
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo abrir el documento.';
+      setDirectoryMessage({ type: 'error', text });
+    }
+  };
+
+  const sendFacturaCorreo = async (factura: FacturaListItem) => {
+    if (!catalogUserId) return;
+    try {
+      await enviarFacturaCorreo(catalogUserId, factura.codfactura);
+      setDirectoryMessage({ type: 'success', text: 'Correo enviado correctamente.' });
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo enviar el correo.';
+      setDirectoryMessage({ type: 'error', text });
+    }
+  };
+
+  const confirmAnularFactura = (factura: FacturaListItem) => {
+    if (!catalogUserId) return;
+    Alert.alert('Anular factura', `Deseas anular ${factura.numeroCompleto ?? factura.numfactura ?? 'esta factura'}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Anular',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await anularFactura(catalogUserId, factura.codfactura);
+            setDirectoryMessage({ type: 'success', text: 'Factura anulada correctamente.' });
+            setReloadKey((value) => value + 1);
+          } catch (error) {
+            const text = error instanceof ApiError ? error.message : 'No se pudo anular la factura.';
+            setDirectoryMessage({ type: 'error', text });
+          }
+        },
+      },
+    ]);
+  };
+
+  const modules: MobileModule[] = EFACT_MODULES.map((module) => {
     const count =
       module.view === 'clientes'
         ? clientes.length
         : module.view === 'productos'
           ? productos.length
-          : module.view === 'categorias'
-            ? categorias.length + subcategorias.length
+            : module.view === 'categorias'
+              ? categorias.length + subcategorias.length
+              : module.view === 'mis-facturas'
+                ? facturasList.length
+                : module.view === 'nueva-factura'
+                  ? facturaLineas.length
             : module.view === 'emisor'
               ? emisores.length
               : module.view === 'firma'
@@ -2658,6 +3291,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   ? perfilData?.perfil ? 1 : 0
                   : module.view === 'punto-emision'
                     ? puntosData?.cajas.length ?? 0
+                    : getOperationalModuleSlug(module.view)
+                      ? operationalCounts[module.view]
                 : undefined;
 
     return {
@@ -2667,10 +3302,18 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         'clientes',
         'productos',
         'categorias',
+        'nueva-factura',
+        'mis-facturas',
         'emisor',
         'firma',
         'perfil',
         'punto-emision',
+        'cuentas-cobrar',
+        'estado-cuenta',
+        'comprar-documentos',
+        'reporte-documentos',
+        'recargas',
+        'centro-normativo',
         'admin-cajas-secuencias',
         'admin-roles-permisos',
         'admin-impuestos',
@@ -2707,6 +3350,127 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   const hasActiveEmisor = emisores.some((emisor) => emisor.estado !== false);
   const hasConfiguredFirma = emisores.some(hasFirmaConfigured);
+  const moduleByView = new Map<WorkspaceView, MobileModule>(modules.map((module) => [module.view, module]));
+  const menuNode = (view: WorkspaceView, label?: string): DrawerMenuNode => {
+    const module = moduleByView.get(view);
+    return {
+      key: `${view}-${label ?? module?.title ?? getWorkspaceTitle(view)}`,
+      label: label ?? module?.title ?? getWorkspaceTitle(view),
+      view,
+      count: module?.count,
+      disabled: module ? !module.enabled : !authorizedViews.has(view),
+    };
+  };
+  const drawerMenu: DrawerMenuNode[] = [
+    { key: 'dashboard', label: 'Inicio', view: 'dashboard', disabled: !canUseEfact },
+    menuNode('clientes', 'Clientes / Proveedores'),
+    {
+      key: 'facturas',
+      label: 'Facturas',
+      children: [
+        menuNode('nueva-factura', 'Nueva Factura'),
+        menuNode('mis-facturas', 'Mis Facturas'),
+      ],
+    },
+    {
+      key: 'otros-documentos',
+      label: 'Emision de otros Documentos',
+      children: [
+        menuNode('guias-remision', 'Guia de Remision'),
+        menuNode('compras', 'Liquidacion de Compra'),
+        menuNode('notas-credito', 'Nota de Credito'),
+        menuNode('notas-debito', 'Nota de Debito'),
+      ],
+    },
+    {
+      key: 'cuentas-cobrar',
+      label: 'Cuentas Por Cobrar',
+      view: 'cuentas-cobrar',
+      count: operationalCounts['cuentas-cobrar'],
+      disabled: !authorizedViews.has('cuentas-cobrar'),
+      children: [menuNode('estado-cuenta', 'Estado de cuenta')],
+    },
+    {
+      key: 'productos',
+      label: 'Productos',
+      view: 'productos',
+      count: productos.length,
+      disabled: !authorizedViews.has('productos'),
+      children: [menuNode('categorias', 'Categorias')],
+    },
+    {
+      key: 'recargas',
+      label: 'Recargas',
+      view: 'recargas',
+      count: operationalCounts.recargas,
+      disabled: !authorizedViews.has('recargas'),
+      children: [menuNode('comprar-documentos', 'Comprar Documentos')],
+    },
+    menuNode('reporte-documentos', 'Reporte documentos'),
+    {
+      key: 'administracion',
+      label: 'Administracion',
+      children: [
+        menuNode('admin-cajas-secuencias', 'Cajas y secuencias'),
+        menuNode('admin-roles-permisos', 'Roles y Permisos'),
+        menuNode('admin-impuestos', 'Impuestos'),
+        menuNode('admin-usuarios', 'Usuarios'),
+        menuNode('admin-identificaciones', 'Identificaciones'),
+        menuNode('admin-formas-pago', 'Formas de Pago'),
+        menuNode('admin-logs-inicio', 'Logs de Inicio'),
+        menuNode('admin-retenciones', 'Retenciones'),
+        menuNode('admin-sql-auditoria', 'SQL Auditoria'),
+      ],
+    },
+    {
+      key: 'documentos-generados',
+      label: 'Documentos Generados',
+      children: [
+        menuNode('notas-credito', 'Mis Notas de Credito'),
+        menuNode('retenciones', 'Mis Retenciones'),
+        menuNode('guias-remision', 'Mis Guias de Remision'),
+        menuNode('compras', 'Mis Liquidaciones Compras'),
+        menuNode('notas-debito', 'Mis Notas de Debito'),
+      ],
+    },
+    {
+      key: 'configuracion',
+      label: 'Configuracion',
+      children: [
+        menuNode('emisor', 'Emisor'),
+        menuNode('perfil', 'Mi Perfil'),
+        menuNode('punto-emision', 'Pto. Emision'),
+        menuNode('centro-normativo', 'Centro normativo'),
+        menuNode('firma', 'Firma'),
+      ],
+    },
+  ];
+  const renderDrawerNode = (node: DrawerMenuNode, inset = false) => {
+    const active = node.view === activeView || Boolean(node.children?.some((child) => child.view === activeView));
+    const enabledChildren = node.children?.filter((child) => !child.disabled) ?? [];
+    const disabled = node.disabled && enabledChildren.length === 0;
+
+    return (
+      <View key={node.key} style={node.children?.length ? styles.menuSection : undefined}>
+        <MenuItem
+          active={active}
+          count={node.count}
+          disabled={disabled}
+          expanded={Boolean(node.children?.length)}
+          inset={inset}
+          label={node.label}
+          onPress={() => {
+            if (node.view && !disabled) openView(node.view);
+          }}
+        />
+        {node.children?.length ? (
+          <View style={styles.menuChildren}>
+            {node.children.map((child) => renderDrawerNode(child, true))}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.workspaceSafeArea}>
@@ -3141,6 +3905,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     onChange={updatePerfilForm}
                     onReset={() => setPerfilForm(perfilToForm(perfilData?.perfil))}
                     onSelectAvatar={selectPerfilAvatar}
+                    onSelectInitialsAvatar={selectInitialsPerfilAvatar}
+                    onSelectPresetAvatar={selectPresetPerfilAvatar}
                     onSave={savePerfil}
                   />
                 ) : null}
@@ -3225,6 +3991,46 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </>
             ) : null}
 
+            {activeView === 'nueva-factura' ? (
+              <NuevaFacturaMobileScreen
+                form={facturaForm}
+                preparacion={facturaPreparacion}
+                cliente={facturaCliente}
+                clientes={facturaClientes}
+                productos={facturaProductos}
+                lineas={facturaLineas}
+                loading={loadingFacturas}
+                saving={savingFactura}
+                message={directoryMessage}
+                onChange={updateFacturaForm}
+                onSearchClientes={searchFacturaClientes}
+                onSelectCliente={(cliente) => {
+                  setFacturaCliente(cliente);
+                  setFacturaClientes([]);
+                  setFacturaForm((current) => ({ ...current, clienteBusqueda: getClienteDisplayName(cliente) }));
+                }}
+                onSearchProductos={searchFacturaProductos}
+                onAddProducto={addFacturaProducto}
+                onUpdateLinea={updateFacturaLinea}
+                onRemoveLinea={removeFacturaLinea}
+                onClear={clearFacturaForm}
+                onSave={saveNuevaFactura}
+              />
+            ) : null}
+
+            {activeView === 'mis-facturas' ? (
+              <MisFacturasMobileScreen
+                facturas={facturasList}
+                loading={loadingFacturas}
+                message={directoryMessage}
+                onRefresh={() => setReloadKey((value) => value + 1)}
+                onPdf={(factura) => catalogUserId && openFacturaAsset(() => getFacturaPdf(catalogUserId, factura.codfactura))}
+                onXml={(factura) => catalogUserId && openFacturaAsset(() => getFacturaXml(catalogUserId, factura.codfactura))}
+                onEmail={sendFacturaCorreo}
+                onAnular={confirmAnularFactura}
+              />
+            ) : null}
+
             {isAdminMobileView(activeView) ? (
               <AdminModuleScreen
                 view={activeView}
@@ -3243,7 +4049,34 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               />
             ) : null}
 
-            {activeView !== 'clientes' && activeView !== 'productos' && activeView !== 'categorias' && activeView !== 'emisor' && activeView !== 'firma' && activeView !== 'perfil' && activeView !== 'punto-emision' && !isAdminMobileView(activeView) ? (
+            {isOperationalMobileView(activeView) ? (
+              <OperationalModuleScreen
+                view={activeView}
+                search={search}
+                items={operationalItems}
+                loading={loadingOperationalItems}
+                saving={savingOperational}
+                message={directoryMessage}
+                activeTab={operationalTabByView[activeView]}
+                formMode={operationalFormMode}
+                form={operationalForm}
+                onRefresh={() => setReloadKey((value) => value + 1)}
+                onSearch={setSearch}
+                onTabChange={(tab) => {
+                  closeOperationalForm();
+                  setOperationalTabByView((current) => ({ ...current, [activeView]: tab }));
+                }}
+                onCreate={openNewOperational}
+                onCancel={closeOperationalForm}
+                onChange={updateOperationalForm}
+                onSave={saveOperational}
+                onView={showOperationalItemDetail}
+                onEdit={openEditOperational}
+                onDelete={confirmDeleteOperational}
+              />
+            ) : null}
+
+            {activeView !== 'clientes' && activeView !== 'productos' && activeView !== 'categorias' && activeView !== 'emisor' && activeView !== 'firma' && activeView !== 'perfil' && activeView !== 'punto-emision' && activeView !== 'nueva-factura' && activeView !== 'mis-facturas' && !isAdminMobileView(activeView) && !isOperationalMobileView(activeView) ? (
               <EmptyState title="Modulo autorizado" text="Esta seccion queda preparada para conectar la operacion e-fact correspondiente desde backend." />
             ) : null}
           </View>
@@ -3265,19 +4098,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             </View>
             <ScrollView contentContainerStyle={styles.menuList} showsVerticalScrollIndicator={false}>
               {canUsePortal ? <MenuItem active={activeView === 'portal'} label="Portal" onPress={() => openView('portal')} /> : null}
-              <MenuItem active={activeView === 'dashboard'} label="Inicio" onPress={() => openView('dashboard')} />
-              {modules.map((module) => (
-                <MenuItem
-                  key={module.view}
-                  active={activeView === module.view}
-                  count={module.count}
-                  disabled={!module.enabled}
-                  label={module.title}
-                  onPress={() => {
-                    if (module.enabled) openView(module.view);
-                  }}
-                />
-              ))}
+              {drawerMenu.map((node) => renderDrawerNode(node))}
             </ScrollView>
             <Pressable
               style={styles.menuLogoutButton}
@@ -3318,14 +4139,19 @@ function getWorkspaceTitle(view: WorkspaceView) {
     productos: 'Productos',
     categorias: 'Categorias',
     facturacion: 'Facturacion',
+    'nueva-factura': 'Nueva Factura',
+    'mis-facturas': 'Mis Facturas',
     'notas-credito': 'Notas de credito',
     'notas-debito': 'Notas de debito',
     retenciones: 'Retenciones',
     'guias-remision': 'Guias de remision',
-    compras: 'Compras',
+    compras: 'Liquidacion de Compra',
     'cuentas-cobrar': 'Cuentas por cobrar',
-    recargas: 'Documentos / recargas',
+    'estado-cuenta': 'Estado de cuenta',
+    recargas: 'Historial de recargas',
+    'comprar-documentos': 'Comprar documentos',
     reportes: 'Reportes',
+    'reporte-documentos': 'Reporte documentos',
     configuracion: 'Configuracion',
     soporte: 'Soporte',
     tutoriales: 'Tutoriales',
@@ -3338,6 +4164,87 @@ function getWorkspaceTitle(view: WorkspaceView) {
 
 function isAdminMobileView(view: WorkspaceView) {
   return view.startsWith('admin-');
+}
+
+function isOperationalMobileView(view: WorkspaceView) {
+  return Boolean(getOperationalModuleSlug(view));
+}
+
+function getOperationalModuleSlug(view: WorkspaceView): OperationalModule | undefined {
+  const modules: Partial<Record<WorkspaceView, OperationalModule>> = {
+    compras: 'compras',
+    'cuentas-cobrar': 'cuentas-cobrar',
+    'estado-cuenta': 'cuentas-cobrar',
+    recargas: 'recargas',
+    'comprar-documentos': 'recargas',
+    reportes: 'reportes',
+    'reporte-documentos': 'reportes',
+    'centro-normativo': 'centro-normativo',
+  };
+
+  return modules[view];
+}
+
+function getOperationalDefaultTab(view: WorkspaceView, module: OperationalModule) {
+  const defaults: Partial<Record<WorkspaceView, string>> = {
+    'cuentas-cobrar': 'Cuentas por cobrar',
+    'estado-cuenta': 'Estado de cuenta',
+    'comprar-documentos': 'Comprar documentos',
+    recargas: 'Historial',
+    'reporte-documentos': 'Documentos',
+  };
+
+  return defaults[view] ?? getOperationalModuleConfig(module).tabs[0] ?? '';
+}
+
+function getOperationalScreenConfig(view: WorkspaceView, module: OperationalModule) {
+  const base = getOperationalModuleConfig(module);
+  const overrides: Partial<Record<WorkspaceView, { eyebrow: string; title: string; description: string; tabs: string[]; placeholder: string }>> = {
+    'cuentas-cobrar': {
+      eyebrow: 'Cartera',
+      title: 'Cuentas por cobrar',
+      description: 'Consulta facturas pendientes y registra abonos.',
+      tabs: ['Cuentas por cobrar', 'Abonos'],
+      placeholder: base.placeholder,
+    },
+    'estado-cuenta': {
+      eyebrow: 'Cartera',
+      title: 'Estado de cuenta',
+      description: 'Revisa saldos, abonos y movimientos por cliente.',
+      tabs: ['Estado de cuenta'],
+      placeholder: base.placeholder,
+    },
+    'comprar-documentos': {
+      eyebrow: 'Documentos',
+      title: 'Comprar documentos',
+      description: 'Compra paquetes y consulta tu saldo de documentos.',
+      tabs: ['Comprar documentos', 'Paquetes'],
+      placeholder: base.placeholder,
+    },
+    recargas: {
+      eyebrow: 'Documentos',
+      title: 'Historial de recargas',
+      description: 'Revisa compras y recargas realizadas.',
+      tabs: ['Historial'],
+      placeholder: base.placeholder,
+    },
+    'reporte-documentos': {
+      eyebrow: 'Reportes',
+      title: 'Reporte documentos',
+      description: 'Consulta documentos emitidos y recibidos.',
+      tabs: ['Documentos', 'Emitidos', 'Recibidos'],
+      placeholder: base.placeholder,
+    },
+    compras: {
+      eyebrow: 'Emision de otros Documentos',
+      title: 'Liquidacion de Compra',
+      description: 'Consulta documentos de compra, liquidaciones y XML publicados en e-fact.',
+      tabs: ['Liquidaciones', 'Documentos', 'XML'],
+      placeholder: base.placeholder,
+    },
+  };
+
+  return overrides[view] ?? base;
 }
 
 function getAdminModuleSlug(view: WorkspaceView) {
@@ -3370,6 +4277,252 @@ function getAdminModuleConfig(view: WorkspaceView) {
   };
 
   return configs[view] ?? { eyebrow: 'Administracion', title: getWorkspaceTitle(view), description: 'Modulo administrativo preparado para movil.', placeholder: 'Buscar' };
+}
+
+function getClienteDisplayName(cliente: Cliente) {
+  const row = cliente as Cliente & Record<string, unknown>;
+  return String(
+    cliente.nombrerazonsocial ||
+      row.Nombrerazonsocial ||
+      row.NombreRazonSocial ||
+      [cliente.nombres || row.Nombres, cliente.apellidos || row.Apellidos].filter(Boolean).join(' ') ||
+      cliente.numeroidentificacion ||
+      row.Numeroidentificacion ||
+      row.NumeroIdentificacion ||
+      'Cliente',
+  );
+}
+
+function getClienteIdentification(cliente: Cliente) {
+  const row = cliente as Cliente & Record<string, unknown>;
+  return String(cliente.numeroidentificacion || row.Numeroidentificacion || row.NumeroIdentificacion || '');
+}
+
+function getClienteEmail(cliente: Cliente) {
+  const row = cliente as Cliente & Record<string, unknown>;
+  return String(cliente.correo || row.Correo || row.Email || '');
+}
+
+function getClienteKey(cliente: Cliente, index: number) {
+  const row = cliente as Cliente & Record<string, unknown>;
+  return String(cliente.codcliente || row.Codcliente || row.CodCliente || getClienteIdentification(cliente) || `${getClienteDisplayName(cliente)}-${index}`);
+}
+
+function formatMoney(value?: number | null) {
+  return `$ ${Number(value ?? 0).toFixed(2)}`;
+}
+
+function NuevaFacturaMobileScreen({
+  form,
+  preparacion,
+  cliente,
+  clientes,
+  productos,
+  lineas,
+  loading,
+  saving,
+  message,
+  onChange,
+  onSearchClientes,
+  onSelectCliente,
+  onSearchProductos,
+  onAddProducto,
+  onUpdateLinea,
+  onRemoveLinea,
+  onClear,
+  onSave,
+}: {
+  form: NuevaFacturaFormState;
+  preparacion: FacturaPreparacion | null;
+  cliente: Cliente | null;
+  clientes: Cliente[];
+  productos: FacturaProducto[];
+  lineas: NuevaFacturaLinea[];
+  loading: boolean;
+  saving: boolean;
+  message?: MessageState;
+  onChange: (field: keyof NuevaFacturaFormState, value: string) => void;
+  onSearchClientes: () => void;
+  onSelectCliente: (cliente: Cliente) => void;
+  onSearchProductos: () => void;
+  onAddProducto: (producto: FacturaProducto) => void;
+  onUpdateLinea: (index: number, field: keyof Omit<NuevaFacturaLinea, 'producto'>, value: string) => void;
+  onRemoveLinea: (index: number) => void;
+  onClear: () => void;
+  onSave: () => void;
+}) {
+  const subtotal = lineas.reduce((sum, item) => sum + Math.max((Number(item.cantidad.replace(',', '.')) || 0) * (Number(item.precio.replace(',', '.')) || 0) - (Number(item.descuento.replace(',', '.')) || 0), 0), 0);
+  const iva = lineas.reduce((sum, item) => {
+    const base = Math.max((Number(item.cantidad.replace(',', '.')) || 0) * (Number(item.precio.replace(',', '.')) || 0) - (Number(item.descuento.replace(',', '.')) || 0), 0);
+    return sum + base * ((Number(item.tarifa.replace(',', '.')) || 0) / 100);
+  }, 0);
+
+  return (
+    <>
+      <View style={styles.adminHeroCard}>
+        <Text style={styles.heroEyebrow}>Documento de venta</Text>
+        <Text style={styles.heroTitle}>Nueva factura</Text>
+        <Text style={styles.heroText}>Selecciona cliente, agrega productos y guarda la factura en e-fact.</Text>
+      </View>
+      {message ? <MessageBox message={message} /> : null}
+      {loading ? (
+        <View style={styles.directoryLoading}>
+          <ActivityIndicator color="#0072BD" />
+          <Text style={styles.mutedText}>Cargando facturacion...</Text>
+        </View>
+      ) : null}
+      <View style={styles.formSectionBox}>
+        <Text style={styles.clientFormSubtitle}>Cliente</Text>
+        <Field label="Buscar cliente" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} autoCapitalize="none" />
+        <SecondaryButton label="Buscar cliente" onPress={onSearchClientes} />
+        {cliente ? <Text style={styles.profileValue}>Seleccionado: {getClienteDisplayName(cliente)} - {cliente.numeroidentificacion}</Text> : null}
+        <View style={styles.listStack}>
+          {clientes.map((item, index) => (
+            <Pressable key={`factura-cliente-${getClienteKey(item, index)}`} style={styles.clientCard} onPress={() => onSelectCliente(item)}>
+              <Text style={styles.clientName}>{getClienteDisplayName(item)}</Text>
+              <Text style={styles.clientMeta}>{getClienteIdentification(item) || 'Sin identificacion'} · {getClienteEmail(item) || 'Sin correo'}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+      <View style={styles.formSectionBox}>
+        <Text style={styles.clientFormSubtitle}>Cierre de cobro</Text>
+        <DropdownField
+          label="Forma de pago"
+          options={(preparacion?.formasPago ?? []).map((item, index) => ({ label: item.descripcionSri || item.descripcion || item.codigo || `Forma ${index + 1}`, value: index + 1 }))}
+          value={Math.max((preparacion?.formasPago ?? []).findIndex((item) => item.codigo === form.formaPago) + 1, 0) || null}
+          onChange={(value) => onChange('formaPago', value ? preparacion?.formasPago?.[value - 1]?.codigo ?? '' : '')}
+          allowClear
+        />
+        <DropdownField
+          label="Serie"
+          options={(preparacion?.series ?? []).map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+          value={Math.max((preparacion?.series ?? []).findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+          onChange={(value) => onChange('serie', value ? preparacion?.series?.[value - 1]?.serieRaw ?? preparacion?.series?.[value - 1]?.serieVisual ?? '' : '')}
+          allowClear
+        />
+        <Field label="Correo adicional" value={form.correoAdicional} onChangeText={(value) => onChange('correoAdicional', value)} autoCapitalize="none" keyboardType="email-address" />
+        <Field label="Referencia" value={form.referencia} onChangeText={(value) => onChange('referencia', value)} />
+      </View>
+      <View style={styles.formSectionBox}>
+        <Text style={styles.clientFormSubtitle}>Detalle de factura</Text>
+        <Field label="Buscar producto o servicio" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} autoCapitalize="none" />
+        <SecondaryButton label="Buscar producto" onPress={onSearchProductos} />
+        <View style={styles.listStack}>
+          {productos.map((producto) => (
+            <Pressable key={`factura-producto-${producto.codproducto}`} style={styles.clientCard} onPress={() => onAddProducto(producto)}>
+              <Text style={styles.clientName}>{producto.descripcion ?? producto.codprincipal ?? 'Producto'}</Text>
+              <Text style={styles.clientMeta}>{producto.codprincipal ?? 'Sin codigo'} · {formatMoney(producto.precioUnitario)}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {lineas.map((linea, index) => (
+          <View key={`linea-factura-${index}`} style={styles.clientCard}>
+            <Text style={styles.clientName}>{linea.producto.descripcion ?? linea.producto.codprincipal}</Text>
+            <View style={styles.clientDetailGrid}>
+              <Field label="Cant." value={linea.cantidad} onChangeText={(value) => onUpdateLinea(index, 'cantidad', value)} keyboardType="decimal-pad" />
+              <Field label="Precio" value={linea.precio} onChangeText={(value) => onUpdateLinea(index, 'precio', value)} keyboardType="decimal-pad" />
+              <Field label="Desc." value={linea.descuento} onChangeText={(value) => onUpdateLinea(index, 'descuento', value)} keyboardType="decimal-pad" />
+              <Field label="IVA %" value={linea.tarifa} onChangeText={(value) => onUpdateLinea(index, 'tarifa', value)} keyboardType="decimal-pad" />
+            </View>
+            <SecondaryButton label="Quitar linea" onPress={() => onRemoveLinea(index)} />
+          </View>
+        ))}
+      </View>
+      <View style={styles.profileBox}>
+        <Text style={styles.profileLabel}>Subtotal</Text>
+        <Text style={styles.profileValue}>{formatMoney(subtotal)}</Text>
+        <Text style={styles.profileLabel}>IVA</Text>
+        <Text style={styles.profileValue}>{formatMoney(iva)}</Text>
+        <Text style={styles.profileLabel}>Total</Text>
+        <Text style={styles.profileValue}>{formatMoney(subtotal + iva)}</Text>
+      </View>
+      <View style={styles.formActions}>
+        <PrimaryButton label="Generar factura" loading={saving} onPress={onSave} />
+        <SecondaryButton label="Cancelar / limpiar" onPress={onClear} />
+      </View>
+    </>
+  );
+}
+
+function MisFacturasMobileScreen({
+  facturas,
+  loading,
+  message,
+  onRefresh,
+  onPdf,
+  onXml,
+  onEmail,
+  onAnular,
+}: {
+  facturas: FacturaListItem[];
+  loading: boolean;
+  message?: MessageState;
+  onRefresh: () => void;
+  onPdf: (factura: FacturaListItem) => void;
+  onXml: (factura: FacturaListItem) => void;
+  onEmail: (factura: FacturaListItem) => void;
+  onAnular: (factura: FacturaListItem) => void;
+}) {
+  const autorizadas = facturas.filter((factura) => factura.autorizado || String(factura.estadoSri ?? '').toUpperCase().includes('AUTORIZ')).length;
+  const total = facturas.reduce((sum, factura) => sum + Number(factura.total ?? 0), 0);
+
+  return (
+    <>
+      <View style={styles.adminHeroCard}>
+        <Text style={styles.heroEyebrow}>Panel comercial</Text>
+        <Text style={styles.heroTitle}>Mis facturas</Text>
+        <Text style={styles.heroText}>Consulta tus facturas generadas y ejecuta acciones del comprobante.</Text>
+      </View>
+      <View style={styles.metricGrid}>
+        <MetricBox value={facturas.length} label="Facturas" />
+        <MetricBox value={formatMoney(total)} label="Monto" />
+        <MetricBox value={autorizadas} label="Autorizadas" />
+      </View>
+      <View style={styles.actionRow}>
+        <PrimaryButton label="Refrescar" loading={loading} onPress={onRefresh} />
+      </View>
+      {message ? <MessageBox message={message} /> : null}
+      {loading ? (
+        <View style={styles.directoryLoading}>
+          <ActivityIndicator color="#0072BD" />
+          <Text style={styles.mutedText}>Cargando facturas...</Text>
+        </View>
+      ) : null}
+      {!loading && facturas.length === 0 ? <EmptyState title="Sin facturas" text="Cuando generes facturas, apareceran aqui." /> : null}
+      <View style={styles.listStack}>
+        {facturas.map((factura) => (
+          <View key={`mis-facturas-${factura.codfactura}`} style={styles.clientCard}>
+            <View style={styles.clientCardHeader}>
+              <View style={styles.clientInfo}>
+                <Text style={styles.clientName}>{factura.numeroCompleto ?? factura.numfactura ?? `Factura ${factura.codfactura}`}</Text>
+                <Text style={styles.clientMeta}>{factura.cliente ?? 'Consumidor final'} · {factura.identificacionCliente ?? 'Sin identificacion'}</Text>
+              </View>
+              <View style={styles.systemPill}>
+                <Text style={styles.systemPillText}>{factura.estadoSri ?? (factura.autorizado ? 'AUTORIZADO' : 'PENDIENTE')}</Text>
+              </View>
+            </View>
+            <View style={styles.clientDetailGrid}>
+              <View style={styles.clientDetailItem}>
+                <Text style={styles.clientDetailLabel}>Fecha</Text>
+                <Text style={styles.clientDetailValue}>{factura.fechaEmision?.slice(0, 10) ?? '-'}</Text>
+              </View>
+              <View style={styles.clientDetailItem}>
+                <Text style={styles.clientDetailLabel}>Total</Text>
+                <Text style={styles.clientDetailValue}>{formatMoney(factura.total)}</Text>
+              </View>
+            </View>
+            <View style={styles.clientActions}>
+              <Pressable style={styles.smallActionButton} onPress={() => onPdf(factura)}><Text style={styles.smallActionText}>PDF</Text></Pressable>
+              <Pressable style={styles.smallActionButton} onPress={() => onXml(factura)}><Text style={styles.smallActionText}>XML</Text></Pressable>
+              <Pressable style={styles.smallActionButton} onPress={() => onEmail(factura)}><Text style={styles.smallActionText}>Correo</Text></Pressable>
+              <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={() => onAnular(factura)}><Text style={[styles.smallActionText, styles.smallDangerText]}>Anular</Text></Pressable>
+            </View>
+          </View>
+        ))}
+      </View>
+    </>
+  );
 }
 
 function AdminModuleScreen({
@@ -3514,6 +4667,230 @@ function AdminMobileItemCard({
   );
 }
 
+function OperationalModuleScreen({
+  view,
+  search,
+  items,
+  loading,
+  saving,
+  message,
+  activeTab,
+  formMode,
+  form,
+  onRefresh,
+  onSearch,
+  onTabChange,
+  onCreate,
+  onCancel,
+  onChange,
+  onSave,
+  onView,
+  onEdit,
+  onDelete,
+}: {
+  view: WorkspaceView;
+  search: string;
+  items: OperationalMobileItem[];
+  loading: boolean;
+  saving: boolean;
+  message?: MessageState;
+  activeTab?: string;
+  formMode: OperationalFormMode;
+  form: OperationalFormState;
+  onRefresh: () => void;
+  onSearch: (value: string) => void;
+  onTabChange: (tab: string) => void;
+  onCreate: () => void;
+  onCancel: () => void;
+  onChange: (field: keyof OperationalFormState, value: string) => void;
+  onSave: () => void;
+  onView: (item: OperationalMobileItem) => void;
+  onEdit: (item: OperationalMobileItem) => void;
+  onDelete: (item: OperationalMobileItem) => void;
+}) {
+  const module = getOperationalModuleSlug(view);
+  const config = module ? getOperationalScreenConfig(view, module) : null;
+  const selectedTab = module ? activeTab ?? getOperationalDefaultTab(view, module) : activeTab;
+  const capabilities = getOperationalCapabilities(view, selectedTab ?? '');
+
+  if (!config) return null;
+
+  return (
+    <>
+      <View style={styles.adminHeroCard}>
+        <Text style={styles.heroEyebrow}>{config.eyebrow}</Text>
+        <Text style={styles.heroTitle}>{config.title}</Text>
+        <Text style={styles.heroText}>{config.description}</Text>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.adminTabs}>
+        {config.tabs.map((tab) => (
+          <Pressable key={tab} style={[styles.adminTab, selectedTab === tab && styles.adminTabActive]} onPress={() => onTabChange(tab)}>
+            <Text style={[styles.adminTabText, selectedTab === tab && styles.adminTabTextActive]}>{tab}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      {capabilities.canCreate ? (
+        <View style={styles.actionRow}>
+          <PrimaryButton label={selectedTab === 'Comprar documentos' ? 'Comprar' : 'Registrar'} loading={false} onPress={onCreate} />
+        </View>
+      ) : null}
+      {formMode ? (
+        <OperationalForm
+          title={formMode === 'edit' ? `Editar ${selectedTab}` : selectedTab === 'Comprar documentos' ? 'Comprar documentos' : `Registrar ${selectedTab}`}
+          form={form}
+          saving={saving}
+          onCancel={onCancel}
+          onChange={onChange}
+          onSave={onSave}
+        />
+      ) : null}
+      <View style={styles.formSectionBox}>
+        <View style={styles.adminSearchHeader}>
+          <View style={styles.adminSearchTitleBlock}>
+            <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
+            <Text style={styles.clientFormTitle}>{selectedTab}</Text>
+          </View>
+          <Pressable style={styles.adminActionPill} onPress={onRefresh}>
+            <Text style={styles.adminActionText}>Refrescar</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.mutedText}>{config.placeholder}</Text>
+        <Field label="Buscar" value={search} onChangeText={onSearch} autoCapitalize="none" />
+        {message ? <MessageBox message={message} /> : null}
+        {loading ? <EmptyState title="Cargando registros" text="Consultando la informacion del modulo..." /> : null}
+        {!loading && !message && items.length === 0 ? <EmptyState title="Sin registros para mostrar" text="Cuando existan registros, apareceran aqui." /> : null}
+        {!loading && items.length > 0 ? (
+          <View style={styles.listStack}>
+            {items.map((item, index) => (
+              <OperationalMobileItemCard
+                key={`${view}-${item.id || 'item'}-${index}`}
+                item={item}
+                canEdit={capabilities.canEdit}
+                canDelete={capabilities.canDelete}
+                onView={() => onView(item)}
+                onEdit={() => onEdit(item)}
+                onDelete={() => onDelete(item)}
+              />
+            ))}
+          </View>
+        ) : null}
+      </View>
+    </>
+  );
+}
+
+function getOperationalCapabilities(view: WorkspaceView, tab: string) {
+  const readOnlyViews: WorkspaceView[] = ['estado-cuenta', 'reporte-documentos', 'reportes', 'centro-normativo'];
+  if (readOnlyViews.includes(view)) {
+    return { canCreate: false, canEdit: false, canDelete: false };
+  }
+
+  if (view === 'cuentas-cobrar') {
+    return { canCreate: tab === 'Abonos', canEdit: false, canDelete: false };
+  }
+
+  if (view === 'comprar-documentos' || view === 'recargas') {
+    return { canCreate: tab === 'Comprar documentos', canEdit: false, canDelete: false };
+  }
+
+  return { canCreate: false, canEdit: false, canDelete: false };
+}
+
+function OperationalForm({
+  title,
+  form,
+  saving,
+  onCancel,
+  onChange,
+  onSave,
+}: {
+  title: string;
+  form: OperationalFormState;
+  saving: boolean;
+  onCancel: () => void;
+  onChange: (field: keyof OperationalFormState, value: string) => void;
+  onSave: () => void;
+}) {
+  return (
+    <View style={styles.formSectionBox}>
+      <Text style={styles.clientFormSubtitle}>Operacion</Text>
+      <Text style={styles.clientFormTitle}>{title}</Text>
+      <Field label="Codigo (opcional)" value={form.codigo} onChangeText={(value) => onChange('codigo', value)} autoCapitalize="characters" />
+      <Field label="Descripcion *" value={form.descripcion} onChangeText={(value) => onChange('descripcion', value)} />
+      <Field label="Valor / cantidad (opcional)" value={form.valor} onChangeText={(value) => onChange('valor', value)} keyboardType="decimal-pad" />
+      <Field label="Observacion (opcional)" value={form.observacion} onChangeText={(value) => onChange('observacion', value)} />
+      <View style={styles.formActions}>
+        <PrimaryButton label="Guardar" loading={saving} onPress={onSave} />
+        <SecondaryButton label="Cancelar" onPress={onCancel} />
+      </View>
+    </View>
+  );
+}
+
+function OperationalMobileItemCard({
+  item,
+  canEdit,
+  canDelete,
+  onView,
+  onEdit,
+  onDelete,
+}: {
+  item: OperationalMobileItem;
+  canEdit: boolean;
+  canDelete: boolean;
+  onView: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <View style={styles.clientCard}>
+      <View style={styles.clientCardHeader}>
+        <View style={styles.clientAvatar}>
+          <Text style={styles.clientAvatarText}>{(item.title || item.id || 'O').charAt(0).toUpperCase()}</Text>
+        </View>
+        <View style={styles.clientInfo}>
+          <Text style={styles.clientName}>{item.title || item.id}</Text>
+          {item.subtitle ? <Text style={styles.clientMeta}>{item.subtitle}</Text> : null}
+        </View>
+        {item.status ? (
+          <View style={styles.systemPill}>
+            <Text style={styles.systemPillText}>{item.status}</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={styles.clientDetailGrid}>
+        {item.meta ? (
+          <View style={styles.clientDetailItem}>
+            <Text style={styles.clientDetailLabel}>Dato</Text>
+            <Text style={styles.clientDetailValue}>{item.meta}</Text>
+          </View>
+        ) : null}
+        {item.detail ? (
+          <View style={styles.clientDetailItem}>
+            <Text style={styles.clientDetailLabel}>Detalle</Text>
+            <Text style={styles.clientDetailValue}>{item.detail}</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={styles.clientActions}>
+        <Pressable style={styles.smallActionButton} onPress={onView}>
+          <Text style={styles.smallActionText}>Ver</Text>
+        </Pressable>
+        {canEdit ? (
+          <Pressable style={styles.smallActionButton} onPress={onEdit}>
+            <Text style={styles.smallActionText}>Editar</Text>
+          </Pressable>
+        ) : null}
+        {canDelete ? (
+          <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={onDelete}>
+            <Text style={[styles.smallActionText, styles.smallDangerText]}>Eliminar</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 function MetricBox({ value, label }: { value: string | number; label: string }) {
   return (
     <View style={styles.metricBox}>
@@ -3560,20 +4937,33 @@ function MenuItem({
   active,
   count,
   disabled,
+  expanded,
+  inset,
   label,
   onPress,
 }: {
   active: boolean;
   count?: number;
   disabled?: boolean;
+  expanded?: boolean;
+  inset?: boolean;
   label: string;
   onPress: () => void;
 }) {
   return (
-    <Pressable disabled={disabled} style={[styles.menuItem, active && styles.menuItemActive, disabled && styles.menuItemDisabled]} onPress={onPress}>
+    <Pressable disabled={disabled} style={[styles.menuItem, inset && styles.menuItemInset, active && styles.menuItemActive, disabled && styles.menuItemDisabled]} onPress={onPress}>
       <Text style={[styles.menuItemText, active && styles.menuItemTextActive]} numberOfLines={1}>{label}</Text>
       {typeof count === 'number' ? <Text style={[styles.menuItemCount, active && styles.menuItemCountActive]}>{count}</Text> : null}
+      {expanded ? <Text style={[styles.menuItemChevron, active && styles.menuItemTextActive]}>^</Text> : null}
     </Pressable>
+  );
+}
+
+function InitialsAvatar({ initials, size }: { initials: string; size: number }) {
+  return (
+    <View style={[styles.initialsAvatar, { backgroundColor: getInitialsColor(initials), borderRadius: Math.round(size * 0.22), height: size, width: size }]}>
+      <Text style={[styles.initialsAvatarText, { fontSize: Math.max(16, Math.round(size * 0.42)) }]}>{initials}</Text>
+    </View>
   );
 }
 
@@ -4469,6 +5859,8 @@ function PerfilForm({
   onChange,
   onReset,
   onSelectAvatar,
+  onSelectInitialsAvatar,
+  onSelectPresetAvatar,
   onSave,
 }: {
   form: PerfilFormState;
@@ -4477,6 +5869,8 @@ function PerfilForm({
   onChange: <K extends keyof PerfilFormState>(key: K, value: PerfilFormState[K]) => void;
   onReset: () => void;
   onSelectAvatar: () => void;
+  onSelectInitialsAvatar: () => void;
+  onSelectPresetAvatar: (avatar: string) => void;
   onSave: () => void;
 }) {
   const tiposCliente = lookup?.tiposCliente.length ? lookup.tiposCliente : [
@@ -4486,6 +5880,9 @@ function PerfilForm({
   const identificaciones = lookup?.tiposIdentificacion ?? [];
   const esEmpresa = form.tipoCliente === 2;
   const selectedAvatar = form.avatarUrl.toLowerCase().includes('images/avatars/') ? form.avatarUrl.split('/').pop() || 'Avatar-Boy.jpg' : '';
+  const initials = getInitials(form.nombres, form.apellidos, form.nombreEmpresa);
+  const usesInitials = isInitialsAvatar(form.avatarUrl);
+  const usesPersonalPhoto = isPersonalPhoto(form.avatarUrl);
   const displayName = esEmpresa
     ? form.nombreEmpresa || 'Empresa'
     : [form.nombres, form.apellidos].filter(Boolean).join(' ') || 'Usuario';
@@ -4495,24 +5892,34 @@ function PerfilForm({
       <Text style={styles.clientFormTitle}>Mi perfil</Text>
 
       <View style={styles.profileAvatarPanel}>
-        <Image source={{ uri: resolveImageUrl(form.avatarUrl) }} style={styles.profileAvatarImage} />
+        {usesInitials ? (
+          <InitialsAvatar initials={initials} size={82} />
+        ) : (
+          <Image source={{ uri: resolveImageUrl(form.avatarUrl) }} style={styles.profileAvatarImage} />
+        )}
         <View style={styles.profileAvatarInfo}>
           <Text style={styles.profileAvatarName} numberOfLines={2}>{displayName}</Text>
-          <Text style={styles.profileAvatarMeta}>Avatar seleccionado</Text>
-          <Text style={styles.profileAvatarCount}>{AVATARS.length} opciones</Text>
+          <Text style={styles.profileAvatarMeta}>{usesPersonalPhoto ? 'Foto personal cargada' : usesInitials ? 'Iniciales del nombre' : 'Avatar seleccionado'}</Text>
+          <Text style={styles.profileAvatarCount}>{AVATARS.length} avatares disponibles</Text>
           <Pressable style={styles.profileUploadButton} onPress={onSelectAvatar}>
             <Text style={styles.profileUploadText}>Subir foto propia</Text>
           </Pressable>
         </View>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.avatarStrip}>
+        <Pressable
+          style={[styles.avatarChoice, usesInitials && styles.avatarChoiceActive]}
+          onPress={onSelectInitialsAvatar}
+        >
+          <InitialsAvatar initials={initials} size={42} />
+        </Pressable>
         {AVATARS.map((avatar) => (
           <Pressable
             key={`perfil-${avatar}`}
-            style={[styles.avatarChoice, selectedAvatar === avatar && styles.avatarChoiceActive]}
-            onPress={() => onChange('avatarUrl', avatarPath(avatar))}
+            style={[styles.avatarChoice, !usesPersonalPhoto && selectedAvatar === avatar && styles.avatarChoiceActive]}
+            onPress={() => onSelectPresetAvatar(avatar)}
           >
-            <Image source={{ uri: avatarUrl(avatar) }} style={styles.avatarChoiceImage} />
+            <Image source={avatarImageSource(avatar)} style={styles.avatarChoiceImage} />
           </Pressable>
         ))}
       </ScrollView>
@@ -4750,7 +6157,7 @@ function AppLaunchScreen() {
     );
     const progressAnimation = Animated.timing(progress, {
       toValue: 1,
-      duration: 8000,
+      duration: 6000,
       easing: Easing.linear,
       useNativeDriver: false,
     });
@@ -5492,6 +6899,15 @@ const styles = StyleSheet.create({
     height: 42,
     width: 42,
   },
+  initialsAvatar: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  initialsAvatarText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
   registerActions: {
     gap: 10,
     marginTop: 16,
@@ -5668,6 +7084,16 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingBottom: 16,
   },
+  menuSection: {
+    gap: 6,
+  },
+  menuChildren: {
+    borderLeftColor: '#D8EAF7',
+    borderLeftWidth: 1,
+    gap: 6,
+    marginLeft: 14,
+    paddingLeft: 10,
+  },
   menuItem: {
     alignItems: 'center',
     backgroundColor: '#F6F9FC',
@@ -5678,6 +7104,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     minHeight: 48,
     paddingHorizontal: 14,
+  },
+  menuItemInset: {
+    backgroundColor: '#FFFFFF',
+    minHeight: 44,
+    paddingHorizontal: 12,
   },
   menuItemActive: {
     backgroundColor: '#0072BD',
@@ -5709,6 +7140,12 @@ const styles = StyleSheet.create({
   menuItemCountActive: {
     backgroundColor: 'rgba(255,255,255,0.22)',
     color: '#FFFFFF',
+  },
+  menuItemChevron: {
+    color: '#6D7F91',
+    fontSize: 14,
+    fontWeight: '900',
+    marginLeft: 8,
   },
   menuLogoutButton: {
     alignItems: 'center',
