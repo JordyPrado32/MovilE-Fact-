@@ -2628,6 +2628,20 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     ]);
   };
 
+  const showAdminCrudPending = (action: string, item?: AdminMobileItem) => {
+    const moduleName = getWorkspaceTitle(activeView);
+    const itemName = item?.title || item?.id || 'este registro';
+
+    setDirectoryMessage({
+      type: 'info',
+      text: `${action} en ${moduleName} aun no tiene formulario o endpoint CRUD conectado para ${item ? itemName : 'movil'}.`,
+    });
+  };
+
+  const showAdminItemDetail = (item: AdminMobileItem) => {
+    Alert.alert(item.title || 'Detalle', [item.subtitle, item.meta, item.detail].filter(Boolean).join('\n') || item.id);
+  };
+
   const modules: MobileModule[] = EFACT_MODULES.filter((module) => authorizedViews.has(module.view)).map((module) => {
     const count =
       module.view === 'clientes'
@@ -3222,6 +3236,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onRefresh={() => setReloadKey((value) => value + 1)}
                 onSearch={setSearch}
                 onTabChange={(tab) => setAdminTabByView((current) => ({ ...current, [activeView]: tab }))}
+                onCreate={() => showAdminCrudPending('Registrar')}
+                onView={showAdminItemDetail}
+                onEdit={(item) => showAdminCrudPending('Editar', item)}
+                onDelete={(item) => showAdminCrudPending('Eliminar', item)}
               />
             ) : null}
 
@@ -3364,6 +3382,10 @@ function AdminModuleScreen({
   onRefresh,
   onSearch,
   onTabChange,
+  onCreate,
+  onView,
+  onEdit,
+  onDelete,
 }: {
   view: WorkspaceView;
   search: string;
@@ -3374,6 +3396,10 @@ function AdminModuleScreen({
   onRefresh: () => void;
   onSearch: (value: string) => void;
   onTabChange: (tab: string) => void;
+  onCreate: () => void;
+  onView: (item: AdminMobileItem) => void;
+  onEdit: (item: AdminMobileItem) => void;
+  onDelete: (item: AdminMobileItem) => void;
 }) {
   const config = getAdminModuleConfig(view);
   const selectedTab = activeTab ?? config.tabs?.[0];
@@ -3394,6 +3420,9 @@ function AdminModuleScreen({
           ))}
         </ScrollView>
       ) : null}
+      <View style={styles.actionRow}>
+        <PrimaryButton label="Registrar" loading={false} onPress={onCreate} />
+      </View>
       <View style={styles.formSectionBox}>
         <View style={styles.adminSearchHeader}>
           <View style={styles.adminSearchTitleBlock}>
@@ -3414,7 +3443,13 @@ function AdminModuleScreen({
         {!loading && items.length > 0 ? (
           <View style={styles.listStack}>
             {items.map((item, index) => (
-              <AdminMobileItemCard key={`${view}-${item.id || 'item'}-${index}`} item={item} />
+              <AdminMobileItemCard
+                key={`${view}-${item.id || 'item'}-${index}`}
+                item={item}
+                onView={() => onView(item)}
+                onEdit={() => onEdit(item)}
+                onDelete={() => onDelete(item)}
+              />
             ))}
           </View>
         ) : null}
@@ -3423,7 +3458,17 @@ function AdminModuleScreen({
   );
 }
 
-function AdminMobileItemCard({ item }: { item: AdminMobileItem }) {
+function AdminMobileItemCard({
+  item,
+  onView,
+  onEdit,
+  onDelete,
+}: {
+  item: AdminMobileItem;
+  onView: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   return (
     <View style={styles.clientCard}>
       <View style={styles.clientCardHeader}>
@@ -3453,6 +3498,17 @@ function AdminMobileItemCard({ item }: { item: AdminMobileItem }) {
             <Text style={styles.clientDetailValue}>{item.detail}</Text>
           </View>
         ) : null}
+      </View>
+      <View style={styles.clientActions}>
+        <Pressable style={styles.smallActionButton} onPress={onView}>
+          <Text style={styles.smallActionText}>Ver</Text>
+        </Pressable>
+        <Pressable style={styles.smallActionButton} onPress={onEdit}>
+          <Text style={styles.smallActionText}>Editar</Text>
+        </Pressable>
+        <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={onDelete}>
+          <Text style={[styles.smallActionText, styles.smallDangerText]}>Eliminar</Text>
+        </Pressable>
       </View>
     </View>
   );

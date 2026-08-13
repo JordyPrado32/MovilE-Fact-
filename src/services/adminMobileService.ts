@@ -35,27 +35,59 @@ export async function getAdminMobileModule(module: string, search = '', tab = ''
   if (search.trim()) params.set('search', search.trim());
   const query = params.toString();
   const response = await apiRequest<ApiRow[] | Record<string, unknown>>(`${endpoint}${query ? `?${query}` : ''}`);
-  const data = normalizeRows(response);
+  const data = normalizeRows(response, module, tab);
 
   return { items: data.map((row) => toAdminItem(module, tab, row)) };
 }
 
-function normalizeRows(response: ApiRow[] | Record<string, unknown>) {
+function normalizeRows(response: ApiRow[] | Record<string, unknown>, module: string, tab: string): ApiRow[] {
   if (Array.isArray(response)) return response;
 
+  const tabKey = normalizeKey(tab);
+  const moduleKey = normalizeKey(module);
   const values = [
+    ...getTabValues(response, tabKey),
     response.items,
+    response.Items,
     response.data,
+    response.Data,
     response.registros,
+    response.Registros,
     response.result,
+    response.Result,
     response.results,
+    response.Results,
+    response[module],
+    response[moduleKey],
+    response[moduleKey.replace(/-/g, '')],
+    response.retenciones,
+    response.Retenciones,
   ];
 
   for (const value of values) {
     if (Array.isArray(value)) return value as ApiRow[];
+    if (isRecord(value)) {
+      const nestedRows = normalizeRows(value, module, tab);
+      if (nestedRows.length) return nestedRows;
+    }
+  }
+
+  const firstArray = Object.values(response).find(Array.isArray);
+  if (Array.isArray(firstArray)) return firstArray as ApiRow[];
+
+  if (Object.keys(response).length) {
+    return [response];
   }
 
   return [];
+}
+
+function getTabValues(row: ApiRow, normalizedTab: string) {
+  if (!normalizedTab) return [];
+
+  return Object.entries(row)
+    .filter(([key]) => normalizeKey(key).includes(normalizedTab))
+    .map(([, value]) => value);
 }
 
 function toAdminItem(module: string, tab: string, row: ApiRow): AdminMobileItem {
@@ -74,12 +106,17 @@ function toAdminItem(module: string, tab: string, row: ApiRow): AdminMobileItem 
   }
 
   if (module === 'impuestos') {
+    const descripcion = text(pickValue(row, ['descripcion', 'Descripcion', 'nombre', 'Nombre']));
+    const codigo = text(pickValue(row, ['codigo', 'Codigo', 'codSri', 'CodSri', 'codigoSri', 'CodigoSri']));
+    const valor = text(pickValue(row, ['valor', 'Valor', 'porcentaje', 'Porcentaje']));
+    const valorCalculo = text(pickValue(row, ['valorCalculo', 'ValorCalculo', 'calculo', 'Calculo']));
+
     return {
       id: getRowId(row),
-      title: text(row.descripcion),
-      subtitle: tab === 'Porcentajes IVA' ? `Valor ${text(row.valor)}` : `Codigo ${text(row.codigo)}`,
-      meta: tab === 'Porcentajes IVA' ? text(row.valor) : text(row.codigo),
-      detail: tab === 'Porcentajes IVA' ? `Calculo ${text(row.valorCalculo)}` : '',
+      title: descripcion || codigo,
+      subtitle: tab === 'Porcentajes IVA' ? `Valor ${valor}` : `Codigo ${codigo}`,
+      meta: tab === 'Porcentajes IVA' ? valor : codigo,
+      detail: tab === 'Porcentajes IVA' && valorCalculo ? `Calculo ${valorCalculo}` : '',
     };
   }
 
@@ -119,12 +156,17 @@ function toAdminItem(module: string, tab: string, row: ApiRow): AdminMobileItem 
   }
 
   if (module === 'retenciones') {
+    const codigo = text(pickValue(row, ['codigo', 'Codigo', 'codigoRetencion', 'CodigoRetencion', 'codRetencion', 'CodRetencion', 'codSri', 'CodSri', 'codigoSri', 'CodigoSri']));
+    const descripcion = text(pickValue(row, ['descripcion', 'Descripcion', 'nombre', 'Nombre', 'concepto', 'Concepto', 'sustento', 'Sustento']));
+    const valor = text(pickValue(row, ['valor', 'Valor', 'porcentaje', 'Porcentaje', 'porcentajeRetencion', 'PorcentajeRetencion', 'tarifa', 'Tarifa']));
+    const detalle = text(pickValue(row, ['informacionExtra', 'InformacionExtra', 'detalle', 'Detalle', 'descripcionSri', 'DescripcionSri', 'tipo', 'Tipo']));
+
     return {
       id: getRowId(row),
-      title: text(row.descripcion),
-      subtitle: tab || 'IVA',
-      meta: text(row.valor),
-      detail: text(row.informacionExtra),
+      title: descripcion || codigo,
+      subtitle: [tab || 'IVA', codigo ? `Codigo ${codigo}` : ''].filter(Boolean).join(' - '),
+      meta: valor,
+      detail: detalle,
     };
   }
 
@@ -140,12 +182,37 @@ function toAdminItem(module: string, tab: string, row: ApiRow): AdminMobileItem 
 
 function getRowId(row: ApiRow) {
   return text(row.id) ||
+    text(row.Id) ||
+    text(row.ID) ||
+    text(row.idRetencion) ||
+    text(row.IdRetencion) ||
+    text(row.codigoRetencion) ||
+    text(row.CodigoRetencion) ||
     text(row.codigo) ||
+    text(row.Codigo) ||
     text(row.sec) ||
     text(row.Sec) ||
     text(row.idLog) ||
-    text(row.idUsuario) ||
-    text(row.Id);
+    text(row.idUsuario);
+}
+
+function pickValue(row: ApiRow, keys: string[]) {
+  for (const key of keys) {
+    if (row[key] !== null && row[key] !== undefined) return row[key];
+  }
+
+  const normalizedKeys = keys.map(normalizeKey);
+  const entry = Object.entries(row).find(([key, value]) => value !== null && value !== undefined && normalizedKeys.includes(normalizeKey(key)));
+
+  return entry?.[1];
+}
+
+function normalizeKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function isRecord(value: unknown): value is ApiRow {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function text(value: unknown) {
