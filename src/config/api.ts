@@ -4,3 +4,4 @@ export const MENUS_BY_ROLE_PATH = process.env.EXPO_PUBLIC_MENUS_BY_ROLE_PATH?.tr
 export const PRODUCTOS_PATH = process.env.EXPO_PUBLIC_PRODUCTOS_PATH?.trim() || '/api/productos';
 export const CATEGORIAS_PATH = process.env.EXPO_PUBLIC_CATEGORIAS_PATH?.trim() || '/api/categorias';
 export const SUBCATEGORIAS_PATH = process.env.EXPO_PUBLIC_SUBCATEGORIAS_PATH?.trim() || '/api/subcategorias';
+export const RETENCIONES_GENERADAS_PATH = process.env.EXPO_PUBLIC_RETENCIONES_GENERADAS_PATH?.trim() || '/api/retenciones';

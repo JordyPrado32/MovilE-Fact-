@@ -41,6 +41,8 @@ export type FacturaPreparacion = {
   formasPago?: { id?: number; codigo?: string | null; descripcion?: string | null; descripcionSri?: string | null }[];
 };
 
+type ApiRow = Record<string, unknown>;
+
 export type FacturaLineaInput = {
   producto: FacturaProducto;
   cantidad: number;
@@ -64,8 +66,9 @@ export function getFacturaPreparacion(userId: number) {
   return apiRequest<FacturaPreparacion>(`/api/facturas/preparacion?idUsuario=${userId}`);
 }
 
-export function getFacturas(userId: number, top = 0) {
-  return apiRequest<FacturaListItem[]>(`/api/facturas?idUsuario=${userId}&top=${top}`);
+export async function getFacturas(userId: number, top = 0) {
+  const response = await apiRequest<ApiRow[] | Record<string, unknown>>(`/api/facturas?idUsuario=${userId}&top=${top}`);
+  return normalizeFacturaRows(response).map(toFacturaListItem);
 }
 
 export function buscarFacturaClientes(userId: number, filtro: string) {
@@ -159,4 +162,114 @@ export function enviarFacturaCorreo(userId: number, codfactura: number) {
 
 export function anularFactura(userId: number, codfactura: number) {
   return apiRequest<void>(`/api/facturas/${codfactura}?idUsuario=${userId}`, { method: 'DELETE' });
+}
+
+function normalizeFacturaRows(response: ApiRow[] | Record<string, unknown>): ApiRow[] {
+  if (Array.isArray(response)) return response;
+
+  const values = [
+    response.items,
+    response.Items,
+    response.data,
+    response.Data,
+    response.facturas,
+    response.Facturas,
+    response.registros,
+    response.Registros,
+    response.result,
+    response.Result,
+    response.results,
+    response.Results,
+  ];
+
+  for (const value of values) {
+    if (Array.isArray(value)) return value as ApiRow[];
+    if (isRecord(value)) {
+      const nestedRows = normalizeFacturaRows(value);
+      if (nestedRows.length) return nestedRows;
+    }
+  }
+
+  const firstArray = Object.values(response).find(Array.isArray);
+  if (Array.isArray(firstArray)) return firstArray as ApiRow[];
+
+  return Object.keys(response).length ? [response] : [];
+}
+
+function toFacturaListItem(row: ApiRow): FacturaListItem {
+  const serie = text(pickValue(row, ['serie', 'Serie', 'serieFactura', 'SerieFactura']));
+  const numero = text(pickValue(row, ['numfactura', 'NumFactura', 'numeroFactura', 'NumeroFactura', 'numero', 'Numero', 'secuencial', 'Secuencial']));
+  const numeroCompleto = text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento', 'comprobante', 'Comprobante']));
+
+  return {
+    codfactura: numberValue(pickValue(row, ['codfactura', 'CodFactura', 'codFactura', 'idFactura', 'IdFactura', 'id', 'Id', 'codigo', 'Codigo', 'sec', 'Sec'])) ?? 0,
+    numfactura: numero || null,
+    numeroCompleto: numeroCompleto || [serie, numero].filter(Boolean).join('-') || null,
+    serie: serie || null,
+    fechaEmision: text(pickValue(row, ['fechaEmision', 'FechaEmision', 'fechaemision', 'Fechaemision', 'fecha', 'Fecha', 'fechaDocumento', 'FechaDocumento', 'fechaSustento', 'FechaSustento', 'fechaentrega', 'FechaEntrega', 'fechaCreacion', 'FechaCreacion', 'createdAt', 'CreatedAt'])) || null,
+    estadoSri: text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estadoAutorizacion', 'EstadoAutorizacion', 'estado', 'Estado'])) || null,
+    autorizado: booleanValue(pickValue(row, ['autorizado', 'Autorizado', 'estaAutorizado', 'EstaAutorizado'])),
+    numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'autorizacion', 'Autorizacion'])) || null,
+    mensajeSri: text(pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje'])) || null,
+    total: numberValue(pickValue(row, ['total', 'Total', 'valortotal', 'ValorTotal', 'valorTotal', 'totalFactura', 'TotalFactura', 'totalComprobante', 'TotalComprobante', 'totalDocumento', 'TotalDocumento', 'montoTotal', 'MontoTotal', 'importeTotal', 'ImporteTotal', 'valorDocumento', 'ValorDocumento', 'totalGeneral', 'TotalGeneral', 'monto', 'Monto', 'importe', 'Importe'])),
+    totalAbonado: numberValue(pickValue(row, ['totalAbonado', 'TotalAbonado', 'abonado', 'Abonado', 'valorAbonado', 'ValorAbonado', 'montoAbonado', 'MontoAbonado'])),
+    saldoPendiente: numberValue(pickValue(row, ['saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo', 'valorPendiente', 'ValorPendiente', 'montoPendiente', 'MontoPendiente'])),
+    tipopago: text(pickValue(row, ['tipopago', 'TipoPago', 'tipoPago', 'formaPago', 'FormaPago'])) || null,
+    estadoPago: text(pickValue(row, ['estadoPago', 'EstadoPago'])) || null,
+    cliente: text(pickValue(row, ['cliente', 'Cliente', 'nombreCliente', 'NombreCliente', 'razonSocial', 'RazonSocial', 'nombrerazonsocial', 'NombreRazonSocial'])) || null,
+    identificacionCliente: text(pickValue(row, ['identificacionCliente', 'IdentificacionCliente', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc', 'cedula', 'Cedula'])) || null,
+    estado: booleanValue(pickValue(row, ['estado', 'Estado', 'activo', 'Activo'])),
+  };
+}
+
+function pickValue(row: ApiRow, keys: string[]) {
+  for (const key of keys) {
+    if (row[key] !== null && row[key] !== undefined) return row[key];
+  }
+
+  const normalizedKeys = keys.map(normalizeKey);
+  const entry = Object.entries(row).find(([key, value]) => value !== null && value !== undefined && normalizedKeys.includes(normalizeKey(key)));
+
+  return entry?.[1];
+}
+
+function normalizeKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function isRecord(value: unknown): value is ApiRow {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function text(value: unknown) {
+  if (value === null || value === undefined) return '';
+  return String(value);
+}
+
+function numberValue(value: unknown) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  let normalized = String(value).trim().replace(/[^\d,.-]/g, '');
+  if (!normalized) return null;
+  const lastComma = normalized.lastIndexOf(',');
+  const lastDot = normalized.lastIndexOf('.');
+  if (lastComma > -1 && lastDot > -1) {
+    normalized = lastComma > lastDot ? normalized.replace(/\./g, '').replace(',', '.') : normalized.replace(/,/g, '');
+  } else if (lastComma > -1) {
+    normalized = normalized.replace(',', '.');
+  }
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : null;
+}
+
+function booleanValue(value: unknown) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'si', 'sí', 's', 'autorizado', 'activo'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'n', 'pendiente', 'inactivo', 'anulado'].includes(normalized)) return false;
+  }
+
+  return null;
 }
