@@ -1,9 +1,10 @@
 import { StatusBar } from 'expo-status-bar';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ActivityIndicator,
+  AccessibilityInfo,
   Alert,
   Animated,
   AppState,
@@ -51,6 +52,41 @@ import {
 } from './src/utils/authValidation';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'change';
+
+let reduceMotionEnabled = false;
+const reduceMotionListeners = new Set<() => void>();
+
+AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+  reduceMotionEnabled = enabled;
+  reduceMotionListeners.forEach((listener) => listener());
+});
+
+AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
+  reduceMotionEnabled = enabled;
+  reduceMotionListeners.forEach((listener) => listener());
+});
+
+function useReducedMotion() {
+  return useSyncExternalStore(
+    (listener) => {
+      reduceMotionListeners.add(listener);
+      return () => reduceMotionListeners.delete(listener);
+    },
+    () => reduceMotionEnabled,
+    () => false,
+  );
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => clearTimeout(timeout);
+  }, [delayMs, value]);
+
+  return debouncedValue;
+}
 type WorkspaceView =
   | 'portal'
   | 'dashboard'
@@ -273,6 +309,7 @@ type PuntoFormState = {
 const NUMERICA_URL = 'https://numericasoftware.com/';
 const EFACT_PUBLIC_URL = 'https://efact.numericasoftware.com';
 const AVATAR_BASE_URL = 'https://efact.numericasoftware.com/images/Avatars';
+const LAUNCH_DURATION_MS = 1600;
 const SUPER_ADMIN_TIPO_USUARIO = 2;
 const BASE_EFACT_MOBILE_MENUS: DynamicMenu[] = [
   { id: -1001, nombre: 'Inicio', ruta: '/dashboard', icono: 'ri-dashboard-line', orden: 1, estado: true },
@@ -1195,7 +1232,7 @@ export default function App() {
 
   useEffect(() => {
     let mounted = true;
-    const minSplash = delay(6000);
+    const minSplash = delay(LAUNCH_DURATION_MS);
 
     const authCheck = checkAuth()
       .then((response) => {
@@ -1244,7 +1281,7 @@ export default function App() {
       try {
         const response = await login({ username, password, recordarme });
         setSessionToken(getLoginToken(response));
-        await delay(900);
+        await delay(350);
 
         if (response.requierePoliticas) {
           setMessage({ type: 'info', text: 'Debes aceptar las politicas de privacidad antes de continuar.' });
@@ -1351,7 +1388,7 @@ export default function App() {
 
   return (
     <ScreenFrame centered={mode !== 'register'}>
-      <AuthCard wide={mode === 'register'}>
+      <AuthCard key={mode} wide={mode === 'register'}>
         {mode === 'login' ? (
           <>
             <BrandMark />
@@ -1526,6 +1563,9 @@ export default function App() {
 function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; onLogout: () => void }) {
   const [activeView, setActiveView] = useState<WorkspaceView>(isSuperAdmin(currentUser) ? 'portal' : 'dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
+  const drawerProgress = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReducedMotion();
   const [menus, setMenus] = useState<DynamicMenu[]>(getInitialMenus(currentUser));
   const [loadingMenus, setLoadingMenus] = useState(false);
   const [menuMessage, setMenuMessage] = useState<MessageState>(null);
@@ -1554,6 +1594,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [loadingProductoLookups, setLoadingProductoLookups] = useState(false);
   const [directoryMessage, setDirectoryMessage] = useState<MessageState>(null);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 350);
   const [reloadKey, setReloadKey] = useState(0);
   const [adminItems, setAdminItems] = useState<AdminMobileItem[]>([]);
   const [adminTabByView, setAdminTabByView] = useState<Record<string, string>>({});
@@ -1694,7 +1735,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setLoadingAdminItems(true);
     setDirectoryMessage(null);
 
-    getAdminMobileModule(module, search, activeTab)
+    getAdminMobileModule(module, debouncedSearch, activeTab)
       .then((data) => {
         if (mounted) setAdminItems(data.items ?? []);
       })
@@ -1712,7 +1753,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     return () => {
       mounted = false;
     };
-  }, [activeView, adminTabByView, authorizedViews, reloadKey, search]);
+  }, [activeView, adminTabByView, authorizedViews, debouncedSearch, reloadKey]);
 
   useEffect(() => {
     const module = getOperationalModuleSlug(activeView);
@@ -1724,7 +1765,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setLoadingOperationalItems(true);
     setDirectoryMessage(null);
 
-    getOperationalMobileModule(module, search, activeTab, { userId: catalogUserId })
+    getOperationalMobileModule(module, debouncedSearch, activeTab, { userId: catalogUserId })
       .then((data) => {
         if (mounted) setOperationalItems(data.items ?? []);
       })
@@ -1742,7 +1783,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     return () => {
       mounted = false;
     };
-  }, [activeView, operationalTabByView, authorizedViews, catalogUserId, reloadKey, search]);
+  }, [activeView, operationalTabByView, authorizedViews, catalogUserId, debouncedSearch, reloadKey]);
 
   useEffect(() => {
     if (!catalogUserId || !authorizedViews.has(activeView)) return;
@@ -4225,6 +4266,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   const openView = (view: WorkspaceView) => {
     setMenuOpen(false);
+    setSearch('');
 
     if (view === 'portal' && canUsePortal) {
       setActiveView(view);
@@ -4242,6 +4284,29 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
 
     setActiveView('no-autorizado');
+  };
+
+  useEffect(() => {
+    if (!menuOpen) {
+      drawerProgress.setValue(0);
+      return;
+    }
+
+    Animated.timing(drawerProgress, {
+      toValue: 1,
+      duration: reduceMotion ? 0 : 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [drawerProgress, menuOpen, reduceMotion]);
+
+  const toggleMenuSection = (key: string) => {
+    setExpandedMenus((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
   const hasActiveEmisor = emisores.some((emisor) => emisor.estado !== false);
@@ -4345,6 +4410,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     const active = node.view === activeView || Boolean(node.children?.some((child) => child.view === activeView));
     const enabledChildren = node.children?.filter((child) => !child.disabled) ?? [];
     const disabled = node.disabled && enabledChildren.length === 0;
+    const hasChildren = Boolean(node.children?.length);
+    const expanded = hasChildren && (expandedMenus.has(node.key) || active);
 
     return (
       <View key={node.key} style={node.children?.length ? styles.menuSection : undefined}>
@@ -4352,16 +4419,22 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           active={active}
           count={node.count}
           disabled={disabled}
-          expanded={Boolean(node.children?.length)}
+          expanded={expanded}
+          hasChildren={hasChildren}
           inset={inset}
           label={node.label}
+          onToggle={() => toggleMenuSection(node.key)}
           onPress={() => {
+            if (hasChildren && !node.view) {
+              toggleMenuSection(node.key);
+              return;
+            }
             if (node.view && !disabled) openView(node.view);
           }}
         />
-        {node.children?.length ? (
+        {expanded ? (
           <View style={styles.menuChildren}>
-            {node.children.map((child) => renderDrawerNode(child, true))}
+            {node.children?.map((child) => renderDrawerNode(child, true))}
           </View>
         ) : null}
       </View>
@@ -4380,15 +4453,16 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             </View>
           </View>
           <View style={styles.workspaceHeaderActions}>
-            <Pressable style={styles.menuButton} onPress={() => setMenuOpen(true)}>
+            <Pressable accessibilityLabel="Abrir menu principal" accessibilityRole="button" hitSlop={6} style={styles.menuButton} onPress={() => setMenuOpen(true)}>
               <Text style={styles.menuButtonIcon}>☰</Text>
             </Pressable>
-            <Pressable style={styles.logoutButton} onPress={onLogout}>
+            <Pressable accessibilityLabel="Cerrar sesion" accessibilityRole="button" style={styles.logoutButton} onPress={onLogout}>
               <Text style={styles.logoutText}>Salir</Text>
             </Pressable>
           </View>
         </View>
 
+        <ScreenTransition key={activeView}>
         {menuMessage ? <MessageBox message={menuMessage} /> : null}
 
         {loadingMenus ? (
@@ -4552,7 +4626,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     onSave={saveCliente}
                   />
                 ) : null}
-                <Field label="Buscar cliente" value={search} onChangeText={setSearch} autoCapitalize="none" />
+                <SearchField label="Buscar clientes" placeholder="Nombre, identificacion, correo o telefono" value={search} onChangeText={setSearch} resultCount={filteredClientes.length} totalCount={clientes.length} />
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingClientes ? (
                   <View style={styles.directoryLoading}>
@@ -4561,19 +4635,21 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   </View>
                 ) : null}
                 {!loadingClientes && filteredClientes.length === 0 ? (
-                  <EmptyState title="Sin clientes para mostrar" text="Cuando existan registros, apareceran aqui." />
+                  <EmptyState title={search ? 'Sin coincidencias' : 'Sin clientes para mostrar'} text={search ? 'Prueba con otro nombre, identificacion o correo.' : 'Cuando existan registros, apareceran aqui.'} />
                 ) : null}
-                <View style={styles.listStack}>
-                  {filteredClientes.map((cliente, index) => (
+                <ProgressiveList
+                  items={filteredClientes}
+                  resetKey={search}
+                  keyExtractor={(cliente, index) => `cliente-${cliente.codcliente}-${cliente.numeroidentificacion ?? index}`}
+                  renderItem={(cliente) => (
                     <ClienteCard
-                      key={`cliente-${cliente.codcliente}-${cliente.numeroidentificacion ?? index}`}
                       cliente={cliente}
                       tipoClienteLabel={getTipoClienteLabel(cliente.tipoCliente, clienteLookups)}
                       onEdit={() => openEditCliente(cliente)}
                       onDelete={() => confirmDeleteCliente(cliente)}
                     />
-                  ))}
-                </View>
+                  )}
+                />
               </>
             ) : null}
 
@@ -4596,7 +4672,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     onSave={saveProducto}
                   />
                 ) : null}
-                <Field label="Buscar producto" value={search} onChangeText={setSearch} autoCapitalize="none" />
+                <SearchField label="Buscar productos" placeholder="Codigo, nombre, categoria o descripcion" value={search} onChangeText={setSearch} resultCount={filteredProductos.length} totalCount={productos.length} />
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingProductos ? (
                   <View style={styles.directoryLoading}>
@@ -4605,18 +4681,20 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   </View>
                 ) : null}
                 {!loadingProductos && filteredProductos.length === 0 ? (
-                  <EmptyState title="Sin productos para mostrar" text="Cuando existan registros, apareceran aqui." />
+                  <EmptyState title={search ? 'Sin coincidencias' : 'Sin productos para mostrar'} text={search ? 'Prueba con otro codigo, nombre o categoria.' : 'Cuando existan registros, apareceran aqui.'} />
                 ) : null}
-                <View style={styles.listStack}>
-                  {filteredProductos.map((producto, index) => (
+                <ProgressiveList
+                  items={filteredProductos}
+                  resetKey={search}
+                  keyExtractor={(producto, index) => `producto-${producto.codproducto}-${producto.codigo ?? producto.nombre}-${index}`}
+                  renderItem={(producto) => (
                     <ProductoCard
-                      key={`producto-${producto.codproducto}-${producto.codigo ?? producto.nombre}-${index}`}
                       producto={producto}
                       onEdit={() => openEditProducto(producto)}
                       onDelete={() => confirmDeleteProducto(producto)}
                     />
-                  ))}
-                </View>
+                  )}
+                />
               </>
             ) : null}
 
@@ -4652,11 +4730,13 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     onSave={saveSubcategoria}
                   />
                 ) : null}
-                <Field
-                  label={categoriaTab === 'categorias' ? 'Buscar categoria' : 'Buscar subcategoria'}
+                <SearchField
+                  label={categoriaTab === 'categorias' ? 'Buscar categorias' : 'Buscar subcategorias'}
+                  placeholder="Escribe una descripcion"
                   value={search}
                   onChangeText={setSearch}
-                  autoCapitalize="none"
+                  resultCount={categoriaTab === 'categorias' ? filteredCategorias.length : filteredSubcategorias.length}
+                  totalCount={categoriaTab === 'categorias' ? categorias.length : subcategorias.length}
                 />
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingCategorias ? (
@@ -4671,19 +4751,26 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 {!loadingCategorias && categoriaTab === 'subcategorias' && filteredSubcategorias.length === 0 ? (
                   <EmptyState title="Sin subcategorias para mostrar" text="No es obligatorio crear subcategorias." />
                 ) : null}
-                <View style={styles.listStack}>
-                  {categoriaTab === 'categorias'
-                    ? filteredCategorias.map((categoria, index) => (
+                {categoriaTab === 'categorias' ? (
+                  <ProgressiveList
+                    items={filteredCategorias}
+                    resetKey={`${categoriaTab}-${search}`}
+                    keyExtractor={(categoria, index) => `categoria-${categoria.idCategoria}-${categoria.descripcion}-${index}`}
+                    renderItem={(categoria) => (
                         <CategoriaCard
-                          key={`categoria-${categoria.idCategoria}-${categoria.descripcion}-${index}`}
                           categoria={categoria}
                           onEdit={() => openEditCategoria(categoria)}
                           onDelete={() => confirmDeleteCategoria(categoria)}
                         />
-                      ))
-                    : filteredSubcategorias.map((subcategoria, index) => (
+                    )}
+                  />
+                ) : (
+                  <ProgressiveList
+                    items={filteredSubcategorias}
+                    resetKey={`${categoriaTab}-${search}`}
+                    keyExtractor={(subcategoria, index) => `subcategoria-${subcategoria.idSubcategoria}-${subcategoria.descripcion}-${index}`}
+                    renderItem={(subcategoria) => (
                         <SubcategoriaCard
-                          key={`subcategoria-${subcategoria.idSubcategoria}-${subcategoria.descripcion}-${index}`}
                           subcategoria={subcategoria}
                           categoriaDescripcion={
                             subcategoria.categoriaDescripcion ??
@@ -4692,8 +4779,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                           onEdit={() => openEditSubcategoria(subcategoria)}
                           onDelete={() => confirmDeleteSubcategoria(subcategoria)}
                         />
-                      ))}
-                </View>
+                    )}
+                  />
+                )}
               </>
             ) : null}
 
@@ -4716,7 +4804,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     onSave={saveEmisor}
                   />
                 ) : null}
-                <Field label="Buscar emisor" value={search} onChangeText={setSearch} autoCapitalize="none" />
+                <SearchField label="Buscar emisores" placeholder="Razon social, RUC, nombre comercial o correo" value={search} onChangeText={setSearch} resultCount={filteredEmisores.length} totalCount={emisores.length} />
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingEmisores ? (
                   <View style={styles.directoryLoading}>
@@ -4727,16 +4815,18 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 {!loadingEmisores && filteredEmisores.length === 0 ? (
                   <EmptyState title="Sin emisores para mostrar" text="Cuando existan registros, apareceran aqui." />
                 ) : null}
-                <View style={styles.listStack}>
-                  {filteredEmisores.map((emisor, index) => (
+                <ProgressiveList
+                  items={filteredEmisores}
+                  resetKey={search}
+                  keyExtractor={(emisor, index) => `emisor-${emisor.codigo}-${emisor.ruc ?? index}`}
+                  renderItem={(emisor) => (
                     <EmisorCard
-                      key={`emisor-${emisor.codigo}-${emisor.ruc ?? index}`}
                       emisor={emisor}
                       onEdit={() => openEditEmisor(emisor)}
                       onDelete={() => confirmDeleteEmisor(emisor)}
                     />
-                  ))}
-                </View>
+                  )}
+                />
               </>
             ) : null}
 
@@ -4760,7 +4850,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     onSave={saveEmisor}
                   />
                 ) : null}
-                <Field label="Buscar por razon social o RUC" value={search} onChangeText={setSearch} autoCapitalize="none" />
+                <SearchField label="Buscar firmas" placeholder="Razon social o RUC del emisor" value={search} onChangeText={setSearch} resultCount={filteredEmisores.length} totalCount={emisores.length} />
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingEmisores ? (
                   <View style={styles.directoryLoading}>
@@ -4853,7 +4943,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     onSave={savePunto}
                   />
                 ) : null}
-                <Field label="Buscar punto" value={search} onChangeText={setSearch} autoCapitalize="none" />
+                <SearchField label="Buscar puntos de emision" placeholder="Establecimiento, caja o serie" value={search} onChangeText={setSearch} totalCount={puntosData?.cajas.length ?? 0} />
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingPuntos ? (
                   <View style={styles.directoryLoading}>
@@ -5144,18 +5234,27 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             ) : null}
           </View>
         ) : null}
+        </ScreenTransition>
 
       </ScrollView>
-      <Modal visible={menuOpen} animationType="fade" transparent onRequestClose={() => setMenuOpen(false)}>
+      <Modal visible={menuOpen} animationType="none" transparent statusBarTranslucent onRequestClose={() => setMenuOpen(false)}>
         <View style={styles.menuOverlay}>
-          <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)} />
-          <View style={styles.menuDrawer}>
+          <Animated.View style={[styles.menuBackdropWrap, { opacity: drawerProgress }]}>
+            <Pressable accessibilityLabel="Cerrar menu" accessibilityRole="button" style={styles.menuBackdrop} onPress={() => setMenuOpen(false)} />
+          </Animated.View>
+          <Animated.View
+            accessibilityViewIsModal
+            style={[
+              styles.menuDrawer,
+              { transform: [{ translateX: drawerProgress.interpolate({ inputRange: [0, 1], outputRange: [36, 0] }) }] },
+            ]}
+          >
             <View style={styles.menuHeader}>
               <View>
                 <Text style={styles.menuTitle}>Menu</Text>
                 <Text style={styles.menuSubtitle}>Numérica Software</Text>
               </View>
-              <Pressable style={styles.menuCloseButton} onPress={() => setMenuOpen(false)}>
+              <Pressable accessibilityLabel="Cerrar menu" accessibilityRole="button" hitSlop={6} style={styles.menuCloseButton} onPress={() => setMenuOpen(false)}>
                 <Text style={styles.menuCloseText}>×</Text>
               </Pressable>
             </View>
@@ -5164,6 +5263,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               {drawerMenu.map((node) => renderDrawerNode(node))}
             </ScrollView>
             <Pressable
+              accessibilityLabel="Cerrar sesion"
+              accessibilityRole="button"
               style={styles.menuLogoutButton}
               onPress={() => {
                 setMenuOpen(false);
@@ -5172,7 +5273,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             >
               <Text style={styles.menuLogoutText}>Salir</Text>
             </Pressable>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
       <StatusBar style="light" />
@@ -5500,8 +5601,7 @@ function NuevaFacturaMobileScreen({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Buscador de cliente</Text>
         <Text style={styles.invoiceSectionHelp}>Encuentra o completa el cliente de la factura</Text>
-        <Field label="Buscar por identificacion, nombres, apellidos o razon social" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} autoCapitalize="none" />
-        <SecondaryButton label="Buscar cliente" onPress={onSearchClientes} />
+        <SearchField label="Encontrar cliente" placeholder="Identificacion, nombres, apellidos o razon social" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} resultCount={clientes.length} onSubmit={onSearchClientes} />
         {cliente ? <Text style={styles.profileValue}>Seleccionado: {getClienteDisplayName(cliente)} - {cliente.numeroidentificacion}</Text> : null}
         <View style={styles.listStack}>
           {clientes.map((item, index) => (
@@ -5561,9 +5661,8 @@ function NuevaFacturaMobileScreen({
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Detalle de Factura</Text>
         </View>
-        <Field label="Buscar producto o servicio" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} autoCapitalize="none" />
+        <SearchField label="Encontrar producto o servicio" placeholder="Codigo, nombre o descripcion" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} resultCount={productos.length} onSubmit={onSearchProductos} />
         <View style={styles.formActions}>
-          <SecondaryButton label="Seleccionar servicio o producto" onPress={onSearchProductos} />
           <SecondaryButton label="Registrar nuevo producto" onPress={onSearchProductos} />
         </View>
         <View style={styles.listStack}>
@@ -5783,8 +5882,7 @@ function NuevaNotaCreditoMobileScreen({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Buscador de factura</Text>
         <Text style={styles.invoiceSectionHelp}>Encuentra la Factura Modificada para emitir la nota de credito</Text>
-        <Field label="Buscar por numero de factura" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} autoCapitalize="none" />
-        <SecondaryButton label="Buscar factura" onPress={onSearchFacturas} />
+        <SearchField label="Encontrar factura" placeholder="Numero completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} />
         <View style={styles.listStack}>
           {facturas.map((item, index) => (
             <Pressable key={`nota-factura-${item.codfactura}-${index}`} style={styles.clientCard} onPress={() => onSelectFactura(item)}>
@@ -5935,7 +6033,7 @@ function MisNotasCreditoMobileScreen({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
         <Text style={styles.clientName}>Notas de credito generadas</Text>
-        <Field label="Buscar por numero, factura, cliente o identificacion" value={filter} onChangeText={setFilter} autoCapitalize="none" />
+        <SearchField label="Buscar notas de credito" placeholder="Numero, factura, cliente o identificacion" value={filter} onChangeText={setFilter} resultCount={visibleNotas.length} totalCount={notas.length} />
         <DropdownField
           label="Estado SRI"
           options={[
@@ -6099,8 +6197,7 @@ function NuevaNotaDebitoMobileScreen({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Buscador de factura</Text>
         <Text style={styles.invoiceSectionHelp}>Encuentra la Factura Modificada para emitir la nota de debito</Text>
-        <Field label="Buscar por numero de factura" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} autoCapitalize="none" />
-        <SecondaryButton label="Buscar factura" onPress={onSearchFacturas} />
+        <SearchField label="Encontrar factura" placeholder="Numero completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} />
         <View style={styles.listStack}>
           {facturas.map((item, index) => (
             <Pressable key={`debito-factura-${item.codfactura}-${index}`} style={styles.clientCard} onPress={() => onSelectFactura(item)}>
@@ -6232,7 +6329,7 @@ function MisNotasDebitoMobileScreen({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
         <Text style={styles.clientName}>Notas de debito generadas</Text>
-        <Field label="Buscar por numero, factura, cliente o identificacion" value={filter} onChangeText={setFilter} autoCapitalize="none" />
+        <SearchField label="Buscar notas de debito" placeholder="Numero, factura, cliente o identificacion" value={filter} onChangeText={setFilter} resultCount={visibleNotas.length} totalCount={notas.length} />
         <DropdownField
           label="Estado SRI"
           options={[
@@ -6377,9 +6474,8 @@ function NuevaLiquidacionCompraMobileScreen({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Buscador de proveedor</Text>
         <Text style={styles.invoiceSectionHelp}>Encuentra o completa el proveedor de la liquidacion</Text>
-        <Field label="Buscar proveedor por identificacion o nombre" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} autoCapitalize="none" />
+        <SearchField label="Encontrar proveedor" placeholder="Identificacion o nombre" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} resultCount={proveedores.length} onSubmit={onSearchProveedores} />
         <View style={styles.formActions}>
-          <SecondaryButton label="Buscar proveedor" onPress={onSearchProveedores} />
           <SecondaryButton label="Nuevo Proveedor" onPress={onSearchProveedores} />
         </View>
         <View style={styles.listStack}>
@@ -6422,9 +6518,8 @@ function NuevaLiquidacionCompraMobileScreen({
           <Text style={styles.invoicePanelTitle}>Detalle de la Liquidacion</Text>
           <Text style={styles.invoicePanelPill}>Registra los productos o servicios adquiridos.</Text>
         </View>
-        <Field label="Buscar producto o servicio" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} autoCapitalize="none" />
+        <SearchField label="Encontrar producto o servicio" placeholder="Codigo, nombre o descripcion" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} resultCount={productos.length} onSubmit={onSearchProductos} />
         <View style={styles.formActions}>
-          <SecondaryButton label="Seleccionar servicio o producto" onPress={onSearchProductos} />
           <SecondaryButton label="Registrar nuevo producto" onPress={onSearchProductos} />
         </View>
         <View style={styles.listStack}>
@@ -6526,7 +6621,7 @@ function MisLiquidacionesCompraMobileScreen({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
         <Text style={styles.clientName}>Liquidaciones de compra generadas</Text>
-        <Field label="Buscar por numero, proveedor o identificacion" value={filter} onChangeText={setFilter} autoCapitalize="none" />
+        <SearchField label="Buscar liquidaciones" placeholder="Numero, proveedor o identificacion" value={filter} onChangeText={setFilter} resultCount={visibleLiquidaciones.length} totalCount={liquidaciones.length} />
         <DropdownField
           label="Estado SRI"
           options={[{ label: 'Todos', value: 1 }, { label: 'Autorizadas', value: 2 }, { label: 'No autorizadas', value: 3 }]}
@@ -6684,9 +6779,8 @@ function NuevaGuiaRemisionMobileScreen({
           <Text style={styles.invoicePanelTitle}>Datos operativos de la guia</Text>
           <Text style={styles.invoicePanelPill}>Completa transportista, destinatario y fechas</Text>
         </View>
-        <Field label="Identificacion transportista" value={form.transportistaBusqueda} onChangeText={(value) => onChange('transportistaBusqueda', value)} autoCapitalize="none" />
+        <SearchField label="Encontrar transportista" placeholder="Identificacion o razon social" value={form.transportistaBusqueda} onChangeText={(value) => onChange('transportistaBusqueda', value)} resultCount={transportistas.length} onSubmit={onSearchTransportistas} />
         <View style={styles.formActions}>
-          <SecondaryButton label="Buscar transportista" onPress={onSearchTransportistas} />
           <SecondaryButton label="Nuevo Transportista" onPress={onSearchTransportistas} />
         </View>
         <View style={styles.listStack}>
@@ -6697,14 +6791,8 @@ function NuevaGuiaRemisionMobileScreen({
             </Pressable>
           ))}
         </View>
-        <View style={styles.invoiceGrid}>
-          <Field label="Cliente" value={form.clienteBusquedaGuia} onChangeText={(value) => onChange('clienteBusquedaGuia', value)} autoCapitalize="none" />
-          <Field label="Factura (opcional)" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} autoCapitalize="none" />
-        </View>
-        <View style={styles.formActions}>
-          <SecondaryButton label="Buscar cliente" onPress={onSearchClientes} />
-          <SecondaryButton label="Seleccionar factura" onPress={onSearchFacturas} />
-        </View>
+        <SearchField label="Encontrar destinatario" placeholder="Identificacion o nombre del cliente" value={form.clienteBusquedaGuia} onChangeText={(value) => onChange('clienteBusquedaGuia', value)} resultCount={clientes.length} onSubmit={onSearchClientes} />
+        <SearchField label="Vincular factura (opcional)" placeholder="Numero completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} />
         <View style={styles.listStack}>
           {clientes.map((item, index) => (
             <Pressable key={`guia-cliente-${getClienteKey(item, index)}`} style={styles.clientCard} onPress={() => onSelectCliente(item)}>
@@ -6753,9 +6841,8 @@ function NuevaGuiaRemisionMobileScreen({
           <Text style={styles.invoicePanelTitle}>Detalles de traslado</Text>
           <Text style={styles.invoicePanelPill}>Se cargan automaticamente desde la factura y puedes ajustar cantidades.</Text>
         </View>
-        <Field label="Buscar producto o detalle" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} />
+        <SearchField label="Encontrar producto o detalle" placeholder="Codigo, nombre o descripcion" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} resultCount={productos.length} onSubmit={onSearchProductos} />
         <View style={styles.formActions}>
-          <SecondaryButton label="Buscar producto" onPress={onSearchProductos} />
           <SecondaryButton label="Agregar detalle" onPress={onSearchProductos} />
         </View>
         <View style={styles.listStack}>
@@ -6844,7 +6931,7 @@ function MisGuiasRemisionMobileScreen({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
         <Text style={styles.clientName}>Guias de remision generadas</Text>
-        <Field label="Buscar por guia, destinatario, identificacion o transportista" value={filter} onChangeText={setFilter} autoCapitalize="none" />
+        <SearchField label="Buscar guias" placeholder="Guia, destinatario, identificacion o transportista" value={filter} onChangeText={setFilter} resultCount={visibleGuias.length} totalCount={guias.length} />
         <DropdownField
           label="Estado SRI"
           options={[{ label: 'Todos', value: 1 }, { label: 'Autorizadas', value: 2 }, { label: 'No autorizadas', value: 3 }]}
@@ -6949,7 +7036,7 @@ function MisRetencionesMobileScreen({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
         <Text style={styles.clientName}>Retenciones generadas</Text>
-        <Field label="Buscar por numero, sustento, proveedor o identificacion" value={filter} onChangeText={setFilter} autoCapitalize="none" />
+        <SearchField label="Buscar retenciones" placeholder="Numero, sustento, proveedor o identificacion" value={filter} onChangeText={setFilter} resultCount={visibleRetenciones.length} totalCount={retenciones.length} />
         <DropdownField
           label="Estado SRI"
           options={[{ label: 'Todos', value: 1 }, { label: 'Autorizadas', value: 2 }, { label: 'No autorizadas', value: 3 }]}
@@ -7029,8 +7116,23 @@ function MisFacturasMobileScreen({
   onEmail: (factura: FacturaListItem) => void;
   onAnular: (factura: FacturaListItem) => void;
 }) {
-  const autorizadas = facturas.filter((factura) => factura.autorizado || String(factura.estadoSri ?? '').toUpperCase().includes('AUTORIZ')).length;
-  const total = facturas.reduce((sum, factura) => sum + Number(factura.total ?? 0), 0);
+  const [filter, setFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState(1);
+  const visibleFacturas = facturas.filter((factura) => {
+    const term = filter.trim().toLowerCase();
+    const matchesText = !term || [
+      factura.numeroCompleto,
+      factura.numfactura,
+      factura.cliente,
+      factura.identificacionCliente,
+      factura.estadoSri,
+    ].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
+    const isAuthorized = factura.autorizado || String(factura.estadoSri ?? '').toUpperCase().includes('AUTORIZ');
+    const matchesStatus = statusFilter === 1 || (statusFilter === 2 && isAuthorized) || (statusFilter === 3 && !isAuthorized);
+    return matchesText && matchesStatus;
+  });
+  const autorizadas = visibleFacturas.filter((factura) => factura.autorizado || String(factura.estadoSri ?? '').toUpperCase().includes('AUTORIZ')).length;
+  const total = visibleFacturas.reduce((sum, factura) => sum + Number(factura.total ?? 0), 0);
 
   return (
     <>
@@ -7040,11 +7142,23 @@ function MisFacturasMobileScreen({
         <Text style={styles.heroText}>Consulta tus facturas generadas y ejecuta acciones del comprobante.</Text>
       </View>
       <View style={styles.metricGrid}>
-        <MetricBox value={facturas.length} label="Facturas" />
+        <MetricBox value={visibleFacturas.length} label="Facturas filtradas" />
         <MetricBox value={formatMoney(total)} label="Monto" />
         <MetricBox value={autorizadas} label="Autorizadas" />
       </View>
-      <View style={styles.actionRow}>
+      <View style={styles.formSectionBox}>
+        <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
+        <SearchField label="Buscar facturas" placeholder="Numero, cliente, identificacion o estado" value={filter} onChangeText={setFilter} resultCount={visibleFacturas.length} totalCount={facturas.length} />
+        <DropdownField
+          label="Estado SRI"
+          options={[
+            { label: 'Todos', value: 1 },
+            { label: 'Autorizadas', value: 2 },
+            { label: 'No autorizadas', value: 3 },
+          ]}
+          value={statusFilter}
+          onChange={(value) => setStatusFilter(value ?? 1)}
+        />
         <PrimaryButton label="Refrescar" loading={loading} onPress={onRefresh} />
       </View>
       {message ? <MessageBox message={message} /> : null}
@@ -7054,9 +7168,9 @@ function MisFacturasMobileScreen({
           <Text style={styles.mutedText}>Cargando facturas...</Text>
         </View>
       ) : null}
-      {!loading && facturas.length === 0 ? <EmptyState title="Sin facturas" text="Cuando generes facturas, apareceran aqui." /> : null}
+      {!loading && visibleFacturas.length === 0 ? <EmptyState title={filter || statusFilter !== 1 ? 'Sin coincidencias' : 'Sin facturas'} text={filter || statusFilter !== 1 ? 'Prueba con otros terminos o cambia el estado seleccionado.' : 'Cuando generes facturas, apareceran aqui.'} /> : null}
       <View style={styles.listStack}>
-        {facturas.map((factura, index) => {
+        {visibleFacturas.map((factura, index) => {
           const facturaKey = listItemKey('mis-facturas', [factura.codfactura, factura.numeroCompleto, factura.numfactura, factura.serie, factura.fechaEmision], index);
 
           return (
@@ -7157,23 +7271,24 @@ function AdminModuleScreen({
             </Pressable>
           ) : null}
         </View>
-        <Text style={styles.mutedText}>{config.placeholder}</Text>
-        <Field label="Buscar" value={search} onChangeText={onSearch} autoCapitalize="none" />
+        <SearchField label={`Buscar en ${config.title}`} placeholder={config.placeholder} value={search} onChangeText={onSearch} resultCount={items.length} loading={loading} />
         {message ? <MessageBox message={message} /> : null}
         {loading ? <EmptyState title="Cargando registros" text="Consultando la informacion administrativa..." /> : null}
         {!loading && !message && items.length === 0 ? <EmptyState title="Sin registros para mostrar" text="Cuando existan registros, apareceran aqui." /> : null}
         {!loading && items.length > 0 ? (
-          <View style={styles.listStack}>
-            {items.map((item, index) => (
+          <ProgressiveList
+            items={items}
+            resetKey={`${view}-${selectedTab}-${search}`}
+            keyExtractor={(item, index) => `${view}-${item.id || 'item'}-${index}`}
+            renderItem={(item) => (
               <AdminMobileItemCard
-                key={`${view}-${item.id || 'item'}-${index}`}
                 item={item}
                 onView={() => onView(item)}
                 onEdit={() => onEdit(item)}
                 onDelete={() => onDelete(item)}
               />
-            ))}
-          </View>
+            )}
+          />
         ) : null}
       </View>
     </>
@@ -7323,16 +7438,17 @@ function OperationalModuleScreen({
             <Text style={styles.adminActionText}>Refrescar</Text>
           </Pressable>
         </View>
-        <Text style={styles.mutedText}>{config.placeholder}</Text>
-        <Field label="Buscar" value={search} onChangeText={onSearch} autoCapitalize="none" />
+        <SearchField label={`Buscar en ${selectedTab}`} placeholder={config.placeholder} value={search} onChangeText={onSearch} resultCount={items.length} loading={loading} />
         {message ? <MessageBox message={message} /> : null}
         {loading ? <EmptyState title="Cargando registros" text="Consultando la informacion del modulo..." /> : null}
         {!loading && !message && items.length === 0 ? <EmptyState title="Sin registros para mostrar" text="Cuando existan registros, apareceran aqui." /> : null}
         {!loading && items.length > 0 ? (
-          <View style={styles.listStack}>
-            {items.map((item, index) => (
+          <ProgressiveList
+            items={items}
+            resetKey={`${view}-${selectedTab}-${search}`}
+            keyExtractor={(item, index) => `${view}-${item.id || 'item'}-${index}`}
+            renderItem={(item) => (
               <OperationalMobileItemCard
-                key={`${view}-${item.id || 'item'}-${index}`}
                 item={item}
                 canEdit={capabilities.canEdit}
                 canDelete={capabilities.canDelete}
@@ -7340,8 +7456,8 @@ function OperationalModuleScreen({
                 onEdit={() => onEdit(item)}
                 onDelete={() => onDelete(item)}
               />
-            ))}
-          </View>
+            )}
+          />
         ) : null}
       </View>
     </>
@@ -7483,14 +7599,14 @@ function ModuleCard({
   onPress: () => void;
 }) {
   return (
-    <Pressable style={[styles.moduleCard, !enabled && styles.moduleCardDisabled]} onPress={onPress}>
+    <SmoothPressable accessibilityHint={enabled ? `Abre ${title}` : 'Esta opcion aun no esta disponible'} disabled={!enabled} style={[styles.moduleCard, !enabled && styles.moduleCardDisabled]} onPress={onPress}>
       <View style={styles.moduleTopRow}>
         <Text style={styles.moduleTitle}>{title}</Text>
         {typeof count === 'number' ? <Text style={styles.moduleCount}>{count}</Text> : null}
       </View>
       <Text style={styles.moduleDescription}>{description}</Text>
       <Text style={styles.moduleAction}>{enabled ? 'Abrir' : 'Proximamente'}</Text>
-    </Pressable>
+    </SmoothPressable>
   );
 }
 
@@ -7507,24 +7623,46 @@ function MenuItem({
   count,
   disabled,
   expanded,
+  hasChildren,
   inset,
   label,
   onPress,
+  onToggle,
 }: {
   active: boolean;
   count?: number;
   disabled?: boolean;
   expanded?: boolean;
+  hasChildren?: boolean;
   inset?: boolean;
   label: string;
   onPress: () => void;
+  onToggle?: () => void;
 }) {
   return (
-    <Pressable disabled={disabled} style={[styles.menuItem, inset && styles.menuItemInset, active && styles.menuItemActive, disabled && styles.menuItemDisabled]} onPress={onPress}>
+    <SmoothPressable
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: Boolean(disabled), expanded: hasChildren ? Boolean(expanded) : undefined, selected: active }}
+      disabled={disabled}
+      style={[styles.menuItem, inset && styles.menuItemInset, active && styles.menuItemActive, disabled && styles.menuItemDisabled]}
+      onPress={onPress}
+    >
       <Text style={[styles.menuItemText, active && styles.menuItemTextActive]} numberOfLines={1}>{label}</Text>
       {typeof count === 'number' ? <Text style={[styles.menuItemCount, active && styles.menuItemCountActive]}>{count}</Text> : null}
-      {expanded ? <Text style={[styles.menuItemChevron, active && styles.menuItemTextActive]}>^</Text> : null}
-    </Pressable>
+      {hasChildren ? (
+        <Pressable
+          accessibilityLabel={`${expanded ? 'Contraer' : 'Expandir'} ${label}`}
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={(event) => {
+            event.stopPropagation();
+            onToggle?.();
+          }}
+        >
+          <Text style={[styles.menuItemChevron, expanded && styles.menuItemChevronExpanded, active && styles.menuItemTextActive]}>⌄</Text>
+        </Pressable>
+      ) : null}
+    </SmoothPressable>
   );
 }
 
@@ -8713,11 +8851,126 @@ function EmptyState({ title, text }: { title: string; text: string }) {
   );
 }
 
+function ProgressiveList<T>({
+  items,
+  renderItem,
+  keyExtractor,
+  resetKey,
+  initialCount = 8,
+}: {
+  items: T[];
+  renderItem: (item: T, index: number) => React.ReactNode;
+  keyExtractor: (item: T, index: number) => string;
+  resetKey?: string;
+  initialCount?: number;
+}) {
+  const [visibleCount, setVisibleCount] = useState(initialCount);
+
+  useEffect(() => {
+    setVisibleCount(initialCount);
+  }, [initialCount, resetKey]);
+
+  if (items.length === 0) return null;
+
+  const visibleItems = items.slice(0, visibleCount);
+  const remaining = Math.max(items.length - visibleItems.length, 0);
+
+  return (
+    <View style={styles.resultCollection}>
+      <View style={styles.resultCollectionHeader}>
+        <Text style={styles.resultCollectionTitle}>Resultados</Text>
+        <Text style={styles.resultCollectionMeta}>Mostrando {visibleItems.length} de {items.length}</Text>
+      </View>
+      <View style={styles.listStack}>
+        {visibleItems.map((item, index) => (
+          <View key={keyExtractor(item, index)}>{renderItem(item, index)}</View>
+        ))}
+      </View>
+      {remaining > 0 ? (
+        <SmoothPressable
+          accessibilityLabel={`Mostrar ${Math.min(initialCount, remaining)} resultados mas`}
+          style={styles.loadMoreButton}
+          onPress={() => setVisibleCount((current) => Math.min(current + initialCount, items.length))}
+        >
+          <Text style={styles.loadMoreText}>Mostrar {Math.min(initialCount, remaining)} mas</Text>
+          <Text style={styles.loadMoreMeta}>{remaining} pendientes</Text>
+        </SmoothPressable>
+      ) : null}
+    </View>
+  );
+}
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+function SmoothPressable({ children, style, ...props }: React.ComponentProps<typeof Pressable>) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const reduceMotion = useReducedMotion();
+
+  const animateScale = (toValue: number) => {
+    Animated.spring(scale, {
+      toValue: reduceMotion ? 1 : toValue,
+      speed: 28,
+      bounciness: 3,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      {...props}
+      style={[style as object, { transform: [{ scale }] }]}
+      onPressIn={(event) => {
+        animateScale(0.985);
+        props.onPressIn?.(event);
+      }}
+      onPressOut={(event) => {
+        animateScale(1);
+        props.onPressOut?.(event);
+      }}
+    >
+      {children}
+    </AnimatedPressable>
+  );
+}
+
+function ScreenTransition({ children }: { children: React.ReactNode }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(10)).current;
+  const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: reduceMotion ? 0 : 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: reduceMotion ? 0 : 320,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [opacity, reduceMotion, translateY]);
+
+  return <Animated.View style={{ opacity, transform: [{ translateY }] }}>{children}</Animated.View>;
+}
+
 function AppLaunchScreen() {
   const wave = useRef(new Animated.Value(0)).current;
   const progress = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
+    if (reduceMotion) {
+      wave.setValue(0);
+      progress.setValue(1);
+      return;
+    }
+
     const waveLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(wave, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
@@ -8726,7 +8979,7 @@ function AppLaunchScreen() {
     );
     const progressAnimation = Animated.timing(progress, {
       toValue: 1,
-      duration: 6000,
+      duration: LAUNCH_DURATION_MS,
       easing: Easing.linear,
       useNativeDriver: false,
     });
@@ -8738,7 +8991,7 @@ function AppLaunchScreen() {
       waveLoop.stop();
       progressAnimation.stop();
     };
-  }, [progress, wave]);
+  }, [progress, reduceMotion, wave]);
 
   const handRotate = wave.interpolate({ inputRange: [0, 0.5, 1], outputRange: ['-5deg', '6deg', '-5deg'] });
   const handTranslateY = wave.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, -2, 1] });
@@ -8817,7 +9070,7 @@ function ScreenFrame({ children, centered }: { children: React.ReactNode; center
 }
 
 function AuthCard({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
-  return <View style={[styles.card, wide && styles.cardWide]}>{children}</View>;
+  return <ScreenTransition><View style={[styles.card, wide && styles.cardWide]}>{children}</View></ScreenTransition>;
 }
 
 function BrandMark() {
@@ -8856,6 +9109,7 @@ function Field({
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        accessibilityLabel={label}
         style={styles.input}
         value={value}
         onChangeText={onChangeText}
@@ -8868,27 +9122,98 @@ function Field({
   );
 }
 
+function SearchField({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  resultCount,
+  totalCount,
+  loading,
+  onSubmit,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder?: string;
+  resultCount?: number;
+  totalCount?: number;
+  loading?: boolean;
+  onSubmit?: () => void;
+}) {
+  const hasQuery = value.trim().length > 0;
+  const countLabel = loading ? 'Buscando' : typeof resultCount === 'number' ? `${resultCount} ${resultCount === 1 ? 'resultado' : 'resultados'}` : undefined;
+
+  return (
+    <View style={styles.searchCard}>
+      <View style={styles.searchHeaderRow}>
+        <View style={styles.searchTitleBlock}>
+          <Text style={styles.searchEyebrow}>{hasQuery ? 'Filtro activo' : 'Busqueda rapida'}</Text>
+          <Text style={styles.searchTitle}>{label}</Text>
+        </View>
+        {countLabel ? (
+          <View style={styles.searchCountBadge}>
+            {loading ? <ActivityIndicator color="#00649D" size="small" /> : null}
+            <Text style={styles.searchCountText}>{countLabel}</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={styles.searchInputShell}>
+        <Text style={styles.searchIcon}>⌕</Text>
+        <TextInput
+          accessibilityLabel={label}
+          autoCapitalize="none"
+          autoCorrect={false}
+          enterKeyHint="search"
+          placeholder={placeholder ?? label}
+          placeholderTextColor="#8191A2"
+          returnKeyType="search"
+          style={styles.searchInput}
+          value={value}
+          onChangeText={onChangeText}
+          onSubmitEditing={onSubmit}
+        />
+        {value ? (
+          <Pressable accessibilityLabel="Limpiar busqueda" accessibilityRole="button" hitSlop={8} style={styles.searchClearButton} onPress={() => onChangeText('')}>
+            <Text style={styles.searchClearText}>×</Text>
+          </Pressable>
+        ) : null}
+        {onSubmit ? (
+          <Pressable accessibilityLabel="Ejecutar busqueda" accessibilityRole="button" style={styles.searchSubmitButton} onPress={onSubmit}>
+            <Text style={styles.searchSubmitText}>Buscar</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <Text style={styles.searchHelper}>
+        {hasQuery && typeof resultCount === 'number'
+          ? `Mostrando ${resultCount}${typeof totalCount === 'number' ? ` de ${totalCount}` : ''}. Toca × para ver todo.`
+          : placeholder ?? 'Escribe para filtrar los registros.'}
+      </Text>
+    </View>
+  );
+}
+
 function PrimaryButton({ label, loading, onPress }: { label: string; loading: boolean; onPress: () => void }) {
   return (
-    <Pressable disabled={loading} style={[styles.primaryButton, loading && styles.disabledButton]} onPress={onPress}>
+    <SmoothPressable accessibilityLabel={label} accessibilityState={{ busy: loading, disabled: loading }} disabled={loading} style={[styles.primaryButton, loading && styles.disabledButton]} onPress={onPress}>
       {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryButtonText}>{label}</Text>}
-    </Pressable>
+    </SmoothPressable>
   );
 }
 
 function SecondaryButton({ label, onPress }: { label: string; onPress: () => void }) {
   return (
-    <Pressable style={styles.secondaryButton} onPress={onPress}>
+    <SmoothPressable accessibilityLabel={label} style={styles.secondaryButton} onPress={onPress}>
       <Text style={styles.secondaryButtonText}>{label}</Text>
-    </Pressable>
+    </SmoothPressable>
   );
 }
 
 function SegmentButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
   return (
-    <Pressable style={[styles.segmentButton, active && styles.segmentButtonActive]} onPress={onPress}>
+    <SmoothPressable accessibilityLabel={label} accessibilityState={{ selected: active }} style={[styles.segmentButton, active && styles.segmentButtonActive]} onPress={onPress}>
       <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{label}</Text>
-    </Pressable>
+    </SmoothPressable>
   );
 }
 
@@ -8911,7 +9236,7 @@ function InlineSwitch({ muted, action, onPress }: { muted: string; action: strin
 
 function MessageBox({ message }: { message: Exclude<MessageState, null> }) {
   return (
-    <View style={[styles.message, styles[`message_${message.type}`]]}>
+    <View accessibilityLiveRegion="polite" accessibilityRole="alert" style={[styles.message, styles[`message_${message.type}`]]}>
       <Text style={styles.messageText}>{message.text}</Text>
     </View>
   );
@@ -9265,6 +9590,112 @@ const styles = StyleSheet.create({
     minHeight: 52,
     paddingHorizontal: 14,
   },
+  searchCard: {
+    backgroundColor: '#F8FBFE',
+    borderColor: '#CFE2F0',
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 11,
+    padding: 14,
+    shadowColor: '#002C50',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  searchHeaderRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  searchTitleBlock: {
+    flex: 1,
+    gap: 2,
+  },
+  searchEyebrow: {
+    color: '#0072BD',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  searchTitle: {
+    color: '#263A4F',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  searchCountBadge: {
+    alignItems: 'center',
+    backgroundColor: '#E4F3FC',
+    borderRadius: 999,
+    flexDirection: 'row',
+    gap: 6,
+    minHeight: 32,
+    paddingHorizontal: 11,
+  },
+  searchCountText: {
+    color: '#00649D',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  searchInputShell: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#B9D8EE',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    minHeight: 54,
+    overflow: 'hidden',
+    paddingLeft: 13,
+  },
+  searchIcon: {
+    color: '#0072BD',
+    fontSize: 23,
+    fontWeight: '900',
+    marginRight: 8,
+  },
+  searchInput: {
+    color: '#24384C',
+    flex: 1,
+    fontSize: 15,
+    minHeight: 52,
+    paddingVertical: 0,
+  },
+  searchClearButton: {
+    alignItems: 'center',
+    backgroundColor: '#EAF2F8',
+    borderRadius: 999,
+    height: 32,
+    justifyContent: 'center',
+    marginHorizontal: 9,
+    width: 32,
+  },
+  searchClearText: {
+    color: '#536476',
+    fontSize: 22,
+    fontWeight: '800',
+    lineHeight: 24,
+  },
+  searchSubmitButton: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    backgroundColor: '#00649D',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  searchSubmitText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  searchHelper: {
+    color: '#687A8C',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
   rowBetween: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -9602,6 +10033,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(4, 24, 44, 0.5)',
     flex: 1,
   },
+  menuBackdropWrap: {
+    flex: 1,
+  },
   menuDrawer: {
     backgroundColor: '#FFFFFF',
     height: '100%',
@@ -9715,6 +10149,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
     marginLeft: 8,
+  },
+  menuItemChevronExpanded: {
+    transform: [{ rotate: '180deg' }],
   },
   menuLogoutButton: {
     alignItems: 'center',
@@ -10357,15 +10794,66 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   listStack: {
-    gap: 10,
+    gap: 12,
   },
-  clientCard: {
-    backgroundColor: '#F8FBFE',
-    borderColor: '#E3ECF4',
-    borderRadius: 14,
+  resultCollection: {
+    backgroundColor: '#EFF6FB',
+    borderColor: '#D5E5F0',
+    borderRadius: 20,
     borderWidth: 1,
     gap: 12,
-    padding: 12,
+    padding: 9,
+  },
+  resultCollectionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 5,
+    paddingTop: 3,
+  },
+  resultCollectionTitle: {
+    color: '#263A4F',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  resultCollectionMeta: {
+    color: '#617A90',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  loadMoreButton: {
+    alignItems: 'center',
+    backgroundColor: '#EAF5FC',
+    borderColor: '#B9D8EE',
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 50,
+    paddingHorizontal: 14,
+  },
+  loadMoreText: {
+    color: '#00649D',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  loadMoreMeta: {
+    color: '#688096',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  clientCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#DCE8F1',
+    borderRadius: 17,
+    borderWidth: 1,
+    gap: 12,
+    padding: 14,
+    shadowColor: '#002C50',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 2,
   },
   clientCardSystem: {
     backgroundColor: '#F4F8FC',
