@@ -1603,6 +1603,9 @@ export default function App() {
 function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; onLogout: () => void }) {
   const [activeView, setActiveView] = useState<WorkspaceView>(isSuperAdmin(currentUser) ? 'portal' : 'dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
+  const drawerProgress = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReducedMotion();
+  const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [menus, setMenus] = useState<DynamicMenu[]>(getInitialMenus(currentUser));
   const [loadingMenus, setLoadingMenus] = useState(false);
