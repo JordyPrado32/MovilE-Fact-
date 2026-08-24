@@ -1,6 +1,9 @@
 import { StatusBar } from 'expo-status-bar';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import * as LocalAuthentication from 'expo-local-authentication';
+import * as SecureStore from 'expo-secure-store';
+import * as Speech from 'expo-speech';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ActivityIndicator,
@@ -16,7 +19,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -24,7 +26,10 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ApiError, setSessionToken } from './src/services/apiClient';
+import { sendBotMessage } from './src/services/botService';
 import { API_BASE_URL } from './src/config/api';
 import { AdminMobileItem, getAdminMobileModule } from './src/services/adminMobileService';
 import { changePassword, checkAuth, login, recoverPassword, register } from './src/services/authService';
@@ -51,6 +56,8 @@ import {
   validateLogin,
   validateRegisterForm,
 } from './src/utils/authValidation';
+import { ItemDetailModal, ResultCollection } from './src/components/data/ResultCollection';
+import { ExternalLink, Field, InlineSwitch, LoginActionTiles, MessageBox, PrimaryButton, SearchField, SecondaryButton, SecurityNotice, SegmentButton, TextLink } from './src/components/ui/FormControls';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'change';
 
@@ -132,6 +139,7 @@ type WorkspaceView =
   | 'reporte-documentos'
   | 'configuracion'
   | 'soporte'
+  | 'bot'
   | 'tutoriales'
   | 'centro-normativo'
   | 'no-autorizado';
@@ -311,6 +319,27 @@ const NUMERICA_URL = 'https://numericasoftware.com/';
 const EFACT_PUBLIC_URL = 'https://efact.numericasoftware.com';
 const AVATAR_BASE_URL = 'https://efact.numericasoftware.com/images/Avatars';
 const LAUNCH_DURATION_MS = 1600;
+const BIOMETRIC_CREDENTIALS_KEY = 'efact.biometric.credentials';
+
+type BiometricCredentials = { username: string; password: string };
+
+async function readBiometricCredentials() {
+  const value = await SecureStore.getItemAsync(BIOMETRIC_CREDENTIALS_KEY);
+  if (!value) return null;
+  try { return JSON.parse(value) as BiometricCredentials; } catch { return null; }
+}
+
+async function getBiometricLabel() {
+  const [hasHardware, isEnrolled] = await Promise.all([
+    LocalAuthentication.hasHardwareAsync(),
+    LocalAuthentication.isEnrolledAsync(),
+  ]);
+  if (!hasHardware || !isEnrolled) return null;
+  const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+  if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) return 'Face ID';
+  if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) return 'Huella digital';
+  return 'Biometría';
+}
 const SUPER_ADMIN_TIPO_USUARIO = 2;
 const BASE_EFACT_MOBILE_MENUS: DynamicMenu[] = [
   { id: -1001, nombre: 'Inicio', ruta: '/dashboard', icono: 'ri-dashboard-line', orden: 1, estado: true },
@@ -334,6 +363,7 @@ const BASE_EFACT_MOBILE_MENUS: DynamicMenu[] = [
   { id: -1019, nombre: 'Centro normativo', ruta: '/centro-normativo', icono: 'ri-book-open-line', orden: 19, estado: true },
   { id: -1020, nombre: 'Configuracion', ruta: '/configuracion', icono: 'ri-settings-3-line', orden: 20, estado: true },
   { id: -1021, nombre: 'Soporte', ruta: '/soporte', icono: 'ri-customer-service-2-line', orden: 21, estado: true },
+  { id: -1024, nombre: 'Númi Bot', ruta: '/bot', icono: 'ri-robot-line', orden: 22, estado: true },
   { id: -1022, nombre: 'Tutoriales', ruta: '/tutoriales', icono: 'ri-graduation-cap-line', orden: 22, estado: true },
   { id: -1023, nombre: 'Liquidacion de Compra', ruta: '/compras', icono: 'ri-file-add-line', orden: 23, estado: true },
 ];
@@ -668,6 +698,7 @@ const EFACT_MODULES: Omit<MobileModule, 'count' | 'enabled'>[] = [
   { view: 'centro-normativo', title: 'Centro normativo', description: 'Identificaciones, categorias, impuestos y normativa.' },
   { view: 'configuracion', title: 'Configuracion', description: 'Usuarios, roles, permisos, impuestos y parametros.' },
   { view: 'soporte', title: 'Soporte', description: 'Canales de ayuda para e-fact.' },
+  { view: 'bot', title: 'Númi Bot', description: 'Asistente de e-fact para resolver tus dudas.' },
   { view: 'tutoriales', title: 'Tutoriales', description: 'Guias de uso disponibles para el usuario.' },
   { view: 'admin-cajas-secuencias', title: 'Cajas y secuencias', description: 'Consulta puntos de emision y ultimos secuenciales.' },
   { view: 'admin-roles-permisos', title: 'Roles y Permisos', description: 'Panel de seguridad, perfiles y permisos.' },
@@ -722,6 +753,7 @@ const VIEW_ROUTE_ALIASES: Record<Exclude<WorkspaceView, 'portal' | 'dashboard' |
   reportes: ['reportes', 'logs', 'auditoria'],
   configuracion: ['configuracion', 'usuarios', 'roles', 'permisos', 'impuestos'],
   soporte: ['soporte', 'ayuda'],
+  bot: ['bot', 'numi', 'asistente', 'chat'],
   tutoriales: ['tutoriales', 'tutorial'],
   'centro-normativo': ['centro-normativo', 'normativo', 'identificaciones', 'categorias'],
 };
@@ -1254,6 +1286,10 @@ function isConsumidorFinal(cliente: Cliente) {
 }
 
 export default function App() {
+  return <SafeAreaProvider><AppContent /></SafeAreaProvider>;
+}
+
+function AppContent() {
   const [booting, setBooting] = useState(true);
   const [mode, setMode] = useState<AuthMode>('login');
   const [loading, setLoading] = useState(false);
@@ -1261,10 +1297,14 @@ export default function App() {
   const [message, setMessage] = useState<MessageState>(null);
   const [currentUser, setCurrentUser] = useState<LoginResponse | null>(null);
   const [registerStep, setRegisterStep] = useState(0);
+  const [biometricLabel, setBiometricLabel] = useState<string | null>(null);
+  const [biometricCredentials, setBiometricCredentials] = useState<BiometricCredentials | null>(null);
+  const [biometricPendingLogin, setBiometricPendingLogin] = useState<{ response: LoginResponse; credentials: BiometricCredentials } | null>(null);
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [recordarme, setRecordarme] = useState(false);
+  const [loginMethod, setLoginMethod] = useState<'password' | 'biometric' | 'guest'>('password');
 
   const [registerForm, setRegisterForm] = useState<RegisterRequest>(initialRegisterForm);
   const [recoverEmail, setRecoverEmail] = useState('');
@@ -1289,6 +1329,16 @@ export default function App() {
     return () => {
       mounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([getBiometricLabel(), readBiometricCredentials()]).then(([label, credentials]) => {
+      if (!mounted) return;
+      setBiometricLabel(label);
+      setBiometricCredentials(credentials);
+    }).catch(() => undefined);
+    return () => { mounted = false; };
   }, []);
 
   const runRequest = async (action: () => Promise<void>) => {
@@ -1335,6 +1385,36 @@ export default function App() {
           return;
         }
 
+        if (biometricLabel && !biometricCredentials) {
+          setBiometricPendingLogin({ response, credentials: { username, password } });
+        } else if (recordarme && biometricLabel) {
+          await SecureStore.setItemAsync(BIOMETRIC_CREDENTIALS_KEY, JSON.stringify({ username, password }));
+          setBiometricCredentials({ username, password });
+        } else if (!recordarme) {
+          await SecureStore.deleteItemAsync(BIOMETRIC_CREDENTIALS_KEY);
+          setBiometricCredentials(null);
+        }
+
+        if (biometricLabel && !biometricCredentials) return;
+        setCurrentUser(response);
+      } finally {
+        setAuthenticating(false);
+      }
+    });
+
+  const submitBiometricLogin = () =>
+    runRequest(async () => {
+      if (!biometricCredentials || !biometricLabel) return;
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: `Acceder a e-fact con ${biometricLabel}`,
+        cancelLabel: 'Cancelar',
+        disableDeviceFallback: false,
+      });
+      if (!result.success) return;
+      setAuthenticating(true);
+      try {
+        const response = await login({ ...biometricCredentials, recordarme: true });
+        setSessionToken(getLoginToken(response));
         setCurrentUser(response);
       } finally {
         setAuthenticating(false);
@@ -1396,12 +1476,41 @@ export default function App() {
     setRegisterForm((current) => ({ ...current, [key]: value }));
   };
 
+  const continueRegister = () => {
+    const validation = registerStep === 0
+      ? validateRegisterForm({ ...registerForm, email: 'paso@efact.local', direccion: 'Direccion temporal', password: 'Aa1!aaaa' })
+      : registerStep === 1
+        ? validateRegisterForm({ ...registerForm, password: 'Aa1!aaaa' })
+        : validateRegisterForm(registerForm);
+
+    if (registerStep === 1 && (!registerForm.email.trim() || !registerForm.direccion.trim() || registerForm.direccion.trim().length < 5)) {
+      setMessage({ type: 'error', text: 'Completa un correo y una direccion valida para continuar.' });
+      return;
+    }
+    if (!validation.valid && registerStep < 2) {
+      setMessage({ type: 'error', text: validation.message ?? 'Revisa los datos de este paso.' });
+      return;
+    }
+    setMessage(null);
+    setRegisterStep((step) => Math.min(step + 1, 2));
+  };
+
   const updateChange = <K extends keyof ChangePasswordRequest>(key: K, value: ChangePasswordRequest[K]) => {
     setChangeForm((current) => ({ ...current, [key]: value }));
   };
 
   const selectedAvatar = registerForm.avatarUrl.split('/').pop() || '';
   const registerInitials = getInitials(registerForm.nombres, registerForm.apellidos, registerForm.razonSocial);
+
+  const continueAfterBiometricOffer = async (enable: boolean) => {
+    if (!biometricPendingLogin) return;
+    if (enable) {
+      await SecureStore.setItemAsync(BIOMETRIC_CREDENTIALS_KEY, JSON.stringify(biometricPendingLogin.credentials));
+      setBiometricCredentials(biometricPendingLogin.credentials);
+    }
+    setCurrentUser(biometricPendingLogin.response);
+    setBiometricPendingLogin(null);
+  };
 
   if (booting) {
     return <AppLaunchScreen />;
@@ -1427,30 +1536,50 @@ export default function App() {
   }
 
   return (
-    <ScreenFrame centered={mode !== 'register'}>
-      <AuthCard key={mode} wide={mode === 'register'}>
+    <>
+      <ScreenFrame centered={mode !== 'register'}>
+        <AuthCard key={mode} wide={mode === 'register'} login={mode === 'login'}>
         {mode === 'login' ? (
           <>
-            <BrandMark />
-            <Text style={styles.title}>Inicia sesion en tu cuenta</Text>
-            <Text style={styles.subtitle}>Accede a todo el ecosistema de Numérica</Text>
-            <ExternalLink label="Ir a Numérica Software ↗" url={NUMERICA_URL} />
+            <View style={styles.loginBrand}>
+              <BrandMark />
+              <View>
+                <Text style={styles.loginProductName}>e-fact</Text>
+                <Text style={styles.loginProductCaption}>facturación electrónica</Text>
+              </View>
+            </View>
+            <Text style={[styles.title, styles.loginTitle]}>Bienvenido</Text>
+            <Text style={[styles.subtitle, styles.loginSubtitle]}>Ingresa para continuar con tu gestión</Text>
+            <LoginActionTiles
+              active={loginMethod}
+              biometricLabel={biometricLabel}
+              onPassword={() => setLoginMethod('password')}
+              onBiometric={() => {
+                setLoginMethod('biometric');
+                if (biometricCredentials && biometricLabel) submitBiometricLogin();
+                else setMessage({ type: 'info', text: 'Activa el acceso biométrico después de iniciar sesión por primera vez.' });
+              }}
+              onGuest={() => {
+                setLoginMethod('guest');
+                setMessage({ type: 'info', text: 'Modo invitado pendiente.' });
+              }}
+            />
             {message ? <MessageBox message={message} /> : null}
-            <View style={styles.form}>
+            {loginMethod === 'password' ? <View style={styles.form}>
               <Field label="Usuario / Correo" value={username} onChangeText={setUsername} autoCapitalize="none" />
               <Field label="Contrasena" value={password} onChangeText={setPassword} secureTextEntry />
               <View style={styles.rowBetween}>
                 <Pressable style={styles.checkRow} onPress={() => setRecordarme((value) => !value)}>
-                  <View style={[styles.checkbox, recordarme && styles.checkboxChecked]} />
-                  <Text style={styles.mutedText}>Recordarme</Text>
+                  <View style={[styles.checkbox, recordarme && styles.checkboxChecked]}>
+                    {recordarme ? <Text style={styles.checkboxTick}>✓</Text> : null}
+                  </View>
+                  <Text style={styles.rememberText}>Recordarme</Text>
                 </Pressable>
                 <TextLink label="Olvidaste tu clave?" onPress={() => setMode('forgot')} />
               </View>
               <PrimaryButton label="Ingresar ahora" loading={loading} onPress={submitLogin} />
-              <SecondaryButton label="Entrar como invitado" onPress={() => setMessage({ type: 'info', text: 'Modo invitado pendiente.' })} />
-            </View>
+            </View> : null}
             <InlineSwitch muted="No tienes cuenta?" action="Solicitar Registro" onPress={() => setMode('register')} />
-            <SecurityNotice />
           </>
         ) : null}
 
@@ -1458,15 +1587,24 @@ export default function App() {
           <>
             <BrandMark />
             <Text style={styles.title}>Crear tu cuenta</Text>
-            <Text style={styles.subtitle}>Completa tus datos para crear tu cuenta</Text>
+            <Text style={styles.subtitle}>Te guiaremos paso a paso para dejar tu cuenta lista.</Text>
             {message ? <MessageBox message={message} /> : null}
 
-            <View style={styles.stepper}>
+            <View style={styles.registerProgress}>
+              <View style={styles.stepper}>
               {['Datos', 'Contacto', 'Perfil'].map((step, index) => (
-                <View key={step} style={[styles.stepDot, registerStep === index && styles.stepDotActive]}>
-                  <Text style={[styles.stepDotText, registerStep === index && styles.stepDotTextActive]}>{index + 1}</Text>
+                <View key={step} style={styles.stepItem}>
+                  <View style={[styles.stepDot, index <= registerStep && styles.stepDotActive]}>
+                    <Text style={[styles.stepDotText, index <= registerStep && styles.stepDotTextActive]}>{index < registerStep ? '✓' : index + 1}</Text>
+                  </View>
+                  <Text style={[styles.stepLabel, index === registerStep && styles.stepLabelActive]}>{step}</Text>
                 </View>
               ))}
+              </View>
+              <View style={styles.stepProgressTrack}>
+                <View style={[styles.stepProgressFill, { width: `${(registerStep / 2) * 100}%` }]} />
+              </View>
+              <Text style={styles.stepProgressCaption}>Paso {registerStep + 1} de 3</Text>
             </View>
 
             {registerStep === 0 ? (
@@ -1521,6 +1659,11 @@ export default function App() {
             {registerStep === 2 ? (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Seguridad y perfil</Text>
+                <View style={styles.registerReviewCard}>
+                  <Text style={styles.registerReviewTitle}>Revisa tu información</Text>
+                  <Text style={styles.registerReviewValue}>{registerForm.tipoCliente === 2 ? registerForm.razonSocial : `${registerForm.nombres} ${registerForm.apellidos}`}</Text>
+                  <Text style={styles.registerReviewMeta}>{registerForm.email} · {registerForm.identificacion}</Text>
+                </View>
                 <Field label="Contrasena" value={registerForm.password} onChangeText={(value) => updateRegister('password', value)} secureTextEntry />
                 <View style={styles.avatarPreview}>
                   {isInitialsAvatar(registerForm.avatarUrl) ? (
@@ -1556,7 +1699,7 @@ export default function App() {
             <View style={styles.registerActions}>
               {registerStep > 0 ? <SecondaryButton label="Atras" onPress={() => setRegisterStep((step) => step - 1)} /> : null}
               {registerStep < 2 ? (
-                <PrimaryButton label="Continuar" loading={false} onPress={() => setRegisterStep((step) => step + 1)} />
+                <PrimaryButton label="Continuar" loading={false} onPress={continueRegister} />
               ) : (
                 <PrimaryButton label="Crear cuenta" loading={loading} onPress={submitRegister} />
               )}
@@ -1595,12 +1738,17 @@ export default function App() {
             <InlineSwitch muted="Volver a" action="Login" onPress={() => setMode('login')} />
           </>
         ) : null}
-      </AuthCard>
-    </ScreenFrame>
+        </AuthCard>
+      </ScreenFrame>
+      {biometricPendingLogin && biometricLabel ? (
+        <BiometricSetupModal label={biometricLabel} onChoose={continueAfterBiometricOffer} />
+      ) : null}
+    </>
   );
 }
 
 function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; onLogout: () => void }) {
+  const insets = useSafeAreaInsets();
   const [activeView, setActiveView] = useState<WorkspaceView>(isSuperAdmin(currentUser) ? 'portal' : 'dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const drawerProgress = useRef(new Animated.Value(0)).current;
@@ -4297,10 +4445,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         'cuentas-cobrar',
         'estado-cuenta',
         'comprar-documentos',
-        'reporte-documentos',
-        'recargas',
-        'centro-normativo',
-        'admin-cajas-secuencias',
+         'reporte-documentos',
+         'recargas',
+         'centro-normativo',
+         'bot',
+         'admin-cajas-secuencias',
         'admin-roles-permisos',
         'admin-impuestos',
         'admin-usuarios',
@@ -4491,8 +4640,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   };
 
   return (
-    <SafeAreaView style={[styles.workspaceSafeArea, activeView === 'portal' && styles.portalSafeArea]}>
-      <ScrollView contentContainerStyle={[styles.workspaceCanvas, canUsePortal && styles.workspaceCanvasWithBottomNav]} keyboardShouldPersistTaps="handled">
+    <SafeAreaView edges={['top', 'bottom']} style={[styles.workspaceSafeArea, activeView === 'portal' && styles.portalSafeArea]}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.workspaceCanvasWithBottomNav, { paddingBottom: 88 + insets.bottom }]} keyboardShouldPersistTaps="handled">
         {activeView === 'portal' ? (
           <View style={styles.portalHeader}>
             <View style={styles.portalUserBlock}>
@@ -4724,7 +4873,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </Pressable>
             </View>
 
-            {activeView === 'clientes' ? (
+             {activeView === 'bot' ? (
+               <EfactBotScreen userName={portalFirstName} />
+             ) : activeView === 'clientes' ? (
               <>
                 <View style={styles.actionRow}>
                   <PrimaryButton label="Nuevo cliente" loading={false} onPress={openNewCliente} />
@@ -4755,7 +4906,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 {!loadingClientes && filteredClientes.length === 0 ? (
                   <EmptyState title={search ? 'Sin coincidencias' : 'Sin clientes para mostrar'} text={search ? 'Prueba con otro nombre, identificacion o correo.' : 'Cuando existan registros, apareceran aqui.'} />
                 ) : null}
-                <ProgressiveList
+                <ResultCollection
                   items={filteredClientes}
                   resetKey={search}
                   keyExtractor={(cliente, index) => `cliente-${cliente.codcliente}-${cliente.numeroidentificacion ?? index}`}
@@ -4801,7 +4952,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 {!loadingProductos && filteredProductos.length === 0 ? (
                   <EmptyState title={search ? 'Sin coincidencias' : 'Sin productos para mostrar'} text={search ? 'Prueba con otro codigo, nombre o categoria.' : 'Cuando existan registros, apareceran aqui.'} />
                 ) : null}
-                <ProgressiveList
+                <ResultCollection
                   items={filteredProductos}
                   resetKey={search}
                   keyExtractor={(producto, index) => `producto-${producto.codproducto}-${producto.codigo ?? producto.nombre}-${index}`}
@@ -4870,7 +5021,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   <EmptyState title="Sin subcategorias para mostrar" text="No es obligatorio crear subcategorias." />
                 ) : null}
                 {categoriaTab === 'categorias' ? (
-                  <ProgressiveList
+                  <ResultCollection
                     items={filteredCategorias}
                     resetKey={`${categoriaTab}-${search}`}
                     keyExtractor={(categoria, index) => `categoria-${categoria.idCategoria}-${categoria.descripcion}-${index}`}
@@ -4883,7 +5034,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     )}
                   />
                 ) : (
-                  <ProgressiveList
+                  <ResultCollection
                     items={filteredSubcategorias}
                     resetKey={`${categoriaTab}-${search}`}
                     keyExtractor={(subcategoria, index) => `subcategoria-${subcategoria.idSubcategoria}-${subcategoria.descripcion}-${index}`}
@@ -4933,7 +5084,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 {!loadingEmisores && filteredEmisores.length === 0 ? (
                   <EmptyState title="Sin emisores para mostrar" text="Cuando existan registros, apareceran aqui." />
                 ) : null}
-                <ProgressiveList
+                <ResultCollection
                   items={filteredEmisores}
                   resetKey={search}
                   keyExtractor={(emisor, index) => `emisor-${emisor.codigo}-${emisor.ruc ?? index}`}
@@ -5347,7 +5498,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               />
             ) : null}
 
-            {activeView !== 'clientes' && activeView !== 'productos' && activeView !== 'categorias' && activeView !== 'emisor' && activeView !== 'firma' && activeView !== 'perfil' && activeView !== 'punto-emision' && activeView !== 'nueva-factura' && activeView !== 'mis-facturas' && activeView !== 'nueva-nota-credito' && activeView !== 'mis-notas-credito' && activeView !== 'nueva-nota-debito' && activeView !== 'mis-notas-debito' && activeView !== 'nueva-liquidacion-compra' && activeView !== 'mis-liquidaciones-compra' && activeView !== 'nueva-guia-remision' && activeView !== 'mis-guias-remision' && activeView !== 'retenciones' && !isAdminMobileView(activeView) && !isOperationalMobileView(activeView) ? (
+            {activeView !== 'clientes' && activeView !== 'productos' && activeView !== 'categorias' && activeView !== 'emisor' && activeView !== 'firma' && activeView !== 'perfil' && activeView !== 'punto-emision' && activeView !== 'nueva-factura' && activeView !== 'mis-facturas' && activeView !== 'nueva-nota-credito' && activeView !== 'mis-notas-credito' && activeView !== 'nueva-nota-debito' && activeView !== 'mis-notas-debito' && activeView !== 'nueva-liquidacion-compra' && activeView !== 'mis-liquidaciones-compra' && activeView !== 'nueva-guia-remision' && activeView !== 'mis-guias-remision' && activeView !== 'retenciones' && activeView !== 'bot' && !isAdminMobileView(activeView) && !isOperationalMobileView(activeView) ? (
               <EmptyState title="Modulo autorizado" text="Esta seccion queda preparada para conectar la operacion e-fact correspondiente desde backend." />
             ) : null}
           </View>
@@ -5355,15 +5506,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         </ScreenTransition>
 
       </ScrollView>
-      {canUsePortal ? (
-        <PortalBottomNav
-          activeView={activeView}
-          onHome={() => openView('dashboard')}
-          onServices={() => openView('portal')}
-          onHistory={() => openView('recargas')}
-          onProfile={() => openView('perfil')}
-        />
-      ) : null}
+      <PortalBottomNav
+        bottomInset={insets.bottom}
+        activeView={activeView}
+        onHome={() => openView('dashboard')}
+        onServices={() => canUsePortal ? openView('portal') : setMenuOpen(true)}
+        onBot={() => openView('bot')}
+        onHistory={() => openView('recargas')}
+        onProfile={() => openView('perfil')}
+      />
       <Modal visible={notificationsOpen} animationType="fade" transparent onRequestClose={() => setNotificationsOpen(false)}>
         <View style={styles.menuOverlay}>
           <Pressable style={styles.menuBackdrop} onPress={() => setNotificationsOpen(false)} />
@@ -5479,8 +5630,9 @@ function getWorkspaceTitle(view: WorkspaceView) {
     reportes: 'Reportes',
     'reporte-documentos': 'Reporte documentos',
     configuracion: 'Configuracion',
-    soporte: 'Soporte',
-    tutoriales: 'Tutoriales',
+     soporte: 'Soporte',
+     bot: 'Númi Bot',
+     tutoriales: 'Tutoriales',
     'centro-normativo': 'Centro normativo',
     'no-autorizado': 'No autorizado',
   };
@@ -7393,6 +7545,7 @@ function AdminModuleScreen({
 }) {
   const config = getAdminModuleConfig(view);
   const selectedTab = activeTab ?? config.tabs?.[0];
+  const [detailItem, setDetailItem] = useState<AdminMobileItem | null>(null);
 
   return (
     <>
@@ -7430,14 +7583,16 @@ function AdminModuleScreen({
         {loading ? <EmptyState title="Cargando registros" text="Consultando la informacion administrativa..." /> : null}
         {!loading && !message && items.length === 0 ? <EmptyState title="Sin registros para mostrar" text="Cuando existan registros, apareceran aqui." /> : null}
         {!loading && items.length > 0 ? (
-          <ProgressiveList
+          <ResultCollection
             items={items}
             resetKey={`${view}-${selectedTab}-${search}`}
             keyExtractor={(item, index) => `${view}-${item.id || 'item'}-${index}`}
             renderItem={(item) => (
               <AdminMobileItemCard
                 item={item}
-                onView={() => onView(item)}
+                onView={() => {
+                  setDetailItem(item);
+                }}
                 onEdit={() => onEdit(item)}
                 onDelete={() => onDelete(item)}
               />
@@ -7445,6 +7600,12 @@ function AdminModuleScreen({
           />
         ) : null}
       </View>
+      <ItemDetailModal
+        visible={Boolean(detailItem)}
+        title={detailItem?.title || detailItem?.id || 'Detalle'}
+        values={detailItem ? [detailItem.subtitle, detailItem.status, detailItem.meta, detailItem.detail].filter(Boolean) as string[] : []}
+        onClose={() => setDetailItem(null)}
+      />
     </>
   );
 }
@@ -7550,6 +7711,7 @@ function OperationalModuleScreen({
   const config = module ? getOperationalScreenConfig(view, module) : null;
   const selectedTab = module ? activeTab ?? getOperationalDefaultTab(view, module) : activeTab;
   const capabilities = getOperationalCapabilities(view, selectedTab ?? '');
+  const [detailItem, setDetailItem] = useState<OperationalMobileItem | null>(null);
 
   if (!config) return null;
 
@@ -7597,7 +7759,7 @@ function OperationalModuleScreen({
         {loading ? <EmptyState title="Cargando registros" text="Consultando la informacion del modulo..." /> : null}
         {!loading && !message && items.length === 0 ? <EmptyState title="Sin registros para mostrar" text="Cuando existan registros, apareceran aqui." /> : null}
         {!loading && items.length > 0 ? (
-          <ProgressiveList
+          <ResultCollection
             items={items}
             resetKey={`${view}-${selectedTab}-${search}`}
             keyExtractor={(item, index) => `${view}-${item.id || 'item'}-${index}`}
@@ -7606,7 +7768,9 @@ function OperationalModuleScreen({
                 item={item}
                 canEdit={capabilities.canEdit}
                 canDelete={capabilities.canDelete}
-                onView={() => onView(item)}
+                onView={() => {
+                  setDetailItem(item);
+                }}
                 onEdit={() => onEdit(item)}
                 onDelete={() => onDelete(item)}
               />
@@ -7614,6 +7778,12 @@ function OperationalModuleScreen({
           />
         ) : null}
       </View>
+      <ItemDetailModal
+        visible={Boolean(detailItem)}
+        title={detailItem?.title || detailItem?.id || 'Detalle'}
+        values={detailItem ? [detailItem.subtitle, detailItem.status, detailItem.meta, detailItem.detail].filter(Boolean) as string[] : []}
+        onClose={() => setDetailItem(null)}
+      />
     </>
   );
 }
@@ -7839,6 +8009,107 @@ function PortalUpcomingCard() {
   );
 }
 
+type BotMessage = { id: string; role: 'user' | 'assistant'; text: string };
+
+function EfactBotScreen({ userName }: { userName: string }) {
+  const [messages, setMessages] = useState<BotMessage[]>([
+    { id: 'welcome', role: 'assistant', text: `Hola ${userName || '👋'} Soy Númi, el asistente de e-fact. ¿En qué puedo ayudarte?` },
+  ]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [listening, setListening] = useState(false);
+  const voiceRecognition = useRef<any>(null);
+
+  const send = async (preset?: string) => {
+    const text = (preset ?? draft).trim();
+    if (!text || sending) return;
+    setDraft('');
+    setError('');
+    setMessages((current) => [...current, { id: `user-${Date.now()}`, role: 'user', text }]);
+    setSending(true);
+    try {
+      const answer = await sendBotMessage({ message: text });
+      setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: 'assistant', text: answer }]);
+      Speech.speak(answer, { language: 'es-EC', rate: 0.96 });
+    } catch (err) {
+      setError(err instanceof ApiError || err instanceof Error ? err.message : 'No se pudo contactar al bot.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const toggleVoiceInput = () => {
+    if (Platform.OS !== 'web') {
+      Alert.alert('Comandos por voz', 'El dictado nativo requiere habilitar el módulo de reconocimiento de voz en la compilación móvil. La lectura de respuestas ya está disponible.');
+      return;
+    }
+
+    const browser = globalThis as typeof globalThis & { SpeechRecognition?: new () => any; webkitSpeechRecognition?: new () => any };
+    if (listening) {
+      voiceRecognition.current?.stop();
+      return;
+    }
+    const Recognition = browser.SpeechRecognition ?? browser.webkitSpeechRecognition;
+    if (!Recognition) {
+      setError('Este navegador no permite dictado por voz.');
+      return;
+    }
+    const recognition = new Recognition();
+    recognition.lang = 'es-EC';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.onstart = () => setListening(true);
+    recognition.onresult = (event: any) => setDraft(event.results?.[0]?.[0]?.transcript ?? '');
+    recognition.onerror = () => setError('No se pudo reconocer la voz. Intenta nuevamente.');
+    recognition.onend = () => setListening(false);
+    voiceRecognition.current = recognition;
+    recognition.start();
+  };
+
+  return (
+    <KeyboardAvoidingView style={styles.botScreen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.botHero}>
+        <Image source={require('./assets/numi-robot.png')} style={styles.botAvatar} />
+        <View style={styles.botHeroCopy}>
+          <Text style={styles.botHeroTitle}>Númi Bot</Text>
+          <Text style={styles.botHeroText}>Tu asistente para usar e-fact</Text>
+        </View>
+        <View style={styles.botOnlineDot} />
+      </View>
+      <ScrollView style={styles.botMessages} contentContainerStyle={styles.botMessagesContent} keyboardShouldPersistTaps="handled">
+        <Text style={styles.botHint}>Pregúntame sobre facturas, clientes, productos o cualquier módulo de e-fact.</Text>
+        {messages.map((message) => (
+          <View key={message.id} style={[styles.botBubble, message.role === 'user' ? styles.botUserBubble : styles.botAssistantBubble]}>
+            <View style={styles.botMessageRow}>
+              <Text style={[styles.botBubbleText, message.role === 'user' && styles.botUserBubbleText]}>{message.text}</Text>
+              {message.role === 'assistant' ? <Pressable onPress={() => Speech.speak(message.text, { language: 'es-EC', rate: 0.96 })} hitSlop={8}><MaterialCommunityIcons name="volume-high" size={17} color="#0878C9" /></Pressable> : null}
+            </View>
+          </View>
+        ))}
+        {sending ? <View style={[styles.botBubble, styles.botAssistantBubble]}><ActivityIndicator color="#0878C9" /></View> : null}
+      </ScrollView>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.botSuggestions}>
+        {['¿Cómo emito una factura?', '¿Cómo agrego un cliente?', '¿Dónde veo mis documentos?'].map((item) => (
+          <Pressable key={item} style={styles.botSuggestion} onPress={() => send(item)} disabled={sending}>
+            <Text style={styles.botSuggestionText}>{item}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      {error ? <Text style={styles.botError}>{error}</Text> : null}
+      <View style={styles.botComposer}>
+        <Pressable style={[styles.botVoiceButton, listening && styles.botVoiceButtonActive]} onPress={toggleVoiceInput} disabled={sending}>
+          <MaterialCommunityIcons name={listening ? 'microphone' : 'microphone-outline'} size={21} color={listening ? '#FFFFFF' : '#0878C9'} />
+        </Pressable>
+        <TextInput value={draft} onChangeText={setDraft} placeholder={listening ? 'Escuchando...' : 'Escribe o dicta tu consulta...'} placeholderTextColor="#8DA1B4" style={styles.botInput} editable={!sending && !listening} multiline maxLength={800} onSubmitEditing={() => send()} />
+        <Pressable style={[styles.botSendButton, (!draft.trim() || sending) && styles.botSendButtonDisabled]} onPress={() => send()} disabled={!draft.trim() || sending}>
+          <Text style={styles.botSendText}>➤</Text>
+        </Pressable>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
 function DashboardHomeScreen({
   name,
   clientesCount,
@@ -7858,7 +8129,7 @@ function DashboardHomeScreen({
   const compact = width < 390;
   const ventasTotal = facturas.reduce((sum, factura) => sum + Number(factura.total ?? 0), 0);
   const mainModules = modules
-    .filter((module) => ['nueva-factura', 'clientes', 'productos', 'reporte-documentos', 'emisor', 'firma'].includes(module.view))
+    .filter((module) => ['bot', 'nueva-factura', 'clientes', 'productos', 'reporte-documentos', 'emisor'].includes(module.view))
     .slice(0, 6);
   const recentFactura = facturas[0];
 
@@ -7884,6 +8155,19 @@ function DashboardHomeScreen({
             </View>
           </View>
         </View> : null}
+      </View>
+
+      <View style={styles.dashboardFavoritesBlock}>
+        <View style={styles.dashboardSectionHeader}>
+          <Text style={styles.dashboardSectionTitle} numberOfLines={1}>Accesos frecuentes</Text>
+          <Text style={styles.dashboardFavoritesHint}>Desliza</Text>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dashboardFavoritesRow}>
+          <DashboardFavorite icon="file-plus-outline" label="Nueva factura" color="#176DFF" onPress={() => onOpenView('nueva-factura')} />
+          <DashboardFavorite icon="robot-outline" label="Preguntar a Númi" color="#F15A29" onPress={() => onOpenView('bot')} />
+          <DashboardFavorite icon="account-plus-outline" label="Nuevo cliente" color="#18B99F" onPress={() => onOpenView('clientes')} />
+          <DashboardFavorite icon="history" label="Historial" color="#8658F2" onPress={() => onOpenView('recargas')} />
+        </ScrollView>
       </View>
 
       <View style={styles.dashboardSectionHeader}>
@@ -7950,6 +8234,18 @@ function DashboardHomeScreen({
         />
       </View>
     </View>
+  );
+}
+
+function DashboardFavorite({ icon, label, color, onPress }: { icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; label: string; color: string; onPress: () => void }) {
+  return (
+    <Pressable style={({ pressed }) => [styles.dashboardFavorite, pressed && styles.dashboardFavoritePressed]} onPress={onPress}>
+      <View style={[styles.dashboardFavoriteIcon, { backgroundColor: `${color}16` }]}>
+        <MaterialCommunityIcons name={icon} size={22} color={color} />
+      </View>
+      <Text style={styles.dashboardFavoriteLabel} numberOfLines={2}>{label}</Text>
+      <Text style={[styles.dashboardFavoriteArrow, { color }]}>›</Text>
+    </Pressable>
   );
 }
 
@@ -8046,31 +8342,36 @@ function PortalHeaderAvatar({ avatarUrl, initials }: { avatarUrl?: string | null
 }
 
 function PortalBottomNav({
+  bottomInset,
   activeView,
   onHome,
   onServices,
+  onBot,
   onHistory,
   onProfile,
 }: {
+  bottomInset: number;
   activeView: WorkspaceView;
   onHome: () => void;
   onServices: () => void;
+  onBot: () => void;
   onHistory: () => void;
   onProfile: () => void;
 }) {
   return (
-    <View style={styles.portalBottomNav}>
+    <View style={[styles.portalBottomNav, { bottom: Math.max(8, bottomInset + 4) }]}>
       <PortalTabButton active={activeView === 'dashboard'} icon="home" label="Inicio" onPress={onHome} />
       <PortalTabButton active={activeView === 'portal'} icon="grid" label="Servicios" onPress={onServices} />
+      <PortalTabButton active={activeView === 'bot'} icon="bot" label="Númi" onPress={onBot} />
       <PortalTabButton active={activeView === 'recargas'} icon="document" label="Historial" onPress={onHistory} />
       <PortalTabButton active={activeView === 'perfil'} icon="profile" label="Perfil" onPress={onProfile} />
     </View>
   );
 }
 
-function PortalTabButton({ active, icon, label, onPress }: { active: boolean; icon: 'home' | 'grid' | 'document' | 'profile' | 'settings'; label: string; onPress: () => void }) {
+function PortalTabButton({ active, icon, label, onPress }: { active: boolean; icon: 'home' | 'grid' | 'document' | 'profile' | 'settings' | 'bot'; label: string; onPress: () => void }) {
   return (
-    <Pressable style={[styles.portalTabButton, active && styles.portalTabButtonActive]} onPress={onPress}>
+    <Pressable hitSlop={6} accessibilityRole="button" accessibilityLabel={label} style={[styles.portalTabButton, active && styles.portalTabButtonActive]} onPress={onPress}>
       <View style={styles.portalTabIcon}>
         {icon === 'home' ? (
           <View style={styles.portalTabHomeIcon}>
@@ -8098,9 +8399,10 @@ function PortalTabButton({ active, icon, label, onPress }: { active: boolean; ic
             <View style={[styles.portalTabProfileBody, active && styles.portalTabIconActive]} />
           </View>
         ) : null}
+        {icon === 'bot' ? <MaterialCommunityIcons name="robot-outline" size={24} color={active ? '#0878C9' : '#9CA3AF'} /> : null}
         {icon === 'settings' ? <Text style={[styles.portalTabSettingsIcon, active && styles.portalTabTextActive]}>⚙</Text> : null}
       </View>
-      <Text style={[styles.portalTabText, active && styles.portalTabTextActive]}>{label}</Text>
+      <Text style={[styles.portalTabText, active && styles.portalTabTextActive]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{label}</Text>
     </Pressable>
   );
 }
@@ -9371,55 +9673,6 @@ function EmptyState({ title, text }: { title: string; text: string }) {
   );
 }
 
-function ProgressiveList<T>({
-  items,
-  renderItem,
-  keyExtractor,
-  resetKey,
-  initialCount = 8,
-}: {
-  items: T[];
-  renderItem: (item: T, index: number) => React.ReactNode;
-  keyExtractor: (item: T, index: number) => string;
-  resetKey?: string;
-  initialCount?: number;
-}) {
-  const [visibleCount, setVisibleCount] = useState(initialCount);
-
-  useEffect(() => {
-    setVisibleCount(initialCount);
-  }, [initialCount, resetKey]);
-
-  if (items.length === 0) return null;
-
-  const visibleItems = items.slice(0, visibleCount);
-  const remaining = Math.max(items.length - visibleItems.length, 0);
-
-  return (
-    <View style={styles.resultCollection}>
-      <View style={styles.resultCollectionHeader}>
-        <Text style={styles.resultCollectionTitle}>Resultados</Text>
-        <Text style={styles.resultCollectionMeta}>Mostrando {visibleItems.length} de {items.length}</Text>
-      </View>
-      <View style={styles.listStack}>
-        {visibleItems.map((item, index) => (
-          <View key={keyExtractor(item, index)}>{renderItem(item, index)}</View>
-        ))}
-      </View>
-      {remaining > 0 ? (
-        <SmoothPressable
-          accessibilityLabel={`Mostrar ${Math.min(initialCount, remaining)} resultados mas`}
-          style={styles.loadMoreButton}
-          onPress={() => setVisibleCount((current) => Math.min(current + initialCount, items.length))}
-        >
-          <Text style={styles.loadMoreText}>Mostrar {Math.min(initialCount, remaining)} mas</Text>
-          <Text style={styles.loadMoreMeta}>{remaining} pendientes</Text>
-        </SmoothPressable>
-      ) : null}
-    </View>
-  );
-}
-
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function SmoothPressable({ children, style, ...props }: React.ComponentProps<typeof Pressable>) {
@@ -9554,7 +9807,7 @@ function AppLaunchScreen() {
         <Text style={styles.launchStatusText}>Preparando todo...</Text>
         <Text style={styles.launchFooterText}>Seguro  -  Rapido  -  Facil</Text>
       </View>
-      <StatusBar style="light" />
+      <StatusBar style="light" backgroundColor="#07305E" translucent={false} />
     </SafeAreaView>
   );
 }
@@ -9577,20 +9830,20 @@ function LoadingScreen() {
 
 function ScreenFrame({ children, centered }: { children: React.ReactNode; centered?: boolean }) {
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', android: undefined })} style={styles.flex}>
         <ScrollView contentContainerStyle={[styles.canvas, centered && styles.canvasCentered]} keyboardShouldPersistTaps="handled">
           <View style={styles.blueGlow} />
           {children}
         </ScrollView>
       </KeyboardAvoidingView>
-      <StatusBar style="light" />
+      <StatusBar style="light" backgroundColor="#07305E" translucent={false} />
     </SafeAreaView>
   );
 }
 
-function AuthCard({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
-  return <ScreenTransition><View style={[styles.card, wide && styles.cardWide]}>{children}</View></ScreenTransition>;
+function AuthCard({ children, wide, login }: { children: React.ReactNode; wide?: boolean; login?: boolean }) {
+  return <ScreenTransition><View style={[styles.card, login && styles.loginCard, wide && styles.cardWide]}>{children}</View></ScreenTransition>;
 }
 
 function BrandMark() {
@@ -9610,172 +9863,19 @@ function BrandLockup() {
   );
 }
 
-function Field({
-  label,
-  value,
-  onChangeText,
-  secureTextEntry,
-  keyboardType,
-  autoCapitalize,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  secureTextEntry?: boolean;
-  keyboardType?: 'default' | 'email-address' | 'number-pad' | 'phone-pad' | 'decimal-pad';
-  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
-}) {
+function BiometricSetupModal({ label, onChoose }: { label: string; onChoose: (enable: boolean) => void }) {
   return (
-    <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput
-        accessibilityLabel={label}
-        style={styles.input}
-        value={value}
-        onChangeText={onChangeText}
-        secureTextEntry={secureTextEntry}
-        keyboardType={keyboardType}
-        autoCapitalize={autoCapitalize}
-        placeholderTextColor="#8B98A6"
-      />
-    </View>
-  );
-}
-
-function SearchField({
-  label,
-  value,
-  onChangeText,
-  placeholder,
-  resultCount,
-  totalCount,
-  loading,
-  onSubmit,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  placeholder?: string;
-  resultCount?: number;
-  totalCount?: number;
-  loading?: boolean;
-  onSubmit?: () => void;
-}) {
-  const hasQuery = value.trim().length > 0;
-  const countLabel = loading ? 'Buscando' : typeof resultCount === 'number' ? `${resultCount} ${resultCount === 1 ? 'resultado' : 'resultados'}` : undefined;
-
-  return (
-    <View style={styles.searchCard}>
-      <View style={styles.searchHeaderRow}>
-        <View style={styles.searchTitleBlock}>
-          <Text style={styles.searchEyebrow}>{hasQuery ? 'Filtro activo' : 'Busqueda rapida'}</Text>
-          <Text style={styles.searchTitle}>{label}</Text>
+    <Modal transparent animationType="fade" statusBarTranslucent>
+      <View style={styles.biometricModalBackdrop}>
+        <View style={styles.biometricModalCard}>
+          <View style={styles.biometricModalIcon}><Text style={styles.biometricModalGlyph}>⌁</Text></View>
+          <Text style={styles.biometricModalTitle}>Acceso más rápido y seguro</Text>
+          <Text style={styles.biometricModalText}>Activa {label} para entrar a e-fact sin escribir tu contraseña la próxima vez.</Text>
+          <PrimaryButton label={`Activar ${label}`} loading={false} onPress={() => onChoose(true)} />
+          <Pressable style={styles.biometricLaterButton} onPress={() => onChoose(false)}><Text style={styles.biometricLaterText}>Más tarde</Text></Pressable>
         </View>
-        {countLabel ? (
-          <View style={styles.searchCountBadge}>
-            {loading ? <ActivityIndicator color="#00649D" size="small" /> : null}
-            <Text style={styles.searchCountText}>{countLabel}</Text>
-          </View>
-        ) : null}
       </View>
-      <View style={styles.searchInputShell}>
-        <Text style={styles.searchIcon}>⌕</Text>
-        <TextInput
-          accessibilityLabel={label}
-          autoCapitalize="none"
-          autoCorrect={false}
-          enterKeyHint="search"
-          placeholder={placeholder ?? label}
-          placeholderTextColor="#8191A2"
-          returnKeyType="search"
-          style={styles.searchInput}
-          value={value}
-          onChangeText={onChangeText}
-          onSubmitEditing={onSubmit}
-        />
-        {value ? (
-          <Pressable accessibilityLabel="Limpiar busqueda" accessibilityRole="button" hitSlop={8} style={styles.searchClearButton} onPress={() => onChangeText('')}>
-            <Text style={styles.searchClearText}>×</Text>
-          </Pressable>
-        ) : null}
-        {onSubmit ? (
-          <Pressable accessibilityLabel="Ejecutar busqueda" accessibilityRole="button" style={styles.searchSubmitButton} onPress={onSubmit}>
-            <Text style={styles.searchSubmitText}>Buscar</Text>
-          </Pressable>
-        ) : null}
-      </View>
-      <Text style={styles.searchHelper}>
-        {hasQuery && typeof resultCount === 'number'
-          ? `Mostrando ${resultCount}${typeof totalCount === 'number' ? ` de ${totalCount}` : ''}. Toca × para ver todo.`
-          : placeholder ?? 'Escribe para filtrar los registros.'}
-      </Text>
-    </View>
-  );
-}
-
-function PrimaryButton({ label, loading, onPress }: { label: string; loading: boolean; onPress: () => void }) {
-  return (
-    <SmoothPressable accessibilityLabel={label} accessibilityState={{ busy: loading, disabled: loading }} disabled={loading} style={[styles.primaryButton, loading && styles.disabledButton]} onPress={onPress}>
-      {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryButtonText}>{label}</Text>}
-    </SmoothPressable>
-  );
-}
-
-function SecondaryButton({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <SmoothPressable accessibilityLabel={label} style={styles.secondaryButton} onPress={onPress}>
-      <Text style={styles.secondaryButtonText}>{label}</Text>
-    </SmoothPressable>
-  );
-}
-
-function SegmentButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
-  return (
-    <SmoothPressable accessibilityLabel={label} accessibilityState={{ selected: active }} style={[styles.segmentButton, active && styles.segmentButtonActive]} onPress={onPress}>
-      <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{label}</Text>
-    </SmoothPressable>
-  );
-}
-
-function TextLink({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress}>
-      <Text style={styles.link}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function InlineSwitch({ muted, action, onPress }: { muted: string; action: string; onPress: () => void }) {
-  return (
-    <View style={styles.inlineSwitch}>
-      <Text style={styles.mutedText}>{muted} </Text>
-      <TextLink label={action} onPress={onPress} />
-    </View>
-  );
-}
-
-function MessageBox({ message }: { message: Exclude<MessageState, null> }) {
-  return (
-    <View accessibilityLiveRegion="polite" accessibilityRole="alert" style={[styles.message, styles[`message_${message.type}`]]}>
-      <Text style={styles.messageText}>{message.text}</Text>
-    </View>
-  );
-}
-
-function ExternalLink({ label, url }: { label: string; url: string }) {
-  return (
-    <Pressable style={styles.externalLink} onPress={() => Linking.openURL(url)}>
-      <Text style={styles.externalLinkText}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function SecurityNotice() {
-  return (
-    <View style={styles.securityNotice}>
-      <Text style={styles.securityIcon}>N</Text>
-      <Text style={styles.securityText}>Tus datos estan protegidos con altos estandares de seguridad y privacidad.</Text>
-    </View>
+    </Modal>
   );
 }
 
@@ -10016,12 +10116,12 @@ const styles = StyleSheet.create({
   blueGlow: {
     backgroundColor: '#0E7FBE',
     borderRadius: 999,
-    height: 520,
-    opacity: 0.62,
+    height: 420,
+    opacity: 0.28,
     position: 'absolute',
     right: -190,
     top: -120,
-    width: 520,
+    width: 420,
   },
   card: {
     alignSelf: 'center',
@@ -10035,6 +10135,15 @@ const styles = StyleSheet.create({
     shadowRadius: 30,
     width: '100%',
     elevation: 8,
+  },
+  loginCard: {
+    borderRadius: 28,
+    maxWidth: 430,
+    paddingHorizontal: 28,
+    paddingVertical: 30,
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 4,
   },
   cardWide: {
     marginVertical: 8,
@@ -10051,6 +10160,27 @@ const styles = StyleSheet.create({
   logoImage: {
     height: 54,
     width: 54,
+  },
+  loginBrand: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'center',
+    marginBottom: 26,
+  },
+  loginProductName: {
+    color: '#173E61',
+    fontSize: 25,
+    fontWeight: '900',
+    letterSpacing: -0.8,
+    lineHeight: 27,
+  },
+  loginProductCaption: {
+    color: '#7890A4',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    marginTop: 2,
   },
   brandLockup: {
     alignItems: 'center',
@@ -10078,6 +10208,49 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 4,
     textAlign: 'center',
+  },
+  loginTitle: {
+    fontSize: 27,
+    letterSpacing: -0.4,
+  },
+  loginSubtitle: {
+    marginTop: 7,
+  },
+  loginActionTiles: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 22,
+  },
+  loginActionTile: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D7E2EB',
+    borderRadius: 14,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 96,
+    paddingHorizontal: 5,
+    paddingVertical: 12,
+  },
+  loginActionTileActive: {
+    backgroundColor: '#F0F8FD',
+    borderColor: '#0072BD',
+    shadowColor: '#0072BD',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  loginActionLabel: {
+    color: '#526577',
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 15,
+    textAlign: 'center',
+  },
+  loginActionLabelActive: {
+    color: '#005A91',
   },
   externalLink: {
     alignSelf: 'center',
@@ -10109,6 +10282,22 @@ const styles = StyleSheet.create({
     fontSize: 15,
     minHeight: 52,
     paddingHorizontal: 14,
+  },
+  inputShell: {
+    position: 'relative',
+  },
+  inputWithAction: {
+    paddingRight: 50,
+  },
+  passwordToggle: {
+    alignItems: 'center',
+    borderRadius: 18,
+    height: 36,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 9,
+    top: 8,
+    width: 36,
   },
   searchCard: {
     backgroundColor: '#F8FBFE',
@@ -10229,16 +10418,30 @@ const styles = StyleSheet.create({
     minHeight: 36,
   },
   checkbox: {
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#CAD4DE',
     borderRadius: 5,
     borderWidth: 1.5,
     height: 20,
+    justifyContent: 'center',
     width: 20,
   },
   checkboxChecked: {
     backgroundColor: '#0076BC',
     borderColor: '#0076BC',
+  },
+  checkboxTick: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  rememberText: {
+    color: '#526577',
+    fontSize: 13,
+    fontWeight: '700',
   },
   mutedText: {
     color: '#7B8793',
@@ -10261,6 +10464,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.24,
     shadowRadius: 16,
     elevation: 4,
+    paddingHorizontal: 18,
   },
   disabledButton: {
     opacity: 0.72,
@@ -10271,6 +10475,73 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textTransform: 'uppercase',
   },
+  biometricButton: {
+    alignItems: 'center',
+    backgroundColor: '#F2F9FD',
+    borderColor: '#B8DCEF',
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'center',
+    minHeight: 52,
+  },
+  biometricButtonText: {
+    color: '#00649D',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  biometricModalBackdrop: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(3, 24, 48, 0.62)',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 22,
+  },
+  biometricModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    gap: 14,
+    maxWidth: 420,
+    padding: 26,
+    width: '100%',
+  },
+  biometricModalIcon: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: '#E7F5FC',
+    borderRadius: 999,
+    height: 72,
+    justifyContent: 'center',
+    width: 72,
+  },
+  biometricModalGlyph: {
+    color: '#00649D',
+    fontSize: 40,
+    fontWeight: '900',
+  },
+  biometricModalTitle: {
+    color: '#20374B',
+    fontSize: 22,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  biometricModalText: {
+    color: '#64788A',
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  biometricLaterButton: {
+    alignItems: 'center',
+    minHeight: 40,
+    justifyContent: 'center',
+  },
+  biometricLaterText: {
+    color: '#64788A',
+    fontSize: 14,
+    fontWeight: '800',
+  },
   secondaryButton: {
     alignItems: 'center',
     backgroundColor: '#F1F8FE',
@@ -10279,6 +10550,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     justifyContent: 'center',
     minHeight: 44,
+    paddingHorizontal: 16,
   },
   secondaryButtonText: {
     color: '#0072BD',
@@ -10300,10 +10572,45 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   stepper: {
-    alignSelf: 'center',
+    alignItems: 'flex-start',
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 18,
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  registerProgress: {
+    gap: 8,
+    marginTop: 20,
+  },
+  stepItem: {
+    alignItems: 'center',
+    gap: 6,
+    width: 72,
+  },
+  stepLabel: {
+    color: '#8191A0',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  stepLabelActive: {
+    color: '#00649D',
+  },
+  stepProgressTrack: {
+    backgroundColor: '#E7EFF5',
+    borderRadius: 4,
+    height: 5,
+    marginHorizontal: 36,
+    overflow: 'hidden',
+  },
+  stepProgressFill: {
+    backgroundColor: '#0072BD',
+    borderRadius: 4,
+    height: '100%',
+  },
+  stepProgressCaption: {
+    color: '#72879A',
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'right',
   },
   stepDot: {
     alignItems: 'center',
@@ -10454,16 +10761,15 @@ const styles = StyleSheet.create({
   },
   securityNotice: {
     alignItems: 'center',
-    backgroundColor: '#F4F9FD',
-    borderRadius: 13,
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 22,
-    padding: 14,
+    gap: 7,
+    justifyContent: 'center',
+    marginTop: 18,
+    padding: 0,
   },
   securityIcon: {
     color: '#18B889',
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '900',
   },
   securityText: {
@@ -10471,7 +10777,8 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     fontWeight: '700',
-    lineHeight: 17,
+    lineHeight: 16,
+    textAlign: 'center',
   },
   workspaceSafeArea: {
     backgroundColor: '#07305E',
@@ -10482,11 +10789,11 @@ const styles = StyleSheet.create({
   },
   workspaceCanvas: {
     flexGrow: 1,
-    padding: 16,
+    padding: 12,
     paddingBottom: 22,
   },
   workspaceCanvasWithBottomNav: {
-    paddingBottom: 102,
+    paddingBottom: 86,
   },
   workspaceHeader: {
     alignItems: 'center',
@@ -10954,6 +11261,52 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 19,
     marginTop: 16,
+  },
+  dashboardFavoritesBlock: {
+    gap: 10,
+  },
+  dashboardFavoritesHint: {
+    color: '#7B8DA4',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  dashboardFavoritesRow: {
+    gap: 10,
+    paddingRight: 12,
+  },
+  dashboardFavorite: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E7EEF8',
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 9,
+    minHeight: 64,
+    paddingHorizontal: 11,
+    width: 164,
+  },
+  dashboardFavoritePressed: {
+    backgroundColor: '#F0F6FF',
+    transform: [{ scale: 0.98 }],
+  },
+  dashboardFavoriteIcon: {
+    alignItems: 'center',
+    borderRadius: 12,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  dashboardFavoriteLabel: {
+    color: '#122A54',
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '900',
+    lineHeight: 15,
+  },
+  dashboardFavoriteArrow: {
+    fontSize: 22,
+    fontWeight: '400',
   },
   dashboardHeroDevice: {
     alignItems: 'center',
@@ -11745,14 +12098,14 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#EEF3FF',
-    borderRadius: 24,
+    borderRadius: 20,
     borderWidth: 1,
-    bottom: 12,
+    bottom: 8,
     flexDirection: 'row',
     gap: 4,
     justifyContent: 'space-between',
     left: 16,
-    padding: 8,
+    padding: 6,
     position: 'absolute',
     right: 16,
     shadowColor: '#B8C7E6',
@@ -11767,7 +12120,7 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 4,
     justifyContent: 'center',
-    minHeight: 64,
+    minHeight: 56,
   },
   portalTabButtonActive: {
     backgroundColor: 'transparent',
@@ -12604,6 +12957,182 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
+  paginationBar: {
+    alignItems: 'center',
+    borderTopColor: '#DCE8F1',
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 2,
+    paddingTop: 10,
+  },
+  paginationPages: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  paginationButton: {
+    alignItems: 'center',
+    backgroundColor: '#EAF5FC',
+    borderColor: '#B9D8EE',
+    borderRadius: 9,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  paginationButtonDisabled: {
+    opacity: 0.4,
+  },
+  paginationButtonText: {
+    color: '#00649D',
+    fontSize: 22,
+    fontWeight: '800',
+    lineHeight: 24,
+  },
+  paginationPage: {
+    alignItems: 'center',
+    borderRadius: 9,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  paginationPageActive: {
+    backgroundColor: '#0072BD',
+  },
+  paginationPageText: {
+    color: '#617A90',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  registerReviewCard: {
+    backgroundColor: '#F3F8FC',
+    borderColor: '#D5E5F0',
+    borderRadius: 13,
+    borderWidth: 1,
+    gap: 4,
+    padding: 12,
+  },
+  registerReviewTitle: {
+    color: '#0072BD',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  registerReviewValue: {
+    color: '#263A4F',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  registerReviewMeta: {
+    color: '#687E91',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  paginationPageTextActive: {
+    color: '#FFFFFF',
+  },
+  detailModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
+  },
+  detailModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(4, 35, 60, 0.48)',
+  },
+  detailModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#B9D8EE',
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 18,
+    maxHeight: '80%',
+    padding: 20,
+    shadowColor: '#002C50',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  detailModalHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  detailModalTitleWrap: {
+    flex: 1,
+    gap: 4,
+  },
+  detailModalEyebrow: {
+    color: '#0072BD',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  detailModalTitle: {
+    color: '#263A4F',
+    fontSize: 19,
+    fontWeight: '900',
+  },
+  detailModalClose: {
+    alignItems: 'center',
+    backgroundColor: '#EEF5F9',
+    borderRadius: 17,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  detailModalCloseText: {
+    color: '#38566D',
+    fontSize: 23,
+    lineHeight: 25,
+  },
+  detailModalBody: {
+    backgroundColor: '#F5F9FC',
+    borderColor: '#E0EAF2',
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 12,
+    padding: 14,
+  },
+  detailModalRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 9,
+  },
+  detailModalMarker: {
+    backgroundColor: '#00A8D6',
+    borderRadius: 4,
+    height: 8,
+    marginTop: 5,
+    width: 8,
+  },
+  detailModalValue: {
+    color: '#405C72',
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+  },
+  detailModalEmpty: {
+    color: '#72879A',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  detailModalButton: {
+    alignItems: 'center',
+    backgroundColor: '#0072BD',
+    borderRadius: 12,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  detailModalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+  },
   clientCard: {
     backgroundColor: '#FFFFFF',
     borderColor: '#DCE8F1',
@@ -12984,6 +13513,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
   },
+  botScreen: { backgroundColor: '#F6FAFD', borderRadius: 18, flex: 1, minHeight: 520, overflow: 'hidden' },
+  botHero: { alignItems: 'center', backgroundColor: '#0878C9', flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
+  botAvatar: { backgroundColor: '#FFFFFF', borderRadius: 28, height: 56, width: 56 },
+  botHeroCopy: { flex: 1 },
+  botHeroTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
+  botHeroText: { color: '#D8F1FF', fontSize: 12, marginTop: 2 },
+  botOnlineDot: { backgroundColor: '#58E2A5', borderColor: '#FFFFFF', borderRadius: 8, borderWidth: 2, height: 14, width: 14 },
+  botMessages: { flex: 1 },
+  botMessagesContent: { gap: 10, padding: 16 },
+  botHint: { color: '#73879A', fontSize: 12, lineHeight: 17, marginBottom: 4 },
+  botBubble: { borderRadius: 16, maxWidth: '88%', padding: 12 },
+  botAssistantBubble: { alignSelf: 'flex-start', backgroundColor: '#FFFFFF', borderBottomLeftRadius: 4, borderColor: '#E0ECF4', borderWidth: 1 },
+  botUserBubble: { alignSelf: 'flex-end', backgroundColor: '#0878C9', borderBottomRightRadius: 4 },
+  botBubbleText: { color: '#263A4F', fontSize: 14, lineHeight: 20 },
+  botMessageRow: { alignItems: 'flex-end', flexDirection: 'row', gap: 8 },
+  botUserBubbleText: { color: '#FFFFFF' },
+  botSuggestions: { gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
+  botSuggestion: { backgroundColor: '#E7F4FC', borderColor: '#B9E0F5', borderRadius: 999, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
+  botSuggestionText: { color: '#0867A9', fontSize: 12, fontWeight: '800' },
+  botError: { color: '#B42318', fontSize: 12, paddingHorizontal: 16, paddingBottom: 6 },
+  botComposer: { alignItems: 'flex-end', backgroundColor: '#FFFFFF', borderTopColor: '#DCEAF3', borderTopWidth: 1, flexDirection: 'row', gap: 8, padding: 10 },
+  botVoiceButton: { alignItems: 'center', backgroundColor: '#E7F4FC', borderColor: '#B9E0F5', borderRadius: 14, borderWidth: 1, height: 44, justifyContent: 'center', width: 44 },
+  botVoiceButtonActive: { backgroundColor: '#F15A29', borderColor: '#F15A29' },
+  botInput: { backgroundColor: '#F3F7FA', borderColor: '#DCEAF3', borderRadius: 14, borderWidth: 1, color: '#263A4F', flex: 1, maxHeight: 90, minHeight: 44, paddingHorizontal: 12, paddingVertical: 10 },
+  botSendButton: { alignItems: 'center', backgroundColor: '#0878C9', borderRadius: 14, height: 44, justifyContent: 'center', width: 44 },
+  botSendButtonDisabled: { backgroundColor: '#AFC8D8' },
+  botSendText: { color: '#FFFFFF', fontSize: 22, fontWeight: '900' },
 });
 
 

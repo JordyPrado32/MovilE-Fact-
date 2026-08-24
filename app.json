@@ -1,4 +1,4 @@
-﻿{
+{
   "expo": {
     "name": "e-fact movil",
     "slug": "efact-mobile",
@@ -7,6 +7,9 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "e-fact usa Face ID para proteger el acceso a tu cuenta."
+      },
       "supportsTablet": true
     },
     "android": {
@@ -18,6 +21,15 @@
       },
       "predictiveBackGestureEnabled": false
     },
+    "plugins": [
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "e-fact usa Face ID para proteger el acceso a tu cuenta."
+        }
+      ],
+      "expo-secure-store"
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     }

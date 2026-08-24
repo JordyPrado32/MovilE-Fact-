@@ -9,9 +9,11 @@ const REQUEST_TIMEOUT_MS = 20000;
 const DEFAULT_ERROR_MESSAGE = 'No se pudo completar la solicitud. Intenta nuevamente.';
 
 let sessionToken: string | null = null;
+let authSessionCookie: string | null = null;
 
 export function setSessionToken(token?: string | null) {
   sessionToken = token?.trim() || null;
+  if (!sessionToken) authSessionCookie = null;
 }
 
 export class ApiError extends Error {
@@ -42,6 +44,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
         Accept: 'application/json',
         ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        ...(authSessionCookie ? { Cookie: authSessionCookie } : {}),
         ...headers,
       },
     });
@@ -54,6 +57,10 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   } finally {
     clearTimeout(timeout);
   }
+
+  const setCookie = response.headers.get('set-cookie');
+  const authCookie = setCookie?.match(/(?:^|,\s*)(Auth_Session=[^;,]+)/i)?.[1];
+  if (authCookie) authSessionCookie = authCookie;
 
   const contentType = response.headers.get('content-type') ?? '';
   const text = await response.text();
