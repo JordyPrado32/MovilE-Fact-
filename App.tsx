@@ -61,6 +61,50 @@ import { ExternalLink, Field, InlineSwitch, LoginActionTiles, MessageBox, Primar
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'change';
 
+const EFACT_THEME = {
+  colors: {
+    primary: '#0072BD',
+    primaryLight: '#EAF5FC',
+    primarySoft: '#F4FAFE',
+    primaryDark: '#07305E',
+    secondary: '#21BF73',
+    background: '#F6F9FC',
+    surface: '#FFFFFF',
+    surfaceSoft: '#F1F6FA',
+    textPrimary: '#173E61',
+    textSecondary: '#637587',
+    textMuted: '#8A98A6',
+    border: '#DCE8F1',
+    success: '#18A66A',
+    warning: '#C47A00',
+    error: '#B4232D',
+    info: '#00649D',
+    disabled: '#A8B4BF',
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 24,
+    xxl: 32,
+  },
+  radius: {
+    input: 12,
+    button: 12,
+    card: 16,
+    modal: 22,
+    pill: 999,
+  },
+  shadow: {
+    color: '#335D7B',
+    offset: { width: 0, height: 8 },
+    opacity: 0.1,
+    radius: 18,
+    elevation: 3,
+  },
+};
+
 let reduceMotionEnabled = false;
 const reduceMotionListeners = new Set<() => void>();
 
@@ -837,16 +881,16 @@ function getServiceDisplayName(service: Pick<ServiceAccess, 'codigo' | 'nombre'>
 
 function getPortalServiceVisual(title: string, index: number) {
   const normalized = normalizeText(title);
-  if (normalized.includes('fact')) return { kind: 'document', accent: '#0A69FF', surface: '#176DFF' };
-  if (normalized.includes('cont')) return { kind: 'calculator', accent: '#0C9D8B', surface: '#18B99F' };
-  if (normalized.includes('declara')) return { kind: 'document', accent: '#7347E8', surface: '#8658F2' };
-  if (normalized.includes('rubrica') || normalized.includes('sign')) return { kind: 'pencil', accent: '#F97316', surface: '#FF8A2A' };
-  if (normalized.includes('back')) return { kind: 'briefcase', accent: '#0A69FF', surface: '#1686FF' };
+  if (normalized.includes('fact')) return { kind: 'document', accent: EFACT_THEME.colors.primary, surface: EFACT_THEME.colors.primary };
+  if (normalized.includes('cont')) return { kind: 'calculator', accent: EFACT_THEME.colors.secondary, surface: EFACT_THEME.colors.secondary };
+  if (normalized.includes('declara')) return { kind: 'document', accent: EFACT_THEME.colors.info, surface: EFACT_THEME.colors.info };
+  if (normalized.includes('rubrica') || normalized.includes('sign')) return { kind: 'pencil', accent: EFACT_THEME.colors.warning, surface: EFACT_THEME.colors.warning };
+  if (normalized.includes('back')) return { kind: 'briefcase', accent: EFACT_THEME.colors.primaryDark, surface: EFACT_THEME.colors.primaryDark };
 
   const palette = [
-    { kind: 'document', accent: '#0A69FF', surface: '#176DFF' },
-    { kind: 'calculator', accent: '#0C9D8B', surface: '#18B99F' },
-    { kind: 'document', accent: '#7347E8', surface: '#8658F2' },
+    { kind: 'document', accent: EFACT_THEME.colors.primary, surface: EFACT_THEME.colors.primary },
+    { kind: 'calculator', accent: EFACT_THEME.colors.secondary, surface: EFACT_THEME.colors.secondary },
+    { kind: 'briefcase', accent: EFACT_THEME.colors.primaryDark, surface: EFACT_THEME.colors.primaryDark },
   ];
   return palette[index % palette.length];
 }
@@ -4779,22 +4823,23 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     <SafeAreaView edges={['top', 'bottom']} style={[styles.workspaceSafeArea, activeView === 'portal' && styles.portalSafeArea]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.workspaceCanvasWithBottomNav, { paddingBottom: 88 + insets.bottom }]} keyboardShouldPersistTaps="handled">
         {activeView === 'portal' ? (
-          <View style={styles.portalHeader}>
-            <View style={styles.portalUserBlock}>
+          <View style={styles.dashboardHeader}>
+            <View style={styles.dashboardBrandBlock}>
               <PortalHeaderAvatar avatarUrl={profileAvatarUrl} initials={profileInitials} />
-              <View style={styles.portalUserText}>
-                <Text style={styles.portalGreeting}>Hola, <Text style={styles.portalGreetingName}>{portalFirstName}</Text></Text>
-                <Text style={styles.portalSubtitle}>Portal de Servicios</Text>
+              <View style={styles.dashboardBrandText}>
+                <Text style={styles.dashboardBrandTitle}>Portal de servicios</Text>
+                <Text style={styles.dashboardBrandName}>{portalFirstName}</Text>
               </View>
             </View>
-            <Pressable style={styles.portalNotificationButton} onPress={() => setNotificationsOpen(true)}>
-              <View style={styles.portalBellShape}>
-                <View style={styles.portalBellDome} />
-                <View style={styles.portalBellBase} />
-                <View style={styles.portalBellClapper} />
-              </View>
-              <View style={styles.portalNotificationDot} />
-            </Pressable>
+            <View style={styles.dashboardHeaderActions}>
+              <Pressable style={styles.dashboardIconButton} onPress={() => setNotificationsOpen(true)}>
+                <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
+                <View style={styles.dashboardNotificationDot} />
+              </Pressable>
+              <Pressable style={styles.dashboardIconButton} onPress={() => setMenuOpen(true)}>
+                <MaterialCommunityIcons name="menu" size={25} color="#FFFFFF" />
+              </Pressable>
+            </View>
           </View>
         ) : activeView === 'dashboard' ? (
           <View style={styles.dashboardHeader}>
@@ -4807,15 +4852,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             </View>
             <View style={styles.dashboardHeaderActions}>
               <Pressable style={styles.dashboardIconButton} onPress={() => setNotificationsOpen(true)}>
-                <View style={styles.portalBellShape}>
-                  <View style={styles.dashboardBellDome} />
-                  <View style={styles.dashboardBellBase} />
-                  <View style={styles.dashboardBellClapper} />
-                </View>
+                <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
                 <View style={styles.dashboardNotificationDot} />
               </Pressable>
               <Pressable style={styles.dashboardIconButton} onPress={() => setMenuOpen(true)}>
-                <Text style={styles.dashboardMenuGlyph}>≡</Text>
+                <MaterialCommunityIcons name="menu" size={25} color="#FFFFFF" />
               </Pressable>
             </View>
           </View>
@@ -4853,28 +4894,13 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           <View style={styles.portalStack}>
             <View style={styles.portalHeroPanel}>
               <View style={styles.portalHeroCopy}>
-                <Text style={styles.portalHeroBadge}>PORTAL DE SERVICIOS</Text>
-                <Text style={styles.portalHeroTitle}>Todos tus servicios,</Text>
-                <Text style={styles.portalHeroAccent}>EN UN SOLO LUGAR</Text>
-                <Text style={styles.portalHeroText}>Selecciona el servicio autorizado para esta sesion movil.</Text>
-                <View style={styles.portalHeroPager}>
-                  <View style={styles.portalHeroPagerActive} />
-                  <View style={styles.portalHeroPagerDot} />
-                  <View style={styles.portalHeroPagerDot} />
-                  <View style={styles.portalHeroPagerDot} />
-                </View>
+                <Text style={styles.dashboardPanelLabel}>Resumen principal</Text>
+                <Text style={styles.portalHeroTitle}>Servicios autorizados</Text>
+                <Text style={styles.portalHeroText}>Elige el espacio de trabajo disponible para esta sesión móvil.</Text>
               </View>
-              <View style={styles.portalHeroDevice}>
-                <View style={styles.portalPhone}>
-                  <View style={styles.portalPhoneNotch} />
-                  <View style={styles.portalAppGrid}>
-                    <View style={[styles.portalAppTile, styles.portalAppTileBlue]} />
-                    <View style={[styles.portalAppTile, styles.portalAppTilePurple]} />
-                    <View style={[styles.portalAppTile, styles.portalAppTileGreen]} />
-                    <View style={[styles.portalAppTile, styles.portalAppTileOrange]} />
-                  </View>
-                </View>
-                <View style={styles.portalDeviceBase} />
+              <View style={styles.portalHeroBadge}>
+                <Text style={styles.portalHeroBadgeText}>{Math.max(services.length, 1)}</Text>
+                <Text style={styles.portalHeroBadgeLabel}>servicios</Text>
               </View>
             </View>
 
@@ -4897,21 +4923,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
             <View style={styles.portalSectionHeader}>
               <View style={styles.portalSectionTitleWrap}>
-                <View style={styles.portalSectionMark}>
-                  <View style={[styles.portalSectionDot, styles.portalSectionDotCyan]} />
-                  <View style={[styles.portalSectionDot, styles.portalSectionDotBlue]} />
-                  <View style={[styles.portalSectionDot, styles.portalSectionDotPurple]} />
-                  <View style={[styles.portalSectionDot, styles.portalSectionDotGreen]} />
-                </View>
-                <Text style={styles.portalSectionTitle}>MIS SERVICIOS</Text>
+                <Text style={styles.portalSectionTitle}>Mis servicios</Text>
               </View>
               <Pressable style={styles.portalSectionAction} onPress={() => setMenuOpen(true)}>
-                <View style={styles.portalSectionActionGrid}>
-                  <View style={styles.portalSectionActionDot} />
-                  <View style={styles.portalSectionActionDot} />
-                  <View style={styles.portalSectionActionDot} />
-                  <View style={styles.portalSectionActionDot} />
-                </View>
+                <MaterialCommunityIcons name="menu" size={22} color={EFACT_THEME.colors.primary} />
               </Pressable>
             </View>
 
@@ -5718,7 +5733,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         onHome={() => openView('dashboard')}
         onServices={() => canUsePortal ? openView('portal') : setMenuOpen(true)}
         onBot={() => openView('bot')}
-        onHistory={() => openView('recargas')}
+        onNewInvoice={() => openView('nueva-factura')}
         onProfile={() => openView('perfil')}
       />
       <Modal visible={notificationsOpen} animationType="fade" transparent onRequestClose={() => setNotificationsOpen(false)}>
@@ -5787,7 +5802,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           </Animated.View>
         </View>
       </Modal>
-      <StatusBar style={activeView === 'portal' ? 'dark' : 'light'} />
+      <StatusBar style="light" backgroundColor="#07305E" translucent={false} />
     </SafeAreaView>
   );
 }
@@ -8375,83 +8390,88 @@ function DashboardHomeScreen({
   const { width } = useWindowDimensions();
   const compact = width < 390;
   const ventasTotal = facturas.reduce((sum, factura) => sum + Number(factura.total ?? 0), 0);
+  const latestFacturas = facturas.slice(0, 3);
   const mainModules = modules
-    .filter((module) => ['bot', 'nueva-factura', 'clientes', 'productos', 'reporte-documentos', 'emisor'].includes(module.view))
-    .slice(0, 6);
+    .filter((module) => ['mis-facturas', 'clientes', 'productos', 'reporte-documentos', 'emisor', 'punto-emision'].includes(module.view))
+    .slice(0, 5);
   const recentFactura = facturas[0];
 
   return (
     <View style={styles.dashboardHome}>
-      <View style={[styles.dashboardHero, compact && styles.dashboardHeroCompact]}>
-        <View style={styles.dashboardHeroCopy}>
-          <Text style={styles.dashboardHeroTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78}>Hola, <Text style={styles.dashboardHeroName}>{name}</Text> 👋</Text>
-          <Text style={styles.dashboardHeroSubtitle} numberOfLines={3}>Bienvenido a tu centro de gestión y facturación</Text>
-          <View style={styles.dashboardHeroRule} />
-          <Text style={styles.dashboardHeroText}>Todo lo que necesitas para administrar tu negocio, en un solo lugar.</Text>
+      <View style={styles.dashboardIntro}>
+        <View style={styles.dashboardIntroText}>
+          <Text style={styles.dashboardEyebrow}>E-FACT MOVIL</Text>
+          <Text style={styles.dashboardGreeting} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78}>Hola, {name}</Text>
+          <Text style={styles.dashboardIntroCopy}>Tu operación tributaria al día, simple y ordenada.</Text>
         </View>
-        {!compact ? <View style={styles.dashboardHeroDevice}>
-          <View style={styles.dashboardHeroPhone}>
-            <View style={styles.portalPhoneNotch} />
-            <PortalServiceGlyph kind="document" />
-          </View>
-          <View style={styles.dashboardHeroChartCard}>
-            <View style={styles.dashboardHeroChartBars}>
-              <View style={[styles.dashboardHeroChartBar, { height: 13 }]} />
-              <View style={[styles.dashboardHeroChartBar, { height: 23 }]} />
-              <View style={[styles.dashboardHeroChartBar, { height: 34 }]} />
-            </View>
-          </View>
-        </View> : null}
-      </View>
-
-      <View style={styles.dashboardFavoritesBlock}>
-        <View style={styles.dashboardSectionHeader}>
-          <Text style={styles.dashboardSectionTitle} numberOfLines={1}>Accesos frecuentes</Text>
-          <Text style={styles.dashboardFavoritesHint}>Desliza</Text>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dashboardFavoritesRow}>
-          <DashboardFavorite icon="file-plus-outline" label="Nueva factura" color="#176DFF" onPress={() => onOpenView('nueva-factura')} />
-          <DashboardFavorite icon="robot-outline" label="Preguntar a Númi" color="#F15A29" onPress={() => onOpenView('bot')} />
-          <DashboardFavorite icon="account-plus-outline" label="Nuevo cliente" color="#18B99F" onPress={() => onOpenView('nuevo-cliente')} />
-          <DashboardFavorite icon="history" label="Historial" color="#8658F2" onPress={() => onOpenView('recargas')} />
-        </ScrollView>
-      </View>
-
-      <View style={styles.dashboardSectionHeader}>
-        <Text style={styles.dashboardSectionTitle} numberOfLines={1} adjustsFontSizeToFit>Resumen general</Text>
-        <View style={styles.dashboardPeriodPill}>
-          <Text style={styles.dashboardPeriodText} numberOfLines={1}>Este mes</Text>
-          <Text style={styles.dashboardPeriodChevron}>⌄</Text>
-        </View>
-      </View>
-
-      <View style={[styles.dashboardStatsGrid, compact && styles.dashboardStatsGridCompact]}>
-        <DashboardStatCard compact={compact} accent="#176DFF" kind="document" value={facturas.length} label="Facturas emitidas" trend="12%" />
-        <DashboardStatCard compact={compact} accent="#18B99F" kind="money" value={formatDashboardMoney(ventasTotal)} label="Ventas totales" trend="18%" />
-        <DashboardStatCard compact={compact} accent="#8658F2" kind="people" value={clientesCount} label="Clientes nuevos" trend="7%" />
-        <DashboardStatCard compact={compact} accent="#FF8A2A" kind="box" value={productosCount} label="Productos activos" trend="4%" />
-      </View>
-
-      <View style={styles.dashboardInsightRow}>
-        <DashboardChartCard facturas={facturas} />
-        <View style={styles.dashboardQuickCard}>
-          <Text style={styles.dashboardPanelTitle}>Acción rápida</Text>
-          <DashboardQuickAction color="#176DFF" label="Nueva factura" onPress={() => onOpenView('nueva-factura')} />
-          <DashboardQuickAction color="#8658F2" label="Nuevo cliente" onPress={() => onOpenView('nuevo-cliente')} />
-          <DashboardQuickAction color="#18B99F" label="Nuevo producto" onPress={() => onOpenView('nuevo-producto')} />
-          <DashboardQuickAction color="#FF8A2A" label="Reporte de ventas" onPress={() => onOpenView('reporte-documentos')} />
-        </View>
-      </View>
-
-      <View style={styles.dashboardSectionHeader}>
-        <Text style={styles.dashboardSectionTitle} numberOfLines={1} adjustsFontSizeToFit>Módulos principales</Text>
-        <Pressable onPress={() => onOpenView('portal')}>
-          <Text style={styles.dashboardViewAll} numberOfLines={1}>Ver todos ›</Text>
+        <Pressable accessibilityLabel="Ver servicios" style={styles.dashboardSmallIconButton} onPress={() => onOpenView('portal')}>
+          <MaterialCommunityIcons name="view-grid-outline" size={22} color={EFACT_THEME.colors.primaryDark} />
         </Pressable>
       </View>
-      <View style={styles.dashboardModulesGrid}>
+
+      <View style={styles.dashboardSummaryPanel}>
+        <View style={styles.dashboardSummaryHeader}>
+          <View>
+            <Text style={styles.dashboardPanelLabel}>Resumen principal</Text>
+            <Text style={styles.dashboardSummaryTitle}>Facturación de este mes</Text>
+          </View>
+          <View style={styles.dashboardPeriodPill}>
+            <Text style={styles.dashboardPeriodText}>Activo</Text>
+          </View>
+        </View>
+        <Text style={styles.dashboardMoneyValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{formatDashboardMoney(ventasTotal)}</Text>
+        <View style={styles.dashboardSummaryDivider} />
+        <View style={styles.dashboardSummaryStats}>
+          <DashboardMetric value={facturas.length} label="Facturas" />
+          <DashboardMetric value={clientesCount} label="Clientes" />
+          <DashboardMetric value={productosCount} label="Productos" />
+        </View>
+      </View>
+
+      <View style={styles.dashboardSectionHeader}>
+        <Text style={styles.dashboardSectionTitle}>Acciones principales</Text>
+      </View>
+      <View style={[styles.dashboardActionRow, compact && styles.dashboardActionRowCompact]}>
+        <DashboardPrimaryAction icon="file-plus-outline" label="Nueva factura" text="Emitir comprobante" primary onPress={() => onOpenView('nueva-factura')} />
+        <DashboardPrimaryAction icon="account-plus-outline" label="Nuevo cliente" text="Registrar datos" onPress={() => onOpenView('nuevo-cliente')} />
+        <DashboardPrimaryAction icon="robot-outline" label="Númi" text="Asistente" onPress={() => onOpenView('bot')} />
+      </View>
+
+      <View style={styles.dashboardActivityPanel}>
+        <View style={styles.dashboardSectionHeader}>
+          <Text style={styles.dashboardSectionTitle}>Actividad reciente</Text>
+          <Pressable hitSlop={8} onPress={() => onOpenView('mis-facturas')}>
+            <Text style={styles.dashboardViewAll}>Ver facturas</Text>
+          </Pressable>
+        </View>
+        {latestFacturas.length ? latestFacturas.map((factura, index) => (
+          <DashboardActivityItem
+            key={listItemKey('dashboard-factura', [factura.codfactura, factura.numeroCompleto, factura.numfactura], index)}
+            color={EFACT_THEME.colors.secondary}
+            title={factura.numeroCompleto ?? factura.numfactura ?? 'Factura emitida'}
+            subtitle={`${factura.cliente ?? 'Cliente'} · ${formatDocumentDate(factura.fechaEmision)}`}
+            amount={formatMoney(factura.total)}
+            status="Procesada"
+          />
+        )) : (
+          <DashboardActivityItem
+            color={EFACT_THEME.colors.info}
+            title={recentFactura?.numeroCompleto ?? 'Sin documentos recientes'}
+            subtitle="Cuando emitas comprobantes aparecerán aquí."
+            status="Borrador"
+          />
+        )}
+      </View>
+
+      <View style={styles.dashboardSectionHeader}>
+        <Text style={styles.dashboardSectionTitle}>Servicios frecuentes</Text>
+        <Pressable hitSlop={8} onPress={() => onOpenView('portal')}>
+          <Text style={styles.dashboardViewAll}>Ver todos</Text>
+        </Pressable>
+      </View>
+      <View style={styles.dashboardServiceList}>
         {mainModules.map((module, index) => (
-          <DashboardModuleTile
+          <DashboardServiceRow
             key={`home-module-${module.view}`}
             module={module}
             index={index}
@@ -8459,28 +8479,40 @@ function DashboardHomeScreen({
           />
         ))}
       </View>
-
-      <View style={styles.dashboardActivityCard}>
-        <View style={styles.dashboardSectionHeader}>
-          <Text style={styles.dashboardPanelTitle} numberOfLines={1} adjustsFontSizeToFit>Actividad reciente</Text>
-          <Pressable onPress={() => onOpenView('mis-facturas')}>
-            <Text style={styles.dashboardViewAll} numberOfLines={1}>Ver historial ›</Text>
-          </Pressable>
-        </View>
-        <DashboardActivityItem
-          color="#18B99F"
-          title={recentFactura?.numeroCompleto ?? recentFactura?.numfactura ?? 'Factura 001-001-0000123'}
-          subtitle={`Cliente: ${recentFactura?.cliente ?? 'Juan Pérez'}`}
-          amount={formatMoney(recentFactura?.total ?? 450)}
-          status="Emitida"
-        />
-        <DashboardActivityItem
-          color="#8658F2"
-          title="Nuevo cliente registrado"
-          subtitle={clientesCount ? 'Base de clientes actualizada' : 'María González'}
-        />
-      </View>
     </View>
+  );
+}
+
+function DashboardMetric({ value, label }: { value: string | number; label: string }) {
+  return (
+    <View style={styles.dashboardMetric}>
+      <Text style={styles.dashboardMetricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{value}</Text>
+      <Text style={styles.dashboardMetricLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function DashboardPrimaryAction({
+  icon,
+  label,
+  text,
+  primary,
+  onPress,
+}: {
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  label: string;
+  text: string;
+  primary?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={({ pressed }) => [styles.dashboardPrimaryAction, primary && styles.dashboardPrimaryActionMain, pressed && styles.dashboardFavoritePressed]} onPress={onPress}>
+      <View style={[styles.dashboardPrimaryActionIcon, primary && styles.dashboardPrimaryActionIconMain]}>
+        <MaterialCommunityIcons name={icon} size={22} color={primary ? '#FFFFFF' : EFACT_THEME.colors.primary} />
+      </View>
+      <Text style={[styles.dashboardPrimaryActionLabel, primary && styles.dashboardPrimaryActionLabelMain]} numberOfLines={1}>{label}</Text>
+      <Text style={[styles.dashboardPrimaryActionText, primary && styles.dashboardPrimaryActionTextMain]} numberOfLines={2}>{text}</Text>
+    </Pressable>
   );
 }
 
@@ -8542,20 +8574,19 @@ function DashboardQuickAction({ color, label, onPress }: { color: string; label:
   );
 }
 
-function DashboardModuleTile({ module, index, onPress }: { module: MobileModule; index: number; onPress: () => void }) {
-  const colors = ['#176DFF', '#8658F2', '#18B99F', '#FF8A2A', '#176DFF', '#8658F2'];
+function DashboardServiceRow({ module, index, onPress }: { module: MobileModule; index: number; onPress: () => void }) {
+  const colors = [EFACT_THEME.colors.primary, EFACT_THEME.colors.secondary, EFACT_THEME.colors.info, EFACT_THEME.colors.warning, EFACT_THEME.colors.primaryDark];
   const color = colors[index % colors.length];
   return (
-    <Pressable style={styles.dashboardModuleTile} onPress={onPress}>
-      <View style={[styles.dashboardModuleIcon, { backgroundColor: `${color}14` }]}>
-        <Text style={[styles.dashboardModuleIconText, { color }]}>{index + 1}</Text>
+    <Pressable style={({ pressed }) => [styles.dashboardServiceRow, pressed && styles.dashboardFavoritePressed]} onPress={onPress}>
+      <View style={[styles.dashboardServiceIcon, { backgroundColor: `${color}16` }]}>
+        <MaterialCommunityIcons name="chevron-right-circle-outline" size={22} color={color} />
       </View>
-      <View style={styles.dashboardModuleCopy}>
-        <Text style={styles.dashboardModuleTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{module.title}</Text>
-        <Text style={styles.dashboardModuleText} numberOfLines={3}>{module.description}</Text>
-        <View style={[styles.dashboardModuleProgress, { backgroundColor: color }]} />
+      <View style={styles.dashboardServiceCopy}>
+        <Text style={styles.dashboardServiceTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{module.title}</Text>
+        <Text style={styles.dashboardServiceText} numberOfLines={2}>{module.description}</Text>
       </View>
-      <Text style={styles.dashboardModuleArrow}>›</Text>
+      <MaterialCommunityIcons name="chevron-right" size={22} color={EFACT_THEME.colors.textMuted} />
     </Pressable>
   );
 }
@@ -8594,7 +8625,7 @@ function PortalBottomNav({
   onHome,
   onServices,
   onBot,
-  onHistory,
+  onNewInvoice,
   onProfile,
 }: {
   bottomInset: number;
@@ -8602,7 +8633,7 @@ function PortalBottomNav({
   onHome: () => void;
   onServices: () => void;
   onBot: () => void;
-  onHistory: () => void;
+  onNewInvoice: () => void;
   onProfile: () => void;
 }) {
   return (
@@ -8610,44 +8641,26 @@ function PortalBottomNav({
       <PortalTabButton active={activeView === 'dashboard'} icon="home" label="Inicio" onPress={onHome} />
       <PortalTabButton active={activeView === 'portal'} icon="grid" label="Servicios" onPress={onServices} />
       <PortalTabButton active={activeView === 'bot'} icon="bot" label="Númi" onPress={onBot} />
-      <PortalTabButton active={activeView === 'recargas'} icon="document" label="Historial" onPress={onHistory} />
+      <PortalTabButton active={activeView === 'nueva-factura'} icon="invoice" label="Factura" onPress={onNewInvoice} />
       <PortalTabButton active={activeView === 'perfil'} icon="profile" label="Perfil" onPress={onProfile} />
     </View>
   );
 }
 
-function PortalTabButton({ active, icon, label, onPress }: { active: boolean; icon: 'home' | 'grid' | 'document' | 'profile' | 'settings' | 'bot'; label: string; onPress: () => void }) {
+function PortalTabButton({ active, icon, label, onPress }: { active: boolean; icon: 'home' | 'grid' | 'document' | 'profile' | 'settings' | 'bot' | 'invoice'; label: string; onPress: () => void }) {
+  const iconName: React.ComponentProps<typeof MaterialCommunityIcons>['name'] =
+    icon === 'home' ? 'home-variant-outline'
+      : icon === 'grid' ? 'view-grid-outline'
+        : icon === 'document' ? 'file-document-outline'
+          : icon === 'invoice' ? 'file-plus-outline'
+            : icon === 'profile' ? 'account-circle-outline'
+              : icon === 'settings' ? 'cog-outline'
+                : 'robot-outline';
+
   return (
     <Pressable hitSlop={6} accessibilityRole="button" accessibilityLabel={label} style={[styles.portalTabButton, active && styles.portalTabButtonActive]} onPress={onPress}>
-      <View style={styles.portalTabIcon}>
-        {icon === 'home' ? (
-          <View style={styles.portalTabHomeIcon}>
-            <View style={[styles.portalTabHomeRoof, active && styles.portalTabIconActive]} />
-            <View style={[styles.portalTabHomeBody, active && styles.portalTabIconActive]} />
-          </View>
-        ) : null}
-        {icon === 'grid' ? (
-          <View style={styles.portalTabGridIcon}>
-            <View style={[styles.portalTabGridDot, active && styles.portalTabIconActive]} />
-            <View style={[styles.portalTabGridDot, active && styles.portalTabIconActive]} />
-            <View style={[styles.portalTabGridDot, active && styles.portalTabIconActive]} />
-            <View style={[styles.portalTabGridDot, active && styles.portalTabIconActive]} />
-          </View>
-        ) : null}
-        {icon === 'document' ? (
-          <View style={[styles.portalTabDocumentIcon, active && styles.portalTabDocumentIconActive]}>
-            <View style={[styles.portalTabDocumentLine, active && styles.portalTabIconActive]} />
-            <View style={[styles.portalTabDocumentLine, active && styles.portalTabIconActive]} />
-          </View>
-        ) : null}
-        {icon === 'profile' ? (
-          <View style={[styles.portalTabProfileIcon, active && styles.portalTabDocumentIconActive]}>
-            <View style={[styles.portalTabProfileHead, active && styles.portalTabIconActive]} />
-            <View style={[styles.portalTabProfileBody, active && styles.portalTabIconActive]} />
-          </View>
-        ) : null}
-        {icon === 'bot' ? <MaterialCommunityIcons name="robot-outline" size={24} color={active ? '#0878C9' : '#9CA3AF'} /> : null}
-        {icon === 'settings' ? <Text style={[styles.portalTabSettingsIcon, active && styles.portalTabTextActive]}>⚙</Text> : null}
+      <View style={[styles.portalTabIcon, active && styles.portalTabIconBubble]}>
+        <MaterialCommunityIcons name={iconName} size={22} color={active ? '#FFFFFF' : EFACT_THEME.colors.textMuted} />
       </View>
       <Text style={[styles.portalTabText, active && styles.portalTabTextActive]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{label}</Text>
     </Pressable>
@@ -11329,11 +11342,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   workspaceSafeArea: {
-    backgroundColor: '#07305E',
+    backgroundColor: EFACT_THEME.colors.primaryDark,
     flex: 1,
   },
   portalSafeArea: {
-    backgroundColor: '#F7FAFF',
+    backgroundColor: EFACT_THEME.colors.primaryDark,
   },
   workspaceCanvas: {
     flexGrow: 1,
@@ -11377,10 +11390,13 @@ const styles = StyleSheet.create({
   },
   dashboardHeader: {
     alignItems: 'center',
+    backgroundColor: EFACT_THEME.colors.primaryDark,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 18,
-    paddingTop: 4,
+    marginBottom: 0,
+    paddingHorizontal: 16,
+    paddingBottom: 18,
+    paddingTop: 12,
   },
   dashboardBrandBlock: {
     alignItems: 'center',
@@ -11395,12 +11411,12 @@ const styles = StyleSheet.create({
   },
   dashboardBrandTitle: {
     color: '#FFFFFF',
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
-    lineHeight: 27,
+    lineHeight: 25,
   },
   dashboardBrandName: {
-    color: '#5FCBFF',
+    color: '#B8D6EC',
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.6,
@@ -11412,13 +11428,13 @@ const styles = StyleSheet.create({
   },
   dashboardIconButton: {
     alignItems: 'center',
-    backgroundColor: '#0B1838',
-    borderColor: '#263A66',
-    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.24)',
+    borderRadius: EFACT_THEME.radius.button,
     borderWidth: 1,
-    height: 56,
+    height: 48,
     justifyContent: 'center',
-    width: 56,
+    width: 48,
   },
   dashboardBellDome: {
     borderColor: '#FFFFFF',
@@ -11442,13 +11458,15 @@ const styles = StyleSheet.create({
     width: 5,
   },
   dashboardNotificationDot: {
-    backgroundColor: '#0EA5FF',
+    backgroundColor: '#21BF73',
+    borderColor: EFACT_THEME.colors.primaryDark,
+    borderWidth: 1,
     borderRadius: 999,
-    height: 10,
+    height: 9,
     position: 'absolute',
-    right: 13,
-    top: 13,
-    width: 10,
+    right: 12,
+    top: 12,
+    width: 9,
   },
   dashboardMenuGlyph: {
     color: '#FFFFFF',
@@ -11491,33 +11509,33 @@ const styles = StyleSheet.create({
   portalHeaderAvatarImage: {
     borderColor: '#FFFFFF',
     borderRadius: 999,
-    borderWidth: 3,
-    height: 66,
-    shadowColor: '#1565FF',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.24,
-    shadowRadius: 18,
-    width: 66,
-    elevation: 8,
+    borderWidth: 2,
+    height: 54,
+    shadowColor: EFACT_THEME.shadow.color,
+    shadowOffset: EFACT_THEME.shadow.offset,
+    shadowOpacity: 0.12,
+    shadowRadius: EFACT_THEME.shadow.radius,
+    width: 54,
+    elevation: 3,
   },
   portalHeaderAvatarFallback: {
     alignItems: 'center',
-    backgroundColor: '#2364FF',
+    backgroundColor: EFACT_THEME.colors.primary,
     borderColor: '#FFFFFF',
     borderRadius: 999,
-    borderWidth: 3,
-    height: 66,
+    borderWidth: 2,
+    height: 54,
     justifyContent: 'center',
-    shadowColor: '#1565FF',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.24,
-    shadowRadius: 18,
-    width: 66,
-    elevation: 8,
+    shadowColor: EFACT_THEME.shadow.color,
+    shadowOffset: EFACT_THEME.shadow.offset,
+    shadowOpacity: 0.12,
+    shadowRadius: EFACT_THEME.shadow.radius,
+    width: 54,
+    elevation: 3,
   },
   portalHeaderAvatarText: {
     color: '#FFFFFF',
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '900',
   },
   portalNotificationButton: {
@@ -11614,11 +11632,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   menuDrawer: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: EFACT_THEME.colors.surface,
     height: '100%',
     maxWidth: 330,
-    padding: 18,
-    paddingTop: 48,
+    padding: 0,
     shadowColor: '#001B35',
     shadowOffset: { width: -10, height: 0 },
     shadowOpacity: 0.22,
@@ -11627,48 +11644,53 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   menuHeader: {
-    alignItems: 'center',
-    borderBottomColor: '#E0E9F2',
+    alignItems: 'flex-start',
+    backgroundColor: EFACT_THEME.colors.primaryDark,
+    borderBottomColor: 'rgba(255,255,255,0.12)',
     borderBottomWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 14,
-    paddingBottom: 14,
+    marginBottom: 10,
+    padding: 18,
+    paddingTop: 48,
   },
   menuTitle: {
-    color: '#263A4F',
+    color: '#FFFFFF',
     fontSize: 22,
     fontWeight: '900',
   },
   menuSubtitle: {
-    color: '#6F7F90',
+    color: '#B8D6EC',
     fontSize: 12,
     fontWeight: '800',
     marginTop: 2,
   },
   menuCloseButton: {
     alignItems: 'center',
-    backgroundColor: '#EAF5FC',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 1,
     borderRadius: 12,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
   menuCloseText: {
-    color: '#00649D',
+    color: '#FFFFFF',
     fontSize: 28,
     fontWeight: '700',
     lineHeight: 30,
   },
   menuList: {
     gap: 8,
+    padding: 14,
     paddingBottom: 16,
   },
   menuSection: {
     gap: 6,
   },
   menuChildren: {
-    borderLeftColor: '#D8EAF7',
+    borderLeftColor: EFACT_THEME.colors.border,
     borderLeftWidth: 1,
     gap: 6,
     marginLeft: 14,
@@ -11676,8 +11698,8 @@ const styles = StyleSheet.create({
   },
   menuItem: {
     alignItems: 'center',
-    backgroundColor: '#F6F9FC',
-    borderColor: '#E1EAF2',
+    backgroundColor: EFACT_THEME.colors.surfaceSoft,
+    borderColor: EFACT_THEME.colors.border,
     borderRadius: 12,
     borderWidth: 1,
     flexDirection: 'row',
@@ -11691,14 +11713,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   menuItemActive: {
-    backgroundColor: '#0072BD',
-    borderColor: '#0072BD',
+    backgroundColor: EFACT_THEME.colors.primary,
+    borderColor: EFACT_THEME.colors.primary,
   },
   menuItemDisabled: {
     opacity: 0.52,
   },
   menuItemText: {
-    color: '#536476',
+    color: EFACT_THEME.colors.textSecondary,
     flex: 1,
     fontSize: 14,
     fontWeight: '900',
@@ -11707,9 +11729,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   menuItemCount: {
-    backgroundColor: '#EAF5FC',
+    backgroundColor: EFACT_THEME.colors.primaryLight,
     borderRadius: 999,
-    color: '#00649D',
+    color: EFACT_THEME.colors.primary,
     fontSize: 11,
     fontWeight: '900',
     marginLeft: 10,
@@ -11722,7 +11744,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   menuItemChevron: {
-    color: '#6D7F91',
+    color: EFACT_THEME.colors.textMuted,
     fontSize: 14,
     fontWeight: '900',
     marginLeft: 8,
@@ -11735,6 +11757,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FDEBEC',
     borderRadius: 12,
     justifyContent: 'center',
+    marginHorizontal: 14,
+    marginTop: 4,
     minHeight: 48,
   },
   menuLogoutText: {
@@ -11746,15 +11770,116 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   dashboardHome: {
-    backgroundColor: '#F7FAFF',
+    backgroundColor: EFACT_THEME.colors.background,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    gap: 16,
-    marginHorizontal: -16,
-    marginTop: 4,
+    gap: EFACT_THEME.spacing.lg,
+    marginHorizontal: 0,
+    marginTop: 2,
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingTop: 18,
+    paddingBottom: 10,
+  },
+  dashboardIntro: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: EFACT_THEME.spacing.md,
+    justifyContent: 'space-between',
+  },
+  dashboardIntroText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  dashboardEyebrow: {
+    color: EFACT_THEME.colors.primary,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  dashboardGreeting: {
+    color: EFACT_THEME.colors.textPrimary,
+    fontSize: 28,
+    fontWeight: '900',
+    lineHeight: 34,
+    marginTop: 3,
+  },
+  dashboardIntroCopy: {
+    color: EFACT_THEME.colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+    marginTop: 4,
+  },
+  dashboardSmallIconButton: {
+    alignItems: 'center',
+    backgroundColor: EFACT_THEME.colors.surface,
+    borderColor: EFACT_THEME.colors.border,
+    borderRadius: EFACT_THEME.radius.button,
+    borderWidth: 1,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
+  dashboardSummaryPanel: {
+    backgroundColor: EFACT_THEME.colors.primaryDark,
+    borderRadius: EFACT_THEME.radius.card,
+    gap: EFACT_THEME.spacing.md,
+    padding: EFACT_THEME.spacing.lg,
+    shadowColor: EFACT_THEME.shadow.color,
+    shadowOffset: EFACT_THEME.shadow.offset,
+    shadowOpacity: 0.14,
+    shadowRadius: EFACT_THEME.shadow.radius,
+    elevation: 4,
+  },
+  dashboardSummaryHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: EFACT_THEME.spacing.md,
+    justifyContent: 'space-between',
+  },
+  dashboardPanelLabel: {
+    color: '#B8D6EC',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  dashboardSummaryTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+    lineHeight: 20,
+    marginTop: 2,
+  },
+  dashboardMoneyValue: {
+    color: '#FFFFFF',
+    fontSize: 34,
+    fontWeight: '900',
+    lineHeight: 40,
+  },
+  dashboardSummaryDivider: {
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    height: 1,
+  },
+  dashboardSummaryStats: {
+    flexDirection: 'row',
+    gap: EFACT_THEME.spacing.sm,
+    justifyContent: 'space-between',
+  },
+  dashboardMetric: {
+    flex: 1,
+    minWidth: 0,
+  },
+  dashboardMetricValue: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 22,
+  },
+  dashboardMetricLabel: {
+    color: '#B8D6EC',
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 2,
   },
   dashboardHero: {
     backgroundColor: '#062A92',
@@ -11814,7 +11939,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   dashboardFavoritesHint: {
-    color: '#7B8DA4',
+    color: EFACT_THEME.colors.textMuted,
     fontSize: 11,
     fontWeight: '800',
   },
@@ -11824,8 +11949,8 @@ const styles = StyleSheet.create({
   },
   dashboardFavorite: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E7EEF8',
+    backgroundColor: EFACT_THEME.colors.surface,
+    borderColor: EFACT_THEME.colors.border,
     borderRadius: 16,
     borderWidth: 1,
     flexDirection: 'row',
@@ -11835,7 +11960,7 @@ const styles = StyleSheet.create({
     width: 164,
   },
   dashboardFavoritePressed: {
-    backgroundColor: '#F0F6FF',
+    opacity: 0.82,
     transform: [{ scale: 0.98 }],
   },
   dashboardFavoriteIcon: {
@@ -11901,14 +12026,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   dashboardSectionTitle: {
-    color: '#0B255E',
+    color: EFACT_THEME.colors.textPrimary,
     fontSize: 17,
     fontWeight: '900',
   },
   dashboardPeriodPill: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#EEF3FF',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.22)',
     borderRadius: 999,
     borderWidth: 1,
     flexDirection: 'row',
@@ -11917,7 +12042,7 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   dashboardPeriodText: {
-    color: '#0B255E',
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '900',
   },
@@ -11987,6 +12112,56 @@ const styles = StyleSheet.create({
   dashboardInsightRow: {
     gap: 12,
   },
+  dashboardActionRow: {
+    flexDirection: 'row',
+    gap: EFACT_THEME.spacing.sm,
+  },
+  dashboardActionRowCompact: {
+    flexDirection: 'column',
+  },
+  dashboardPrimaryAction: {
+    backgroundColor: EFACT_THEME.colors.surface,
+    borderColor: EFACT_THEME.colors.border,
+    borderRadius: EFACT_THEME.radius.card,
+    borderWidth: 1,
+    flex: 1,
+    gap: 5,
+    minHeight: 104,
+    padding: EFACT_THEME.spacing.md,
+  },
+  dashboardPrimaryActionMain: {
+    backgroundColor: EFACT_THEME.colors.primary,
+    borderColor: EFACT_THEME.colors.primary,
+  },
+  dashboardPrimaryActionIcon: {
+    alignItems: 'center',
+    backgroundColor: EFACT_THEME.colors.primaryLight,
+    borderRadius: 11,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  dashboardPrimaryActionIconMain: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  dashboardPrimaryActionLabel: {
+    color: EFACT_THEME.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 17,
+  },
+  dashboardPrimaryActionLabelMain: {
+    color: '#FFFFFF',
+  },
+  dashboardPrimaryActionText: {
+    color: EFACT_THEME.colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 15,
+  },
+  dashboardPrimaryActionTextMain: {
+    color: '#DDF0FA',
+  },
   dashboardChartCard: {
     backgroundColor: '#FFFFFF',
     borderColor: '#EEF3FF',
@@ -12000,7 +12175,7 @@ const styles = StyleSheet.create({
     elevation: 7,
   },
   dashboardPanelTitle: {
-    color: '#0B255E',
+    color: EFACT_THEME.colors.textPrimary,
     fontSize: 14,
     fontWeight: '900',
   },
@@ -12085,7 +12260,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   dashboardViewAll: {
-    color: '#005BFF',
+    color: EFACT_THEME.colors.primary,
     fontSize: 13,
     fontWeight: '900',
   },
@@ -12143,19 +12318,26 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   dashboardActivityCard: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#EEF3FF',
+    backgroundColor: EFACT_THEME.colors.surface,
+    borderColor: EFACT_THEME.colors.border,
     borderRadius: 18,
     borderWidth: 1,
     gap: 12,
     padding: 14,
   },
+  dashboardActivityPanel: {
+    backgroundColor: EFACT_THEME.colors.surface,
+    borderColor: EFACT_THEME.colors.border,
+    borderRadius: EFACT_THEME.radius.card,
+    borderWidth: 1,
+    gap: EFACT_THEME.spacing.md,
+    padding: EFACT_THEME.spacing.lg,
+  },
   dashboardActivityItem: {
-    alignItems: 'flex-start',
-    borderTopColor: '#EEF3FF',
+    alignItems: 'center',
+    borderTopColor: EFACT_THEME.colors.border,
     borderTopWidth: 1,
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 10,
     paddingTop: 12,
   },
@@ -12176,67 +12358,111 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   dashboardActivityTitle: {
-    color: '#0B255E',
+    color: EFACT_THEME.colors.textPrimary,
     fontSize: 13,
     fontWeight: '900',
   },
   dashboardActivityText: {
-    color: '#52658F',
+    color: EFACT_THEME.colors.textSecondary,
     fontSize: 11,
     fontWeight: '700',
     marginTop: 2,
   },
   dashboardActivityAmount: {
-    color: '#0B255E',
+    color: EFACT_THEME.colors.textPrimary,
     fontSize: 13,
     fontWeight: '900',
     minWidth: 72,
     textAlign: 'right',
   },
   dashboardActivityStatus: {
-    backgroundColor: '#D8F7EA',
+    backgroundColor: '#E8F7EF',
     borderRadius: 999,
-    color: '#0B9E72',
+    color: EFACT_THEME.colors.success,
     fontSize: 10,
     fontWeight: '900',
     overflow: 'hidden',
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
+  dashboardServiceList: {
+    backgroundColor: EFACT_THEME.colors.surface,
+    borderColor: EFACT_THEME.colors.border,
+    borderRadius: EFACT_THEME.radius.card,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  dashboardServiceRow: {
+    alignItems: 'center',
+    borderBottomColor: EFACT_THEME.colors.border,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: EFACT_THEME.spacing.md,
+    minHeight: 72,
+    paddingHorizontal: EFACT_THEME.spacing.md,
+    paddingVertical: EFACT_THEME.spacing.sm,
+  },
+  dashboardServiceIcon: {
+    alignItems: 'center',
+    borderRadius: 12,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  dashboardServiceCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  dashboardServiceTitle: {
+    color: EFACT_THEME.colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  dashboardServiceText: {
+    color: EFACT_THEME.colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
   portalStack: {
-    gap: 16,
+    backgroundColor: EFACT_THEME.colors.background,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    gap: EFACT_THEME.spacing.lg,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 10,
   },
   portalHeroPanel: {
-    backgroundColor: '#062A92',
-    borderColor: '#253CF1',
-    borderRadius: 22,
-    borderWidth: 1,
+    backgroundColor: EFACT_THEME.colors.primaryDark,
+    borderRadius: EFACT_THEME.radius.card,
     flexDirection: 'row',
-    gap: 10,
-    minHeight: 198,
+    gap: EFACT_THEME.spacing.md,
+    minHeight: 132,
     overflow: 'hidden',
-    padding: 16,
-    shadowColor: '#2847D8',
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.28,
-    shadowRadius: 28,
-    elevation: 10,
+    padding: EFACT_THEME.spacing.lg,
+    shadowColor: EFACT_THEME.shadow.color,
+    shadowOffset: EFACT_THEME.shadow.offset,
+    shadowOpacity: 0.14,
+    shadowRadius: EFACT_THEME.shadow.radius,
+    elevation: 4,
   },
   portalMetrics: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E5ECFA',
-    borderRadius: 18,
+    backgroundColor: EFACT_THEME.colors.surface,
+    borderColor: EFACT_THEME.colors.border,
+    borderRadius: EFACT_THEME.radius.card,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-around',
     minHeight: 78,
     paddingHorizontal: 8,
-    shadowColor: '#B8C7E6',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
-    elevation: 4,
+    shadowColor: EFACT_THEME.shadow.color,
+    shadowOffset: EFACT_THEME.shadow.offset,
+    shadowOpacity: 0.08,
+    shadowRadius: EFACT_THEME.shadow.radius,
+    elevation: 2,
   },
   portalMetricItem: {
     alignItems: 'center',
@@ -12244,19 +12470,19 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   portalMetricValue: {
-    color: '#08235E',
+    color: EFACT_THEME.colors.textPrimary,
     fontSize: 18,
     fontWeight: '900',
     lineHeight: 22,
   },
   portalMetricLabel: {
-    color: '#7182A6',
+    color: EFACT_THEME.colors.textSecondary,
     fontSize: 9,
     fontWeight: '900',
     letterSpacing: 0.7,
   },
   portalMetricDivider: {
-    backgroundColor: '#E5ECFA',
+    backgroundColor: EFACT_THEME.colors.border,
     height: 32,
     width: 1,
   },
@@ -12266,16 +12492,28 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   portalHeroBadge: {
+    alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(16, 112, 255, 0.72)',
-    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.22)',
+    borderRadius: EFACT_THEME.radius.card,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 76,
+    minWidth: 82,
+    paddingHorizontal: EFACT_THEME.spacing.md,
+  },
+  portalHeroBadgeText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 26,
     fontWeight: '900',
-    marginBottom: 14,
-    overflow: 'hidden',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    lineHeight: 31,
+  },
+  portalHeroBadgeLabel: {
+    color: '#B8D6EC',
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 2,
   },
   portalHeroTitle: {
     color: '#FFFFFF',
@@ -12291,29 +12529,11 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   portalHeroText: {
-    color: '#FFFFFF',
+    color: '#DDF0FA',
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,
-    marginTop: 16,
-  },
-  portalHeroPager: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 22,
-  },
-  portalHeroPagerActive: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 999,
-    height: 4,
-    width: 34,
-  },
-  portalHeroPagerDot: {
-    backgroundColor: 'rgba(255,255,255,0.44)',
-    borderRadius: 999,
-    height: 4,
-    width: 14,
+    marginTop: 8,
   },
   portalHeroDevice: {
     alignItems: 'center',
@@ -12375,7 +12595,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 2,
+    paddingHorizontal: 0,
   },
   portalSectionTitleWrap: {
     alignItems: 'center',
@@ -12407,24 +12627,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#2DD4BF',
   },
   portalSectionTitle: {
-    color: '#08235E',
-    fontSize: 18,
+    color: EFACT_THEME.colors.textPrimary,
+    fontSize: 17,
     fontWeight: '900',
   },
   portalSectionAction: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#EDF3FF',
-    borderRadius: 15,
+    backgroundColor: EFACT_THEME.colors.surface,
+    borderColor: EFACT_THEME.colors.border,
+    borderRadius: EFACT_THEME.radius.button,
     borderWidth: 1,
-    height: 54,
+    height: 44,
     justifyContent: 'center',
-    shadowColor: '#B8C7E6',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
-    width: 54,
-    elevation: 7,
+    width: 44,
   },
   portalSectionActionGrid: {
     flexDirection: 'row',
@@ -12441,43 +12656,36 @@ const styles = StyleSheet.create({
     width: 11,
   },
   portalServiceList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    justifyContent: 'space-between',
+    backgroundColor: EFACT_THEME.colors.surface,
+    borderColor: EFACT_THEME.colors.border,
+    borderRadius: EFACT_THEME.radius.card,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   portalServiceCard: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#EEF3FF',
-    borderRadius: 18,
-    borderWidth: 1,
+    backgroundColor: EFACT_THEME.colors.surface,
+    borderBottomColor: EFACT_THEME.colors.border,
+    borderBottomWidth: 1,
+    borderColor: EFACT_THEME.colors.border,
+    borderRadius: 0,
+    borderWidth: 0,
     flexDirection: 'row',
-    gap: 10,
-    minHeight: 126,
-    padding: 14,
-    shadowColor: '#B8C7E6',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.2,
-    shadowRadius: 22,
+    gap: EFACT_THEME.spacing.md,
+    minHeight: 76,
+    padding: EFACT_THEME.spacing.md,
     width: '100%',
-    elevation: 7,
   },
   portalServiceCardDisabled: {
     opacity: 1,
   },
   portalServiceIcon: {
     alignItems: 'center',
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 0,
-    height: 50,
+    height: 44,
     justifyContent: 'center',
-    shadowColor: '#6B86CF',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
-    width: 50,
-    elevation: 6,
+    width: 44,
   },
   portalServiceCopy: {
     flex: 1,
@@ -12485,13 +12693,13 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   portalServiceTitle: {
-    color: '#08235E',
-    fontSize: 16,
+    color: EFACT_THEME.colors.textPrimary,
+    fontSize: 14,
     fontWeight: '900',
     lineHeight: 21,
   },
   portalServiceDescription: {
-    color: '#0B255E',
+    color: EFACT_THEME.colors.textSecondary,
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 17,
@@ -12502,10 +12710,10 @@ const styles = StyleSheet.create({
     gap: 6,
     justifyContent: 'center',
     minHeight: 34,
-    width: 68,
+    width: 84,
   },
   portalServicePill: {
-    backgroundColor: '#F0F5FF',
+    backgroundColor: EFACT_THEME.colors.primaryLight,
     borderRadius: 999,
     borderWidth: 0,
     flexShrink: 1,
@@ -12517,12 +12725,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   portalServiceArrow: {
-    alignItems: 'center',
-    borderRadius: 999,
-    borderWidth: 1,
-    height: 34,
-    justifyContent: 'center',
-    width: 34,
+    display: 'none',
   },
   portalServiceArrowText: {
     fontSize: 20,
@@ -12684,40 +12887,44 @@ const styles = StyleSheet.create({
   portalBottomNav: {
     alignItems: 'center',
     alignSelf: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#EEF3FF',
-    borderRadius: 20,
+    backgroundColor: EFACT_THEME.colors.surface,
+    borderColor: EFACT_THEME.colors.border,
+    borderRadius: 24,
     borderWidth: 1,
     bottom: 8,
     flexDirection: 'row',
-    gap: 4,
+    gap: 2,
     justifyContent: 'space-between',
     left: 16,
-    padding: 6,
+    padding: 7,
     position: 'absolute',
     right: 16,
-    shadowColor: '#B8C7E6',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.24,
-    shadowRadius: 20,
+    shadowColor: EFACT_THEME.shadow.color,
+    shadowOffset: { width: 0, height: -5 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
     elevation: 12,
   },
   portalTabButton: {
     alignItems: 'center',
-    borderRadius: 17,
+    borderRadius: 18,
     flex: 1,
-    gap: 4,
+    gap: 3,
     justifyContent: 'center',
-    minHeight: 56,
+    minHeight: 60,
   },
   portalTabButtonActive: {
-    backgroundColor: 'transparent',
+    backgroundColor: EFACT_THEME.colors.primaryLight,
   },
   portalTabIcon: {
     alignItems: 'center',
-    height: 28,
+    borderRadius: 999,
+    height: 30,
     justifyContent: 'center',
-    width: 32,
+    width: 30,
+  },
+  portalTabIconBubble: {
+    backgroundColor: EFACT_THEME.colors.primary,
   },
   portalTabHomeIcon: {
     alignItems: 'center',
@@ -12803,12 +13010,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#0A69FF',
   },
   portalTabText: {
-    color: '#9CA3AF',
-    fontSize: 12,
+    color: EFACT_THEME.colors.textMuted,
+    fontSize: 11,
     fontWeight: '800',
   },
   portalTabTextActive: {
-    color: '#0A69FF',
+    color: EFACT_THEME.colors.primary,
   },
   notificationsPanel: {
     backgroundColor: '#071433',
@@ -13032,10 +13239,17 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   bottomNav: {
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    borderRadius: 18,
+    backgroundColor: EFACT_THEME.colors.surface,
+    borderColor: EFACT_THEME.colors.border,
+    borderRadius: 22,
+    borderWidth: 1,
     marginTop: 16,
-    maxHeight: 58,
+    maxHeight: 66,
+    shadowColor: EFACT_THEME.shadow.color,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
   },
   bottomNavContent: {
     gap: 8,
@@ -13043,10 +13257,10 @@ const styles = StyleSheet.create({
   },
   navButton: {
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: 16,
     justifyContent: 'center',
     minWidth: 82,
-    minHeight: 42,
+    minHeight: 48,
     paddingHorizontal: 12,
   },
   navButtonActive: {
