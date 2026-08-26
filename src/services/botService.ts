@@ -9,13 +9,14 @@ export type BotChatResponse = {
   data?: { respuesta?: string; response?: string; mensaje?: string; message?: string };
 };
 
-export async function sendBotMessage(input: { message: string; sessionId?: string }) {
+export async function sendBotMessage(input: { message: string; sessionId?: string; contexto?: string }) {
   const response = await apiRequest<BotChatResponse | string>(BOT_CHAT_PATH, {
     method: 'POST',
     body: JSON.stringify({
       sessionId: input.sessionId ?? BOT_SESSION_ID,
       mensaje: input.message.trim(),
       modo: 'texto',
+      contexto: input.contexto,
     }),
   });
 

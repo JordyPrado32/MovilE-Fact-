@@ -112,6 +112,8 @@ type WorkspaceView =
   | 'admin-retenciones'
   | 'admin-sql-auditoria'
   | 'clientes'
+  | 'nuevo-cliente'
+  | 'nuevo-producto'
   | 'proveedores'
   | 'productos'
   | 'categorias'
@@ -336,8 +338,10 @@ async function getBiometricLabel() {
   ]);
   if (!hasHardware || !isEnrolled) return null;
   const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
-  if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) return 'Face ID';
-  if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) return 'Huella digital';
+  if (Platform.OS === 'ios' && types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) return 'Face ID';
+  if (Platform.OS === 'android' && types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) return 'Huella digital';
+  if (Platform.OS === 'ios') return 'Face ID';
+  if (Platform.OS === 'android') return 'Huella digital';
   return 'Biometría';
 }
 const SUPER_ADMIN_TIPO_USUARIO = 2;
@@ -410,6 +414,15 @@ const AVATARS = [
   'avatar11.png',
   'numi-efact.jpg',
 ];
+const AVATAR_CATEGORIES = ['Todos', 'Países', 'Personajes', 'Especiales'] as const;
+type AvatarCategory = typeof AVATAR_CATEGORIES[number];
+
+function getAvatarCategory(avatar: string): AvatarCategory {
+  if (avatar.startsWith('Bandera-')) return 'Países';
+  if (avatar === 'avatar-soccer-ball.png') return 'Especiales';
+  if (avatar.startsWith('avatar')) return 'Personajes';
+  return 'Especiales';
+}
 const LOCAL_AVATAR_SOURCES: Record<string, ImageSourcePropType> = {
   'numi-efact.jpg': require('./assets/numi-efact.jpg'),
 };
@@ -711,7 +724,7 @@ const EFACT_MODULES: Omit<MobileModule, 'count' | 'enabled'>[] = [
   { view: 'admin-sql-auditoria', title: 'SQL Auditoria', description: 'Eventos de auditoria SQL y trazabilidad.' },
 ];
 
-const VIEW_ROUTE_ALIASES: Record<Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado'>, string[]> = {
+const VIEW_ROUTE_ALIASES: Record<Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto'>, string[]> = {
   perfil: ['perfil', 'profile'],
   emisor: ['emisor', 'empresa'],
   firma: ['firma', 'certificado'],
@@ -851,7 +864,7 @@ function formatDashboardMoney(value?: number | null) {
   return `$${Math.round(Number(value ?? 0)).toLocaleString('es-EC')}`;
 }
 
-function menuMatchesView(menu: DynamicMenu, view: Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado'>) {
+function menuMatchesView(menu: DynamicMenu, view: Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto'>) {
   const normalizedRoute = normalizeText(menu.ruta);
   if (ADMIN_ROUTE_VIEW_MAP[normalizedRoute] === view) return true;
 
@@ -864,7 +877,7 @@ function getAuthorizedViews(menus: DynamicMenu[]) {
   const views = new Set<WorkspaceView>();
 
   EFACT_MODULES.forEach((module) => {
-    if (activeMenus.some((menu) => menuMatchesView(menu, module.view as Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado'>))) {
+    if (activeMenus.some((menu) => menuMatchesView(menu, module.view as Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto'>))) {
       views.add(module.view);
     }
   });
@@ -1297,6 +1310,8 @@ function AppContent() {
   const [message, setMessage] = useState<MessageState>(null);
   const [currentUser, setCurrentUser] = useState<LoginResponse | null>(null);
   const [registerStep, setRegisterStep] = useState(0);
+  const [avatarGalleryOpen, setAvatarGalleryOpen] = useState(false);
+  const [avatarCategory, setAvatarCategory] = useState<AvatarCategory>('Todos');
   const [biometricLabel, setBiometricLabel] = useState<string | null>(null);
   const [biometricCredentials, setBiometricCredentials] = useState<BiometricCredentials | null>(null);
   const [biometricPendingLogin, setBiometricPendingLogin] = useState<{ response: LoginResponse; credentials: BiometricCredentials } | null>(null);
@@ -1476,6 +1491,12 @@ function AppContent() {
     setRegisterForm((current) => ({ ...current, [key]: value }));
   };
 
+  const selectRegisterAvatar = (value: string, label: string) => {
+    updateRegister('avatarUrl', value);
+    setAvatarGalleryOpen(false);
+    Alert.alert('Avatar seleccionado', `${label} quedó aplicado a tu cuenta.`);
+  };
+
   const continueRegister = () => {
     const validation = registerStep === 0
       ? validateRegisterForm({ ...registerForm, email: 'paso@efact.local', direccion: 'Direccion temporal', password: 'Aa1!aaaa' })
@@ -1501,6 +1522,7 @@ function AppContent() {
 
   const selectedAvatar = registerForm.avatarUrl.split('/').pop() || '';
   const registerInitials = getInitials(registerForm.nombres, registerForm.apellidos, registerForm.razonSocial);
+  const visibleAvatars = avatarCategory === 'Todos' ? AVATARS : AVATARS.filter((avatar) => getAvatarCategory(avatar) === avatarCategory);
 
   const continueAfterBiometricOffer = async (enable: boolean) => {
     if (!biometricPendingLogin) return;
@@ -1567,7 +1589,7 @@ function AppContent() {
             {message ? <MessageBox message={message} /> : null}
             {loginMethod === 'password' ? <View style={styles.form}>
               <Field label="Usuario / Correo" value={username} onChangeText={setUsername} autoCapitalize="none" />
-              <Field label="Contrasena" value={password} onChangeText={setPassword} secureTextEntry />
+              <Field label="Contraseña" value={password} onChangeText={setPassword} secureTextEntry />
               <View style={styles.rowBetween}>
                 <Pressable style={styles.checkRow} onPress={() => setRecordarme((value) => !value)}>
                   <View style={[styles.checkbox, recordarme && styles.checkboxChecked]}>
@@ -1609,26 +1631,47 @@ function AppContent() {
 
             {registerStep === 0 ? (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Datos personales</Text>
+                <Text style={styles.sectionTitle}>¿Cómo vas a usar e-fact?</Text>
+                <Text style={styles.sectionHint}>Elige el tipo de cuenta que mejor describe tu negocio.</Text>
                 <View style={styles.segment}>
-                  <SegmentButton active={registerForm.tipoCliente === 1} label="Persona Natural" onPress={() => updateRegister('tipoCliente', 1)} />
-                  <SegmentButton active={registerForm.tipoCliente === 2} label="Persona Jurídica" onPress={() => updateRegister('tipoCliente', 2)} />
+                  <SegmentButton active={registerForm.tipoCliente === 1} icon="account-outline" label="Persona Natural" description="Para una persona" onPress={() => updateRegister('tipoCliente', 1)} />
+                  <SegmentButton active={registerForm.tipoCliente === 2} icon="domain" label="Empresa" description="Para un negocio" onPress={() => updateRegister('tipoCliente', 2)} />
                 </View>
-                <View style={styles.segment}>
-                  {(['CEDULA', 'RUC', 'PASAPORTE'] as TipoDocumento[]).map((tipo) => (
+                <Text style={styles.fieldGroupHint}>Selecciona un documento de identificación</Text>
+                <View style={styles.documentOptions}>
+                  <View style={styles.documentOptionRow}>
+                    {([['CEDULA', 'Cédula ecuatoriana', 'card-account-details-outline'], ['RUC', 'Registro tributario', 'file-document-outline']] as [TipoDocumento, string, React.ComponentProps<typeof MaterialCommunityIcons>['name']][]).map(([tipo, description, icon]) => (
+                      <SegmentButton
+                        key={tipo}
+                        active={registerForm.tipoDocumento === tipo}
+                        label={tipo}
+                        description={description}
+                        icon={icon}
+                        onPress={() =>
+                          setRegisterForm((current) => ({
+                            ...current,
+                            tipoDocumento: tipo,
+                            identificacion: sanitizeIdentificacion(tipo, current.identificacion),
+                          }))
+                        }
+                      />
+                    ))}
+                  </View>
+                  <View style={styles.documentOptionRow}>
                     <SegmentButton
-                      key={tipo}
-                      active={registerForm.tipoDocumento === tipo}
-                      label={tipo}
+                      active={registerForm.tipoDocumento === 'PASAPORTE'}
+                      label="Identificación del exterior"
+                      description="Para documentos extranjeros"
+                      icon="passport"
                       onPress={() =>
                         setRegisterForm((current) => ({
                           ...current,
-                          tipoDocumento: tipo,
-                          identificacion: sanitizeIdentificacion(tipo, current.identificacion),
+                          tipoDocumento: 'PASAPORTE',
+                          identificacion: sanitizeIdentificacion('PASAPORTE', current.identificacion),
                         }))
                       }
                     />
-                  ))}
+                  </View>
                 </View>
                 {registerForm.tipoCliente === 2 ? (
                   <Field label="Razon social" value={registerForm.razonSocial} onChangeText={(value) => updateRegister('razonSocial', value)} />
@@ -1649,7 +1692,8 @@ function AppContent() {
 
             {registerStep === 1 ? (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Contacto</Text>
+                <Text style={styles.sectionTitle}>¿Cómo te contactamos?</Text>
+                <Text style={styles.sectionHint}>Usaremos estos datos para avisarte sobre tus documentos y cuenta.</Text>
                 <Field label="Celular" value={registerForm.celular} onChangeText={(value) => updateRegister('celular', value)} keyboardType="phone-pad" />
                 <Field label="Email" value={registerForm.email} onChangeText={(value) => updateRegister('email', value)} autoCapitalize="none" keyboardType="email-address" />
                 <Field label="Direccion" value={registerForm.direccion} onChangeText={(value) => updateRegister('direccion', value)} />
@@ -1658,14 +1702,16 @@ function AppContent() {
 
             {registerStep === 2 ? (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Seguridad y perfil</Text>
+                <Text style={styles.sectionTitle}>Protege y personaliza tu cuenta</Text>
+                <Text style={styles.sectionHint}>Crea una contraseña segura y elige cómo quieres identificarte.</Text>
                 <View style={styles.registerReviewCard}>
                   <Text style={styles.registerReviewTitle}>Revisa tu información</Text>
                   <Text style={styles.registerReviewValue}>{registerForm.tipoCliente === 2 ? registerForm.razonSocial : `${registerForm.nombres} ${registerForm.apellidos}`}</Text>
                   <Text style={styles.registerReviewMeta}>{registerForm.email} · {registerForm.identificacion}</Text>
                 </View>
-                <Field label="Contrasena" value={registerForm.password} onChangeText={(value) => updateRegister('password', value)} secureTextEntry />
-                <View style={styles.avatarPreview}>
+                <Field label="Contraseña segura" value={registerForm.password} onChangeText={(value) => updateRegister('password', value)} secureTextEntry />
+                <Text style={styles.passwordHint}>Mínimo 8 caracteres: mayúscula, minúscula, número y símbolo.</Text>
+                <Pressable accessibilityLabel="Abrir galería de avatares" style={styles.avatarPreview} onPress={() => setAvatarGalleryOpen(true)}>
                   {isInitialsAvatar(registerForm.avatarUrl) ? (
                     <InitialsAvatar initials={registerInitials} size={56} />
                   ) : (
@@ -1674,34 +1720,63 @@ function AppContent() {
                   <View style={styles.avatarInfo}>
                     <Text style={styles.avatarTitle}>{isInitialsAvatar(registerForm.avatarUrl) ? 'Iniciales del nombre' : 'Avatar seleccionado'}</Text>
                     <Text style={styles.mutedText}>{AVATARS.length} avatares disponibles</Text>
+                    <Text style={styles.avatarTapHint}>Toca aquí para cambiarlo</Text>
                   </View>
-                </View>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.avatarStrip}>
-                  <Pressable
-                    style={[styles.avatarChoice, isInitialsAvatar(registerForm.avatarUrl) && styles.avatarChoiceActive]}
-                    onPress={() => updateRegister('avatarUrl', '')}
-                  >
-                    <InitialsAvatar initials={registerInitials} size={42} />
-                  </Pressable>
-                  {AVATARS.map((avatar) => (
-                    <Pressable
-                      key={avatar}
-                      style={[styles.avatarChoice, selectedAvatar === avatar && styles.avatarChoiceActive]}
-                      onPress={() => updateRegister('avatarUrl', avatarPath(avatar))}
-                    >
-                      <Image source={avatarImageSource(avatar)} style={styles.avatarChoiceImage} />
-                    </Pressable>
-                  ))}
-                </ScrollView>
+                </Pressable>
+                <Modal visible={avatarGalleryOpen} transparent animationType="slide" onRequestClose={() => setAvatarGalleryOpen(false)}>
+                  <View style={styles.avatarModalOverlay}>
+                    <Pressable style={styles.avatarModalBackdrop} onPress={() => setAvatarGalleryOpen(false)} />
+                    <View style={styles.avatarModalCard}>
+                      <View style={styles.avatarModalHeader}>
+                        <View>
+                          <Text style={styles.avatarModalEyebrow}>PERSONALIZA TU CUENTA</Text>
+                          <Text style={styles.avatarModalTitle}>Elige tu avatar</Text>
+                        </View>
+                        <Pressable style={styles.avatarModalClose} onPress={() => setAvatarGalleryOpen(false)}>
+                          <Text style={styles.avatarModalCloseText}>×</Text>
+                        </Pressable>
+                      </View>
+                      <Text style={styles.avatarModalHint}>Toca una opción para seleccionarla.</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.avatarCategoryTabs}>
+                        {AVATAR_CATEGORIES.map((category) => (
+                          <Pressable key={category} style={[styles.avatarCategoryTab, avatarCategory === category && styles.avatarCategoryTabActive]} onPress={() => setAvatarCategory(category)}>
+                            <Text numberOfLines={1} style={[styles.avatarCategoryText, avatarCategory === category && styles.avatarCategoryTextActive]}>{category}</Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                      <ScrollView style={styles.avatarGalleryScroll} contentContainerStyle={styles.avatarGalleryGrid} showsVerticalScrollIndicator={false}>
+                        {avatarCategory === 'Todos' || avatarCategory === 'Especiales' ? (
+                          <Pressable
+                            style={[styles.avatarGalleryItem, isInitialsAvatar(registerForm.avatarUrl) && styles.avatarChoiceActive]}
+                            onPress={() => selectRegisterAvatar('', 'Mis iniciales')}
+                          >
+                            <InitialsAvatar initials={registerInitials} size={62} />
+                            <Text numberOfLines={2} style={styles.avatarGalleryLabel}>Mis iniciales</Text>
+                          </Pressable>
+                        ) : null}
+                        {visibleAvatars.map((avatar) => (
+                          <Pressable
+                            key={avatar}
+                            style={[styles.avatarGalleryItem, selectedAvatar === avatar && styles.avatarChoiceActive]}
+                            onPress={() => selectRegisterAvatar(avatarPath(avatar), avatar.replace(/[-_]/g, ' '))}
+                          >
+                            <Image source={avatarImageSource(avatar)} style={styles.avatarGalleryImage} />
+                            <Text numberOfLines={2} style={styles.avatarGalleryLabel}>{avatar.replace(/[-_]/g, ' ')}</Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  </View>
+                </Modal>
               </View>
             ) : null}
 
             <View style={styles.registerActions}>
-              {registerStep > 0 ? <SecondaryButton label="Atras" onPress={() => setRegisterStep((step) => step - 1)} /> : null}
+              {registerStep > 0 ? <SecondaryButton label="Volver al paso anterior" onPress={() => setRegisterStep((step) => step - 1)} /> : null}
               {registerStep < 2 ? (
-                <PrimaryButton label="Continuar" loading={false} onPress={continueRegister} />
+                <PrimaryButton label={registerStep === 0 ? 'Continuar a contacto' : 'Continuar a seguridad'} loading={false} onPress={continueRegister} />
               ) : (
-                <PrimaryButton label="Crear cuenta" loading={loading} onPress={submitRegister} />
+                <PrimaryButton label="Crear mi cuenta" loading={loading} onPress={submitRegister} />
               )}
             </View>
             <InlineSwitch muted="Ya tienes cuenta?" action="Inicia sesion" onPress={() => setMode('login')} />
@@ -1711,28 +1786,46 @@ function AppContent() {
         {mode === 'forgot' ? (
           <>
             <BrandLockup />
-            <Text style={styles.title}>Recuperar Acceso</Text>
-            <Text style={styles.subtitle}>Ingresa tu correo para recibir un codigo de acceso</Text>
+            <Text style={styles.title}>Recuperar acceso</Text>
+            <Text style={styles.subtitle}>Ingresa tu correo para recibir instrucciones y volver a entrar a tu cuenta.</Text>
             {message ? <MessageBox message={message} /> : null}
-            <View style={styles.form}>
-              <Field label="Correo Electronico Registrado" value={recoverEmail} onChangeText={setRecoverEmail} autoCapitalize="none" keyboardType="email-address" />
-              <PrimaryButton label="Recuperar clave" loading={loading} onPress={submitRecover} />
+            <View style={styles.recoveryInfoCard}>
+              <MaterialCommunityIcons name="information-outline" size={19} color="#0072BD" />
+              <Text style={styles.recoveryInfoText}>Usa el correo registrado en e-fact. Revisa también tu carpeta de spam.</Text>
             </View>
-            <InlineSwitch muted="Recordaste tu contrasena?" action="Volver al Login" onPress={() => setMode('login')} />
+            <View style={styles.form}>
+              <Field label="Correo electrónico registrado" value={recoverEmail} onChangeText={setRecoverEmail} autoCapitalize="none" keyboardType="email-address" />
+              <PrimaryButton label="Enviar instrucciones" loading={loading} onPress={submitRecover} />
+            </View>
+            <InlineSwitch muted="¿Recordaste tu contraseña?" action="Volver al inicio de sesión" onPress={() => setMode('login')} />
           </>
         ) : null}
 
         {mode === 'change' ? (
           <>
             <BrandLockup />
-            <Text style={styles.title}>Cambiar contrasena</Text>
-            <Text style={styles.subtitle}>Crea una clave segura para continuar</Text>
+            <Text style={styles.title}>Cambiar contraseña</Text>
+            <Text style={styles.subtitle}>Actualiza tu acceso para continuar de forma segura.</Text>
             {message ? <MessageBox message={message} /> : null}
+            <View style={styles.changeSecurityCard}>
+              <View style={styles.changeSecurityIcon}>
+                <MaterialCommunityIcons name="shield-lock-outline" size={23} color="#0072BD" />
+              </View>
+              <View style={styles.changeSecurityCopy}>
+                <Text style={styles.changeSecurityTitle}>Protege tu cuenta</Text>
+                <Text style={styles.changeSecurityText}>Usa una clave que no hayas utilizado antes y mantenla en un lugar seguro.</Text>
+              </View>
+            </View>
             <View style={styles.form}>
-              <Field label="Id usuario" value={changeForm.idUsuario ? String(changeForm.idUsuario) : ''} onChangeText={(value) => updateChange('idUsuario', Number(value.replace(/\D/g, '')))} keyboardType="number-pad" />
-              <Field label="Codigo o clave temporal" value={changeForm.claveActual} onChangeText={(value) => updateChange('claveActual', value)} secureTextEntry />
-              <Field label="Nueva clave" value={changeForm.nuevaClave} onChangeText={(value) => updateChange('nuevaClave', value)} secureTextEntry />
-              <Field label="Confirmar clave" value={changeForm.confirmarClave} onChangeText={(value) => updateChange('confirmarClave', value)} secureTextEntry />
+              <View style={styles.changeFieldsCard}>
+                <Text style={styles.changeFieldsEyebrow}>DATOS DE ACCESO</Text>
+                <Text style={styles.changeFieldsHint}>Completa los datos para definir tu nueva clave.</Text>
+                <Field label="Id usuario" value={changeForm.idUsuario ? String(changeForm.idUsuario) : ''} onChangeText={(value) => updateChange('idUsuario', Number(value.replace(/\D/g, '')))} keyboardType="number-pad" />
+                <Field label="Codigo o clave temporal" value={changeForm.claveActual} onChangeText={(value) => updateChange('claveActual', value)} secureTextEntry />
+                <Field label="Nueva clave" value={changeForm.nuevaClave} onChangeText={(value) => updateChange('nuevaClave', value)} secureTextEntry />
+                <Field label="Confirmar clave" value={changeForm.confirmarClave} onChangeText={(value) => updateChange('confirmarClave', value)} secureTextEntry />
+                <Text style={styles.changePasswordHint}>Mínimo 10 caracteres: mayúscula, minúscula, número y símbolo.</Text>
+              </View>
               <PrimaryButton label="Actualizar clave" loading={loading} onPress={submitChangePassword} />
             </View>
             <InlineSwitch muted="Volver a" action="Login" onPress={() => setMode('login')} />
@@ -1783,6 +1876,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [loadingProductoLookups, setLoadingProductoLookups] = useState(false);
   const [directoryMessage, setDirectoryMessage] = useState<MessageState>(null);
   const [search, setSearch] = useState('');
+  const [clienteEstadoFiltro, setClienteEstadoFiltro] = useState<'todos' | 'activos' | 'inactivos'>('todos');
+  const [clienteTipoFiltro, setClienteTipoFiltro] = useState<'todos' | 'personas' | 'empresas'>('todos');
+  const [clienteProveedorFiltro, setClienteProveedorFiltro] = useState<'todos' | 'proveedores'>('todos');
   const debouncedSearch = useDebouncedValue(search, 350);
   const [reloadKey, setReloadKey] = useState(0);
   const [adminItems, setAdminItems] = useState<AdminMobileItem[]>([]);
@@ -2216,6 +2312,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       activeView !== 'portal' &&
       activeView !== 'dashboard' &&
       activeView !== 'no-autorizado' &&
+      activeView !== 'nuevo-cliente' &&
+      activeView !== 'nuevo-producto' &&
       !authorizedViews.has(activeView)
     ) {
       setActiveView('no-autorizado');
@@ -2605,10 +2703,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   const filteredClientes = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return clientes;
-
     return clientes.filter((cliente) =>
-      [
+      (!term || [
         cliente.nombres,
         cliente.apellidos,
         cliente.nombrerazonsocial,
@@ -2618,9 +2714,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         cliente.celular,
       ]
         .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(term)),
+        .some((value) => String(value).toLowerCase().includes(term))) &&
+      (clienteEstadoFiltro === 'todos' || (clienteEstadoFiltro === 'activos' ? cliente.estado !== false : cliente.estado === false)) &&
+      (clienteTipoFiltro === 'todos' || (clienteTipoFiltro === 'personas' ? cliente.tipoCliente === 1 : cliente.tipoCliente === 2)) &&
+      (clienteProveedorFiltro === 'todos' || cliente.esProveedor === true),
     );
-  }, [clientes, search]);
+  }, [clientes, search, clienteEstadoFiltro, clienteTipoFiltro, clienteProveedorFiltro]);
+
+  const clientesActivos = useMemo(() => clientes.filter((cliente) => cliente.estado !== false).length, [clientes]);
+  const clientesProveedores = useMemo(() => clientes.filter((cliente) => cliente.esProveedor === true).length, [clientes]);
 
   const productosConCatalogos = useMemo(() => {
     return productos.map((producto) => ({
@@ -2828,6 +2930,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setClienteForm(initialClienteForm);
     setClienteFormMode('create');
     setDirectoryMessage(null);
+    openView('nuevo-cliente');
   };
 
   const openEditCliente = (cliente: Cliente) => {
@@ -2840,12 +2943,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setClienteForm(clienteToForm(cliente));
     setClienteFormMode('edit');
     setDirectoryMessage(null);
+    openView('nuevo-cliente');
   };
 
   const closeClienteForm = () => {
     setSelectedCliente(null);
     setClienteForm(initialClienteForm);
     setClienteFormMode(null);
+    openView('clientes');
   };
 
   const saveCliente = async () => {
@@ -2928,6 +3033,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setProductoForm(initialProductoForm);
     setProductoFormMode('create');
     setDirectoryMessage(null);
+    openView('nuevo-producto');
   };
 
   const openEditProducto = async (producto: Producto) => {
@@ -2936,6 +3042,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setProductoFormMode('edit');
     setDirectoryMessage(null);
     setLoadingProductoDetail(true);
+    openView('nuevo-producto');
 
     try {
       const detalle = await getProducto(catalogUserId, producto.codproducto);
@@ -2952,6 +3059,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setSelectedProducto(null);
     setProductoForm(initialProductoForm);
     setProductoFormMode(null);
+    openView('productos');
   };
 
   const saveProducto = async () => {
@@ -4476,6 +4584,16 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       return;
     }
 
+    if (view === 'nuevo-cliente' && authorizedViews.has('clientes')) {
+      setActiveView(view);
+      return;
+    }
+
+    if (view === 'nuevo-producto' && authorizedViews.has('productos')) {
+      setActiveView(view);
+      return;
+    }
+
     if (authorizedViews.has(view)) {
       setActiveView(view);
       return;
@@ -4522,7 +4640,17 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   };
   const drawerMenu: DrawerMenuNode[] = [
     { key: 'dashboard', label: 'Inicio', view: 'dashboard', disabled: !canUseEfact },
-    menuNode('clientes', 'Clientes / Proveedores'),
+    {
+      ...menuNode('clientes', 'Clientes / Proveedores'),
+      children: [
+        {
+          key: 'nuevo-cliente',
+          label: 'Nuevo cliente',
+          view: 'nuevo-cliente',
+          disabled: !authorizedViews.has('clientes'),
+        },
+      ],
+    },
     {
       key: 'facturas',
       label: 'Facturas',
@@ -4555,7 +4683,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       view: 'productos',
       count: productos.length,
       disabled: !authorizedViews.has('productos'),
-      children: [menuNode('categorias', 'Categorias')],
+      children: [
+        {
+          key: 'nuevo-producto',
+          label: 'Nuevo producto',
+          view: 'nuevo-producto',
+          disabled: !authorizedViews.has('productos'),
+        },
+        menuNode('categorias', 'Categorias'),
+      ],
     },
     {
       key: 'recargas',
@@ -4742,6 +4878,23 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </View>
             </View>
 
+            <View style={styles.portalMetrics}>
+              <View style={styles.portalMetricItem}>
+                <Text style={styles.portalMetricValue}>{Math.max(services.length, 1)}</Text>
+                <Text style={styles.portalMetricLabel}>SERVICIOS</Text>
+              </View>
+              <View style={styles.portalMetricDivider} />
+              <View style={styles.portalMetricItem}>
+                <Text style={styles.portalMetricValue}>{canUseEfact ? '1' : '0'}</Text>
+                <Text style={styles.portalMetricLabel}>ACTIVO</Text>
+              </View>
+              <View style={styles.portalMetricDivider} />
+              <View style={styles.portalMetricItem}>
+                <Text style={styles.portalMetricValue}>24/7</Text>
+                <Text style={styles.portalMetricLabel}>ACCESO</Text>
+              </View>
+            </View>
+
             <View style={styles.portalSectionHeader}>
               <View style={styles.portalSectionTitleWrap}>
                 <View style={styles.portalSectionMark}>
@@ -4806,21 +4959,19 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         ) : null}
 
         {!loadingMenus && activeView !== 'portal' && activeView !== 'dashboard' && activeView !== 'no-autorizado' ? (
-          <View style={styles.directoryCard}>
-            <View style={styles.viewToolbar}>
-              <Pressable style={styles.backButton} onPress={() => openView(canUsePortal ? 'portal' : 'dashboard')}>
-                <Text style={styles.backButtonText}>Inicio</Text>
-              </Pressable>
-              <Text style={styles.viewToolbarTitle}>{getWorkspaceTitle(activeView)}</Text>
-            </View>
+           <View style={[styles.directoryCard, activeView === 'clientes' && styles.clientDirectoryCard]}>
+             {activeView !== 'clientes' ? <View style={styles.viewToolbar}>
+                 <Pressable style={styles.backButton} onPress={() => openView(activeView === 'nuevo-cliente' ? 'clientes' : activeView === 'nuevo-producto' ? 'productos' : canUsePortal ? 'portal' : 'dashboard')}>
+                  <Text style={styles.backButtonText}>{activeView === 'nuevo-cliente' || activeView === 'nuevo-producto' ? activeView === 'nuevo-producto' ? 'Productos' : 'Clientes' : 'Inicio'}</Text>
+               </Pressable>
+                <Text style={styles.viewToolbarTitle}>{getWorkspaceTitle(activeView)}</Text>
+              </View> : null}
 
-            <View style={styles.directoryStats}>
+             {activeView !== 'clientes' && activeView !== 'nuevo-cliente' && activeView !== 'nuevo-producto' ? <View style={styles.directoryStats}>
               <View>
                 <Text style={styles.statValue}>
-                  {activeView === 'clientes'
-                    ? clientes.length
-                    : activeView === 'productos'
-                      ? productos.length
+                   {activeView === 'productos'
+                       ? productos.length
                     : activeView === 'categorias'
                       ? categoriaTab === 'categorias'
                         ? categorias.length
@@ -4836,10 +4987,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                         : 0}
                 </Text>
                 <Text style={styles.statLabel}>
-                  {activeView === 'clientes'
-                    ? 'clientes'
-                    : activeView === 'productos'
-                      ? 'productos'
+                   {activeView === 'productos'
+                       ? 'productos'
                       : activeView === 'categorias'
                         ? 'registros'
                         : activeView === 'emisor'
@@ -4857,8 +5006,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 style={styles.refreshButton}
                 onPress={() => {
                   if (
-                    (activeView === 'clientes' && authorizedViews.has('clientes')) ||
-                    (activeView === 'productos' && authorizedViews.has('productos')) ||
+                     (activeView === 'productos' && authorizedViews.has('productos')) ||
                     (activeView === 'categorias' && authorizedViews.has('categorias')) ||
                     (activeView === 'emisor' && authorizedViews.has('emisor')) ||
                     (activeView === 'firma' && authorizedViews.has('firma')) ||
@@ -4871,31 +5019,89 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               >
                 <Text style={styles.refreshButtonText}>Actualizar</Text>
               </Pressable>
-            </View>
+             </View>
 
-             {activeView === 'bot' ? (
+              : null}
+
+             {activeView === 'nuevo-cliente' ? (
+               <ClienteForm
+                 form={clienteForm}
+                 mode={clienteFormMode ?? 'create'}
+                 saving={savingCliente}
+                 lookups={clienteLookups}
+                 provincias={provincias}
+                 ciudades={ciudades}
+                 loadingLookups={loadingClienteLookups}
+                 onCancel={closeClienteForm}
+                 onChange={updateClienteForm}
+                 onReset={() => setClienteForm(initialClienteForm)}
+                 onSave={saveCliente}
+               />
+             ) : activeView === 'bot' ? (
                <EfactBotScreen userName={portalFirstName} />
              ) : activeView === 'clientes' ? (
-              <>
-                <View style={styles.actionRow}>
-                  <PrimaryButton label="Nuevo cliente" loading={false} onPress={openNewCliente} />
-                </View>
-                {clienteFormMode ? (
-                  <ClienteForm
-                    form={clienteForm}
-                    mode={clienteFormMode}
-                    saving={savingCliente}
-                    lookups={clienteLookups}
-                    provincias={provincias}
-                    ciudades={ciudades}
-                    loadingLookups={loadingClienteLookups}
-                    onCancel={closeClienteForm}
-                    onChange={updateClienteForm}
-                    onReset={() => setClienteForm(initialClienteForm)}
-                    onSave={saveCliente}
-                  />
-                ) : null}
-                <SearchField label="Buscar clientes" placeholder="Nombre, identificacion, correo o telefono" value={search} onChangeText={setSearch} resultCount={filteredClientes.length} totalCount={clientes.length} />
+               <>
+                 <View style={styles.clientBankSummary}>
+                   <View style={styles.clientBankSummaryHeader}>
+                     <View style={styles.clientHeroTitleBlock}>
+                       <View style={styles.clientHeroIcon}>
+                         <MaterialCommunityIcons name="account-group-outline" size={26} color="#FFFFFF" />
+                       </View>
+                       <View>
+                         <Text style={styles.clientBankEyebrow}>TU CARTERA COMERCIAL</Text>
+                         <Text style={styles.clientBankTitle}>Clientes</Text>
+                         <Text style={styles.clientHeroSubtitle}>Personas y empresas en un solo lugar</Text>
+                       </View>
+                   </View>
+                   <Pressable style={styles.clientHeroAddButton} onPress={openNewCliente} accessibilityLabel="Nuevo cliente">
+                     <Text style={styles.clientHeroAddGlyph}>+</Text>
+                   </Pressable>
+                   </View>
+                   <View style={styles.clientBankMetrics}>
+                     <View style={styles.clientBankMetric}>
+                       <Text style={styles.clientBankMetricValue}>{clientes.length}</Text>
+                       <Text style={styles.clientBankMetricLabel}>Clientes</Text>
+                     </View>
+                     <View style={styles.clientBankMetricDivider} />
+                     <View style={styles.clientBankMetric}>
+                       <Text style={styles.clientBankMetricValue}>{clientesActivos}</Text>
+                       <Text style={styles.clientBankMetricLabel}>Activos</Text>
+                     </View>
+                     <View style={styles.clientBankMetricDivider} />
+                     <View style={styles.clientBankMetric}>
+                       <Text style={styles.clientBankMetricValue}>{clientesProveedores}</Text>
+                       <Text style={styles.clientBankMetricLabel}>Proveedores</Text>
+                     </View>
+                   </View>
+                 </View>
+                 <SearchField label="Buscar clientes" placeholder="Buscar cliente, RUC, correo..." value={search} onChangeText={setSearch} resultCount={filteredClientes.length} totalCount={clientes.length} />
+                 <View style={styles.clientFilterPanel}>
+                  <View style={styles.clientFilterHeader}>
+                    <Text style={styles.clientFilterTitle}>Filtros de cartera</Text>
+                    <Pressable onPress={() => { setClienteEstadoFiltro('todos'); setClienteTipoFiltro('todos'); setClienteProveedorFiltro('todos'); }}>
+                      <Text style={styles.clientFilterClear}>Limpiar</Text>
+                    </Pressable>
+                  </View>
+                  <Text style={styles.clientFilterLabel}>Estado</Text>
+                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientFilterRow}>
+                     {([['todos', 'Todos'], ['activos', 'Activos'], ['inactivos', 'Inactivos']] as const).map(([value, label]) => (
+                      <Pressable key={value} style={[styles.clientFilterChip, clienteEstadoFiltro === value && styles.clientFilterChipActive]} onPress={() => setClienteEstadoFiltro(value)}>
+                        <Text style={[styles.clientFilterChipText, clienteEstadoFiltro === value && styles.clientFilterChipTextActive]}>{label}</Text>
+                      </Pressable>
+                     ))}
+                   </ScrollView>
+                   <Text style={styles.clientFilterLabel}>Perfil</Text>
+                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientFilterRow}>
+                    {([['todos', 'Todos'], ['personas', 'Personas'], ['empresas', 'Empresas'], ['proveedores', 'Proveedores']] as const).map(([value, label]) => {
+                      const active = value === 'proveedores' ? clienteProveedorFiltro === 'proveedores' : clienteTipoFiltro === value;
+                      return (
+                        <Pressable key={value} style={[styles.clientFilterChip, active && styles.clientFilterChipActive]} onPress={() => value === 'proveedores' ? setClienteProveedorFiltro(active ? 'todos' : 'proveedores') : setClienteTipoFiltro(value as 'todos' | 'personas' | 'empresas')}>
+                          <Text style={[styles.clientFilterChipText, active && styles.clientFilterChipTextActive]}>{label}</Text>
+                        </Pressable>
+                      );
+                     })}
+                   </ScrollView>
+                 </View>
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingClientes ? (
                   <View style={styles.directoryLoading}>
@@ -4908,7 +5114,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 ) : null}
                 <ResultCollection
                   items={filteredClientes}
-                  resetKey={search}
+                  resetKey={`${search}-${clienteEstadoFiltro}-${clienteTipoFiltro}-${clienteProveedorFiltro}`}
+                  pageSize={8}
                   keyExtractor={(cliente, index) => `cliente-${cliente.codcliente}-${cliente.numeroidentificacion ?? index}`}
                   renderItem={(cliente) => (
                     <ClienteCard
@@ -4922,25 +5129,24 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </>
             ) : null}
 
-            {activeView === 'productos' ? (
+             {activeView === 'nuevo-producto' ? (
+               <ProductoForm
+                 form={productoForm}
+                 mode={productoFormMode ?? 'create'}
+                 saving={savingProducto}
+                 lookups={productoLookups}
+                 subcategorias={subcategoriasProducto}
+                 loadingLookups={loadingProductoLookups || loadingProductoDetail}
+                 onCancel={closeProductoForm}
+                 onChange={updateProductoForm}
+                 onReset={() => setProductoForm(initialProductoForm)}
+                 onSave={saveProducto}
+               />
+             ) : activeView === 'productos' ? (
               <>
                 <View style={styles.actionRow}>
                   <PrimaryButton label="Nuevo producto" loading={false} onPress={openNewProducto} />
                 </View>
-                {productoFormMode ? (
-                  <ProductoForm
-                    form={productoForm}
-                    mode={productoFormMode}
-                    saving={savingProducto}
-                    lookups={productoLookups}
-                    subcategorias={subcategoriasProducto}
-                    loadingLookups={loadingProductoLookups || loadingProductoDetail}
-                    onCancel={closeProductoForm}
-                    onChange={updateProductoForm}
-                    onReset={() => setProductoForm(initialProductoForm)}
-                    onSave={saveProducto}
-                  />
-                ) : null}
                 <SearchField label="Buscar productos" placeholder="Codigo, nombre, categoria o descripcion" value={search} onChangeText={setSearch} resultCount={filteredProductos.length} totalCount={productos.length} />
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingProductos ? (
@@ -5604,6 +5810,8 @@ function getWorkspaceTitle(view: WorkspaceView) {
     'admin-retenciones': 'Retenciones',
     'admin-sql-auditoria': 'SQL Auditoria',
     clientes: 'Clientes',
+    'nuevo-cliente': 'Nuevo cliente',
+    'nuevo-producto': 'Nuevo producto',
     proveedores: 'Proveedores',
     productos: 'Productos',
     categorias: 'Categorias',
@@ -5875,6 +6083,17 @@ function NuevaFacturaMobileScreen({
   const invoiceNumber = form.numeroFactura || String((preparacion?.caja?.sec ?? 1) + 1).padStart(9, '0');
   const referenciaWords = form.referencia.trim().split(/\s+/).filter(Boolean).length;
   const displayProductos = productos.length > 0 ? productos.slice(0, 2) : lineas.map((item) => item.producto).slice(0, 2);
+  const [step, setStep] = useState(0);
+
+  const nextStep = () => {
+    if (step === 0 && !cliente) return;
+    if (step === 1 && lineas.length === 0) return;
+    setStep((current) => Math.min(current + 1, 2));
+  };
+  const handleClear = () => {
+    onClear();
+    setStep(0);
+  };
 
   return (
     <>
@@ -5893,9 +6112,18 @@ function NuevaFacturaMobileScreen({
             <Text style={styles.invoiceMiniLabel}>Numero de factura</Text>
             <Text style={styles.invoiceHeaderValue}>{invoiceNumber}</Text>
           </View>
-          <SecondaryButton label="Historial" onPress={onClear} />
-          <SecondaryButton label="Limpiar pantalla" onPress={onClear} />
+           <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
+      </View>
+      <View style={styles.invoiceSteps}>
+        {['Cliente', 'Productos', 'Revisión'].map((label, index) => (
+          <Pressable key={label} style={styles.invoiceStepItem} onPress={() => index <= step && setStep(index)}>
+            <View style={[styles.invoiceStepNumber, index <= step && styles.invoiceStepNumberActive]}>
+              <Text style={[styles.invoiceStepNumberText, index <= step && styles.invoiceStepNumberTextActive]}>{index + 1}</Text>
+            </View>
+            <Text style={[styles.invoiceStepLabel, index === step && styles.invoiceStepLabelActive]}>{label}</Text>
+          </Pressable>
+        ))}
       </View>
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
@@ -5904,9 +6132,10 @@ function NuevaFacturaMobileScreen({
           <Text style={styles.mutedText}>Cargando facturacion...</Text>
         </View>
       ) : null}
+      {step === 0 ? <>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Buscador de cliente</Text>
-        <Text style={styles.invoiceSectionHelp}>Encuentra o completa el cliente de la factura</Text>
+        <Text style={styles.invoiceSectionHelp}>Busca por nombre, RUC o cédula. Solo necesitas seleccionar un resultado.</Text>
         <SearchField label="Encontrar cliente" placeholder="Identificacion, nombres, apellidos o razon social" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} resultCount={clientes.length} onSubmit={onSearchClientes} />
         {cliente ? <Text style={styles.profileValue}>Seleccionado: {getClienteDisplayName(cliente)} - {cliente.numeroidentificacion}</Text> : null}
         <View style={styles.listStack}>
@@ -5918,10 +6147,10 @@ function NuevaFacturaMobileScreen({
           ))}
         </View>
       </View>
-      <View style={[styles.formSectionBox, styles.invoicePanel]}>
+      {cliente ? <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Informacion del Cliente</Text>
-          <Text style={styles.invoicePanelPill}>Los datos se actualizan automaticamente</Text>
+          <Text style={styles.invoicePanelPill}>Datos del cliente seleccionado</Text>
         </View>
         <View style={styles.invoiceGrid}>
           <Field label="Tipo identificacion" value={form.tipoIdentificacion} onChangeText={(value) => onChange('tipoIdentificacion', value)} />
@@ -5937,40 +6166,18 @@ function NuevaFacturaMobileScreen({
           <Field label="Correo electronico principal" value={form.correoPrincipal} onChangeText={(value) => onChange('correoPrincipal', value)} autoCapitalize="none" keyboardType="email-address" />
         </View>
         <SecondaryButton label="Agregar correo" onPress={() => onChange('correoAdicional', form.correoPrincipal)} />
-        <View style={styles.invoiceChargeBox}>
-          <Text style={styles.clientFormSubtitle}>Cierre de cobro</Text>
-          <Text style={styles.invoiceSectionHelp}>Forma de pago del comprobante</Text>
-          <DropdownField
-            label="Forma de pago (SRI)"
-            options={formaPagoOptions.map((item, index) => ({ label: item.descripcionSri || item.descripcion || item.codigo || `Forma ${index + 1}`, value: index + 1 }))}
-            value={Math.max(formaPagoOptions.findIndex((item) => item.codigo === form.formaPago) + 1, 0) || null}
-            onChange={(value) => onChange('formaPago', value ? formaPagoOptions[value - 1]?.codigo ?? '' : '')}
-            allowClear
-          />
-          <ToggleRow label="Es una factura a credito" text="Activa este control si el pago queda pendiente." value={false} onChange={() => undefined} />
-        </View>
-        <DropdownField
-          label="Serie"
-          options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-          value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
-          onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-          allowClear
-        />
-        <Field label="Correo adicional" value={form.correoAdicional} onChangeText={(value) => onChange('correoAdicional', value)} autoCapitalize="none" keyboardType="email-address" />
-        <View style={styles.invoiceReferenceHeader}>
-          <Text style={styles.clientFormSubtitle}>Referencia (max 100 palabras)</Text>
-          <Text style={styles.invoicePanelPill}>Palabras: {referenciaWords} / 100</Text>
-        </View>
-        <Field label="Notas adicionales sobre el cliente" value={form.referencia} onChangeText={(value) => onChange('referencia', value)} />
-      </View>
+       </View> : null}
+       <View style={styles.formActions}>
+         <PrimaryButton label="Continuar con productos" loading={false} onPress={nextStep} />
+       </View>
+      </> : null}
+      {step === 1 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Detalle de Factura</Text>
         </View>
         <SearchField label="Encontrar producto o servicio" placeholder="Codigo, nombre o descripcion" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} resultCount={productos.length} onSubmit={onSearchProductos} />
-        <View style={styles.formActions}>
-          <SecondaryButton label="Registrar nuevo producto" onPress={onSearchProductos} />
-        </View>
+        <Text style={styles.invoiceSectionHelp}>Busca un producto, selecciónalo y ajusta cantidad o precio si hace falta.</Text>
         <View style={styles.listStack}>
           {productos.map((producto) => (
             <Pressable key={`factura-producto-${producto.codproducto}`} style={styles.clientCard} onPress={() => onAddProducto(producto)}>
@@ -6031,6 +6238,41 @@ function NuevaFacturaMobileScreen({
           );
         })}
       </View>
+      <View style={styles.formActions}>
+        <SecondaryButton label="Volver al cliente" onPress={() => setStep(0)} />
+        <PrimaryButton label="Continuar con revisión" loading={false} onPress={nextStep} />
+      </View>
+      </> : null}
+      {step === 2 ? <>
+      <View style={[styles.formSectionBox, styles.invoicePanel]}>
+        <View style={styles.invoicePanelHeader}>
+          <Text style={styles.invoicePanelTitle}>Cobro y datos finales</Text>
+          <Text style={styles.invoicePanelPill}>Último paso</Text>
+        </View>
+        <View style={styles.invoiceChargeBox}>
+          <Text style={styles.clientFormSubtitle}>Forma de pago</Text>
+          <DropdownField
+            label="Forma de pago (SRI)"
+            options={formaPagoOptions.map((item, index) => ({ label: item.descripcionSri || item.descripcion || item.codigo || `Forma ${index + 1}`, value: index + 1 }))}
+            value={Math.max(formaPagoOptions.findIndex((item) => item.codigo === form.formaPago) + 1, 0) || null}
+            onChange={(value) => onChange('formaPago', value ? formaPagoOptions[value - 1]?.codigo ?? '' : '')}
+            allowClear
+          />
+        </View>
+        <DropdownField
+          label="Serie"
+          options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+          value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+          onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+          allowClear
+        />
+        <Field label="Correo adicional (opcional)" value={form.correoAdicional} onChangeText={(value) => onChange('correoAdicional', value)} autoCapitalize="none" keyboardType="email-address" />
+        <View style={styles.invoiceReferenceHeader}>
+          <Text style={styles.clientFormSubtitle}>Nota o referencia</Text>
+          <Text style={styles.invoicePanelPill}>{referenciaWords} / 100 palabras</Text>
+        </View>
+        <Field label="Observaciones (opcional)" value={form.referencia} onChangeText={(value) => onChange('referencia', value)} />
+      </View>
       <View style={styles.invoiceBottomGrid}>
         <View style={[styles.formSectionBox, styles.invoiceFrequentBox]}>
           <Text style={styles.clientFormSubtitle}>Productos frecuentes del cliente</Text>
@@ -6062,10 +6304,11 @@ function NuevaFacturaMobileScreen({
         </View>
       </View>
       <View style={styles.formActions}>
-        <SecondaryButton label="Previsualizar PDF" onPress={() => Alert.alert('Previsualizar PDF', 'Genera la factura para consultar el PDF del comprobante.')} />
-        <SecondaryButton label="Cancelar / limpiar" onPress={onClear} />
+        <SecondaryButton label="Volver a productos" onPress={() => setStep(1)} />
+        <SecondaryButton label="Limpiar" onPress={handleClear} />
         <PrimaryButton label="Generar factura" loading={saving} onPress={onSave} />
       </View>
+      </> : null}
     </>
   );
 }
@@ -8013,7 +8256,7 @@ type BotMessage = { id: string; role: 'user' | 'assistant'; text: string };
 
 function EfactBotScreen({ userName }: { userName: string }) {
   const [messages, setMessages] = useState<BotMessage[]>([
-    { id: 'welcome', role: 'assistant', text: `Hola ${userName || '👋'} Soy Númi, el asistente de e-fact. ¿En qué puedo ayudarte?` },
+    { id: 'welcome', role: 'assistant', text: `Hola ${userName || '👋'} Soy Númi. También puedo ayudarte con e-rúbrica: solicitudes de firma, firma de documentos y validación de firmas. ¿Qué necesitas hacer?` },
   ]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -8029,7 +8272,10 @@ function EfactBotScreen({ userName }: { userName: string }) {
     setMessages((current) => [...current, { id: `user-${Date.now()}`, role: 'user', text }]);
     setSending(true);
     try {
-      const answer = await sendBotMessage({ message: text });
+      const answer = await sendBotMessage({
+        message: text,
+        contexto: 'e-rúbrica: guía para crear solicitudes de firma, completar firmantes y documentos, firmar documentos y validar el estado y la autenticidad de las firmas. Explica los pasos según las opciones disponibles en e-rúbrica y no inventes funciones que no estén disponibles.',
+      });
       setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: 'assistant', text: answer }]);
       Speech.speak(answer, { language: 'es-EC', rate: 0.96 });
     } catch (err) {
@@ -8073,12 +8319,13 @@ function EfactBotScreen({ userName }: { userName: string }) {
         <Image source={require('./assets/numi-robot.png')} style={styles.botAvatar} />
         <View style={styles.botHeroCopy}>
           <Text style={styles.botHeroTitle}>Númi Bot</Text>
-          <Text style={styles.botHeroText}>Tu asistente para usar e-fact</Text>
+          <Text style={styles.botHeroText}>Tu asistente para e-fact y e-rúbrica</Text>
+          <Text style={styles.botHeroStatus}>● Disponible para ayudarte</Text>
         </View>
         <View style={styles.botOnlineDot} />
       </View>
       <ScrollView style={styles.botMessages} contentContainerStyle={styles.botMessagesContent} keyboardShouldPersistTaps="handled">
-        <Text style={styles.botHint}>Pregúntame sobre facturas, clientes, productos o cualquier módulo de e-fact.</Text>
+        <Text style={styles.botHint}>Pregúntame cómo llenar una solicitud de firma, firmar un documento o validar una firma en e-rúbrica.</Text>
         {messages.map((message) => (
           <View key={message.id} style={[styles.botBubble, message.role === 'user' ? styles.botUserBubble : styles.botAssistantBubble]}>
             <View style={styles.botMessageRow}>
@@ -8090,7 +8337,7 @@ function EfactBotScreen({ userName }: { userName: string }) {
         {sending ? <View style={[styles.botBubble, styles.botAssistantBubble]}><ActivityIndicator color="#0878C9" /></View> : null}
       </ScrollView>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.botSuggestions}>
-        {['¿Cómo emito una factura?', '¿Cómo agrego un cliente?', '¿Dónde veo mis documentos?'].map((item) => (
+        {['¿Cómo lleno una solicitud de firma?', '¿Cómo firmo un documento?', '¿Cómo valido una firma?', '¿Qué documentos puedo firmar?'].map((item) => (
           <Pressable key={item} style={styles.botSuggestion} onPress={() => send(item)} disabled={sending}>
             <Text style={styles.botSuggestionText}>{item}</Text>
           </Pressable>
@@ -8165,7 +8412,7 @@ function DashboardHomeScreen({
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dashboardFavoritesRow}>
           <DashboardFavorite icon="file-plus-outline" label="Nueva factura" color="#176DFF" onPress={() => onOpenView('nueva-factura')} />
           <DashboardFavorite icon="robot-outline" label="Preguntar a Númi" color="#F15A29" onPress={() => onOpenView('bot')} />
-          <DashboardFavorite icon="account-plus-outline" label="Nuevo cliente" color="#18B99F" onPress={() => onOpenView('clientes')} />
+          <DashboardFavorite icon="account-plus-outline" label="Nuevo cliente" color="#18B99F" onPress={() => onOpenView('nuevo-cliente')} />
           <DashboardFavorite icon="history" label="Historial" color="#8658F2" onPress={() => onOpenView('recargas')} />
         </ScrollView>
       </View>
@@ -8190,8 +8437,8 @@ function DashboardHomeScreen({
         <View style={styles.dashboardQuickCard}>
           <Text style={styles.dashboardPanelTitle}>Acción rápida</Text>
           <DashboardQuickAction color="#176DFF" label="Nueva factura" onPress={() => onOpenView('nueva-factura')} />
-          <DashboardQuickAction color="#8658F2" label="Nuevo cliente" onPress={() => onOpenView('clientes')} />
-          <DashboardQuickAction color="#18B99F" label="Nuevo producto" onPress={() => onOpenView('productos')} />
+          <DashboardQuickAction color="#8658F2" label="Nuevo cliente" onPress={() => onOpenView('nuevo-cliente')} />
+          <DashboardQuickAction color="#18B99F" label="Nuevo producto" onPress={() => onOpenView('nuevo-producto')} />
           <DashboardQuickAction color="#FF8A2A" label="Reporte de ventas" onPress={() => onOpenView('reporte-documentos')} />
         </View>
       </View>
@@ -8813,14 +9060,15 @@ function ClienteCard({
           <Text style={styles.clientName}>{name}</Text>
           <Text style={styles.clientMeta}>{cliente.numeroidentificacion || 'Sin identificacion'}</Text>
         </View>
-        {protectedSystem ? (
-          <View style={styles.clientBadgeStack}>
-            <View style={styles.systemPill}>
-              <Text style={styles.systemPillText}>Sistema</Text>
-            </View>
-          </View>
-        ) : null}
-      </View>
+         {protectedSystem ? (
+           <View style={styles.clientBadgeStack}>
+             <View style={styles.systemPill}>
+               <Text style={styles.systemPillText}>Sistema</Text>
+             </View>
+           </View>
+         ) : null}
+          {!protectedSystem ? <MaterialCommunityIcons name="chevron-right" size={27} color="#123E78" style={styles.clientCardChevron} /> : null}
+       </View>
 
       <View style={styles.clientDetailGrid}>
         <View style={styles.clientDetailItem}>
@@ -9831,8 +10079,15 @@ function LoadingScreen() {
 function ScreenFrame({ children, centered }: { children: React.ReactNode; centered?: boolean }) {
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-      <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', android: undefined })} style={styles.flex}>
-        <ScrollView contentContainerStyle={[styles.canvas, centered && styles.canvasCentered]} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0} style={styles.flex}>
+        <ScrollView
+          automaticallyAdjustKeyboardInsets
+          contentContainerStyle={[styles.canvas, centered && styles.canvasCentered, styles.authScrollContent]}
+          keyboardDismissMode="none"
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+          showsVerticalScrollIndicator
+        >
           <View style={styles.blueGlow} />
           {children}
         </ScrollView>
@@ -10112,6 +10367,9 @@ const styles = StyleSheet.create({
   },
   canvasCentered: {
     justifyContent: 'center',
+  },
+  authScrollContent: {
+    paddingBottom: 72,
   },
   blueGlow: {
     backgroundColor: '#0E7FBE',
@@ -10639,6 +10897,140 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
   },
+  sectionHint: {
+    color: '#718497',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  fieldGroupHint: {
+    color: '#536C80',
+    fontSize: 11,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  documentOptions: {
+    gap: 10,
+  },
+  documentOptionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  passwordHint: {
+    color: '#718497',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginTop: -5,
+  },
+  recoveryHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 8,
+  },
+  recoveryIcon: {
+    alignItems: 'center',
+    backgroundColor: '#EAF5FC',
+    borderColor: '#B9D8EE',
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 58,
+    justifyContent: 'center',
+    width: 58,
+  },
+  recoveryHeaderCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  recoveryEyebrow: {
+    color: '#0072BD',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  recoveryInfoCard: {
+    alignItems: 'flex-start',
+    backgroundColor: '#F3F8FC',
+    borderColor: '#D5E5F0',
+    borderRadius: 13,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 9,
+    marginTop: 14,
+    padding: 12,
+  },
+  recoveryInfoText: {
+    color: '#536C80',
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+  changeSecurityCard: {
+    alignItems: 'center',
+    backgroundColor: '#F3F8FC',
+    borderColor: '#D5E5F0',
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 11,
+    marginTop: 16,
+    padding: 13,
+  },
+  changeSecurityIcon: {
+    alignItems: 'center',
+    backgroundColor: '#EAF5FC',
+    borderColor: '#B9D8EE',
+    borderRadius: 20,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  changeSecurityCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  changeSecurityTitle: {
+    color: '#34465B',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  changeSecurityText: {
+    color: '#536C80',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+  changeFieldsCard: {
+    backgroundColor: '#F8FBFE',
+    borderColor: '#DCE8F1',
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 14,
+    padding: 14,
+  },
+  changeFieldsEyebrow: {
+    color: '#0072BD',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  changeFieldsHint: {
+    color: '#718497',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginTop: -9,
+  },
+  changePasswordHint: {
+    color: '#718497',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginTop: -5,
+  },
   segment: {
     flexDirection: 'row',
     gap: 8,
@@ -10703,6 +11095,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
   },
+  avatarTapHint: {
+    color: '#0072BD',
+    fontSize: 10,
+    fontWeight: '900',
+    marginTop: 2,
+  },
   avatarStrip: {
     gap: 9,
     paddingVertical: 4,
@@ -10725,6 +11123,156 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     height: 42,
     width: 42,
+  },
+  avatarGalleryButton: {
+    alignItems: 'center',
+    backgroundColor: '#F3F8FC',
+    borderColor: '#B9D8EE',
+    borderRadius: 13,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    minHeight: 56,
+    paddingHorizontal: 12,
+  },
+  avatarGalleryButtonCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  avatarGalleryButtonTitle: {
+    color: '#00649D',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  avatarGalleryButtonText: {
+    color: '#718497',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  avatarGalleryButtonArrow: {
+    color: '#0072BD',
+    fontSize: 26,
+    fontWeight: '400',
+  },
+  avatarModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  avatarModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(3, 24, 48, 0.54)',
+  },
+  avatarModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    gap: 8,
+    maxHeight: '82%',
+    paddingHorizontal: 18,
+    paddingTop: 20,
+  },
+  avatarModalHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  avatarModalEyebrow: {
+    color: '#0072BD',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  avatarModalTitle: {
+    color: '#263A4F',
+    fontSize: 21,
+    fontWeight: '900',
+    marginTop: 3,
+  },
+  avatarModalClose: {
+    alignItems: 'center',
+    backgroundColor: '#EEF5F9',
+    borderRadius: 17,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  avatarModalCloseText: {
+    color: '#38566D',
+    fontSize: 23,
+    lineHeight: 25,
+  },
+  avatarModalHint: {
+    color: '#718497',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  avatarCategoryTabs: {
+    gap: 8,
+    paddingBottom: 4,
+  },
+  avatarCategoryTab: {
+    alignItems: 'center',
+    backgroundColor: '#F3F7FA',
+    borderColor: '#DCE8F1',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexShrink: 0,
+    height: 42,
+    justifyContent: 'center',
+    minWidth: 78,
+    paddingHorizontal: 13,
+  },
+  avatarCategoryTabActive: {
+    backgroundColor: '#0072BD',
+    borderColor: '#0072BD',
+  },
+  avatarCategoryText: {
+    color: '#62798B',
+    fontSize: 11,
+    fontWeight: '900',
+    includeFontPadding: false,
+    lineHeight: 16,
+  },
+  avatarCategoryTextActive: {
+    color: '#FFFFFF',
+  },
+  avatarGalleryGrid: {
+    columnGap: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    paddingBottom: 28,
+    paddingTop: 6,
+  },
+  avatarGalleryScroll: {
+    flexGrow: 0,
+    maxHeight: 450,
+  },
+  avatarGalleryItem: {
+    alignItems: 'center',
+    backgroundColor: '#F7FAFD',
+    borderColor: '#DCE8F1',
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 6,
+    flexGrow: 0,
+    flexShrink: 0,
+    height: 116,
+    marginBottom: 12,
+    padding: 9,
+    width: '30%',
+  },
+  avatarGalleryImage: {
+    borderRadius: 14,
+    height: 62,
+    width: 62,
+  },
+  avatarGalleryLabel: {
+    color: '#536C80',
+    fontSize: 10,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   initialsAvatar: {
     alignItems: 'center',
@@ -11674,6 +12222,44 @@ const styles = StyleSheet.create({
     shadowRadius: 28,
     elevation: 10,
   },
+  portalMetrics: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E5ECFA',
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    minHeight: 78,
+    paddingHorizontal: 8,
+    shadowColor: '#B8C7E6',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  portalMetricItem: {
+    alignItems: 'center',
+    flex: 1,
+    gap: 2,
+  },
+  portalMetricValue: {
+    color: '#08235E',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 22,
+  },
+  portalMetricLabel: {
+    color: '#7182A6',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+  portalMetricDivider: {
+    backgroundColor: '#E5ECFA',
+    height: 32,
+    width: 1,
+  },
   portalHeroCopy: {
     flex: 1,
     justifyContent: 'center',
@@ -11861,18 +12447,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   portalServiceCard: {
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: '#EEF3FF',
     borderRadius: 18,
     borderWidth: 1,
+    flexDirection: 'row',
     gap: 10,
-    minHeight: 170,
-    padding: 12,
+    minHeight: 126,
+    padding: 14,
     shadowColor: '#B8C7E6',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.2,
     shadowRadius: 22,
-    width: '48%',
+    width: '100%',
     elevation: 7,
   },
   portalServiceCardDisabled: {
@@ -11910,11 +12498,11 @@ const styles = StyleSheet.create({
   },
   portalServiceActionWrap: {
     alignItems: 'center',
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: 6,
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     minHeight: 34,
-    width: '100%',
+    width: 68,
   },
   portalServicePill: {
     backgroundColor: '#F0F5FF',
@@ -12635,6 +13223,47 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 17,
   },
+  invoiceSteps: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#DCE8F1',
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 11,
+  },
+  invoiceStepItem: {
+    alignItems: 'center',
+    flex: 1,
+    gap: 5,
+  },
+  invoiceStepNumber: {
+    alignItems: 'center',
+    backgroundColor: '#EEF4F8',
+    borderRadius: 15,
+    height: 30,
+    justifyContent: 'center',
+    width: 30,
+  },
+  invoiceStepNumberActive: {
+    backgroundColor: '#0072BD',
+  },
+  invoiceStepNumberText: {
+    color: '#718497',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  invoiceStepNumberTextActive: {
+    color: '#FFFFFF',
+  },
+  invoiceStepLabel: {
+    color: '#718497',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  invoiceStepLabelActive: {
+    color: '#0072BD',
+  },
   invoicePanel: {
     padding: 12,
     overflow: 'hidden',
@@ -13056,6 +13685,15 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 8,
   },
+  clientDirectoryCard: {
+    backgroundColor: '#F4F8FC',
+    borderRadius: 24,
+    gap: 14,
+    padding: 10,
+    shadowColor: '#001B35',
+    shadowOpacity: 0.2,
+    shadowRadius: 22,
+  },
   detailModalHeader: {
     alignItems: 'flex-start',
     flexDirection: 'row',
@@ -13135,7 +13773,9 @@ const styles = StyleSheet.create({
   },
   clientCard: {
     backgroundColor: '#FFFFFF',
-    borderColor: '#DCE8F1',
+    borderColor: '#E5EEF7',
+    borderLeftColor: '#0878C9',
+    borderLeftWidth: 4,
     borderRadius: 17,
     borderWidth: 1,
     gap: 12,
@@ -13145,6 +13785,171 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 14,
     elevation: 2,
+  },
+  clientBankSummary: {
+    backgroundColor: '#06295A',
+    borderRadius: 20,
+    gap: 18,
+    marginBottom: 14,
+    overflow: 'hidden',
+    padding: 18,
+    position: 'relative',
+  },
+  clientBankSummaryHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  clientHeroTitleBlock: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flex: 1,
+    gap: 10,
+  },
+  clientHeroIcon: {
+    alignItems: 'center',
+    backgroundColor: '#123E78',
+    borderColor: '#2B5B94',
+    borderRadius: 14,
+    borderWidth: 1,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
+  clientBankEyebrow: {
+    color: '#68D9F6',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  clientBankTitle: {
+    color: '#FFFFFF',
+    fontSize: 19,
+    fontWeight: '900',
+    marginTop: 4,
+  },
+  clientHeroSubtitle: {
+    color: '#B9D9F2',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  clientHeroAddButton: {
+    alignItems: 'center',
+    backgroundColor: '#0A74C9',
+    borderColor: '#3B98DF',
+    borderRadius: 14,
+    borderWidth: 1,
+    height: 48,
+    justifyContent: 'center',
+    shadowColor: '#001B35',
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
+    width: 48,
+    zIndex: 2,
+  },
+  clientHeroAddGlyph: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '500',
+    lineHeight: 31,
+  },
+  clientBankTotal: {
+    alignItems: 'flex-end',
+  },
+  clientBankTotalValue: {
+    color: '#FFFFFF',
+    fontSize: 27,
+    fontWeight: '900',
+  },
+  clientBankTotalLabel: {
+    color: '#A9CBE6',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  clientBankMetrics: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.09)',
+    borderRadius: 13,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 11,
+  },
+  clientBankMetric: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  clientBankMetricValue: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  clientBankMetricLabel: {
+    color: '#B5D3E8',
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  clientBankMetricDivider: {
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    height: 26,
+    width: 1,
+  },
+  clientFilterPanel: {
+    backgroundColor: '#F7FBFE',
+    borderColor: '#D6E6F1',
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 8,
+    marginBottom: 14,
+    padding: 13,
+  },
+  clientFilterHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  clientFilterTitle: {
+    color: '#263A4F',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  clientFilterClear: {
+    color: '#0072BD',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  clientFilterLabel: {
+    color: '#7A8794',
+    fontSize: 10,
+    fontWeight: '900',
+    marginTop: 3,
+    textTransform: 'uppercase',
+  },
+  clientFilterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+  clientFilterChip: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D6E6F1',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+  },
+  clientFilterChipActive: {
+    backgroundColor: '#0072BD',
+    borderColor: '#0072BD',
+  },
+  clientFilterChipText: {
+    color: '#587086',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  clientFilterChipTextActive: {
+    color: '#FFFFFF',
   },
   clientCardSystem: {
     backgroundColor: '#F4F8FC',
@@ -13190,6 +13995,9 @@ const styles = StyleSheet.create({
   clientBadgeStack: {
     alignItems: 'flex-end',
     gap: 6,
+  },
+  clientCardChevron: {
+    marginTop: 6,
   },
   systemPill: {
     backgroundColor: '#EAF5FC',
@@ -13515,11 +14323,12 @@ const styles = StyleSheet.create({
   },
   botScreen: { backgroundColor: '#F6FAFD', borderRadius: 18, flex: 1, minHeight: 520, overflow: 'hidden' },
   botHero: { alignItems: 'center', backgroundColor: '#0878C9', flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
-  botAvatar: { backgroundColor: '#FFFFFF', borderRadius: 28, height: 56, width: 56 },
+  botAvatar: { backgroundColor: '#FFFFFF', borderColor: '#42D392', borderRadius: 28, borderWidth: 2, height: 56, width: 56 },
   botHeroCopy: { flex: 1 },
   botHeroTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
   botHeroText: { color: '#D8F1FF', fontSize: 12, marginTop: 2 },
-  botOnlineDot: { backgroundColor: '#58E2A5', borderColor: '#FFFFFF', borderRadius: 8, borderWidth: 2, height: 14, width: 14 },
+  botHeroStatus: { color: '#8AF0BE', fontSize: 10, fontWeight: '800', marginTop: 4 },
+  botOnlineDot: { backgroundColor: '#42D392', borderColor: '#FFFFFF', borderRadius: 8, borderWidth: 2, height: 14, width: 14 },
   botMessages: { flex: 1 },
   botMessagesContent: { gap: 10, padding: 16 },
   botHint: { color: '#73879A', fontSize: 12, lineHeight: 17, marginBottom: 4 },
