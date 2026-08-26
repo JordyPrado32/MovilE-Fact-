@@ -9663,6 +9663,7 @@ function PerfilForm({
   onSelectPresetAvatar: (avatar: string) => void;
   onSave: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const tiposCliente = lookup?.tiposCliente.length ? lookup.tiposCliente : [
     { tclCodigo: 1, descripcion: 'Persona Natural' },
     { tclCodigo: 2, descripcion: 'Persona Juridica' },
@@ -9676,10 +9677,78 @@ function PerfilForm({
   const displayName = esEmpresa
     ? form.nombreEmpresa || 'Empresa'
     : [form.nombres, form.apellidos].filter(Boolean).join(' ') || 'Usuario';
+  const identificationLabel = identificaciones.find((item) => item.idTipoIdentificacion === form.idTipoIdentificacion)?.descripcion
+    ?? identificaciones.find((item) => item.idTipoIdentificacion === form.idTipoIdentificacion)?.nombreTipo
+    ?? 'Identificacion';
+
+  if (!editing) {
+    return (
+      <View style={styles.profileOverview}>
+        <View style={styles.profileHeroCard}>
+          <View style={styles.profileHeroTop}>
+            {usesInitials ? (
+              <InitialsAvatar initials={initials} size={88} />
+            ) : (
+              <Image source={{ uri: resolveImageUrl(form.avatarUrl) }} style={styles.profileHeroImage} />
+            )}
+            <View style={styles.profileHeroCopy}>
+              <Text style={styles.profileHeroEyebrow}>{getTipoClienteLabel(form.tipoCliente) || 'Perfil E-FACT'}</Text>
+              <Text style={styles.profileHeroName} numberOfLines={2}>{displayName}</Text>
+              <Text style={styles.profileHeroMeta} numberOfLines={1}>{form.email || 'Correo no registrado'}</Text>
+            </View>
+          </View>
+          <View style={styles.profileHeroActions}>
+            <Pressable style={styles.profileMainAction} onPress={() => setEditing(true)}>
+              <MaterialCommunityIcons name="account-edit-outline" size={19} color="#FFFFFF" />
+              <Text style={styles.profileMainActionText}>Editar perfil</Text>
+            </Pressable>
+            <Pressable style={styles.profileSecondaryAction} onPress={onSelectAvatar}>
+              <MaterialCommunityIcons name="camera-outline" size={18} color={EFACT_THEME.colors.primary} />
+              <Text style={styles.profileSecondaryActionText}>Foto</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.profileInfoGrid}>
+          <ProfileInfoTile icon="card-account-details-outline" label={identificationLabel} value={form.identificacion || 'Sin identificacion'} />
+          <ProfileInfoTile icon="cellphone" label="Celular" value={form.celular || 'Sin celular'} />
+          <ProfileInfoTile icon="map-marker-outline" label="Direccion" value={form.direccionEmpresa || 'Sin direccion'} full />
+        </View>
+
+        <View style={styles.profileSecurityCard}>
+          <View style={styles.profileSecurityIcon}>
+            <MaterialCommunityIcons name="shield-check-outline" size={22} color={EFACT_THEME.colors.success} />
+          </View>
+          <View style={styles.profileSecurityCopy}>
+            <Text style={styles.profileSecurityTitle}>Cuenta protegida</Text>
+            <Text style={styles.profileSecurityText}>Tu clave no se muestra. Puedes cambiarla desde editar perfil.</Text>
+          </View>
+        </View>
+
+        <View style={styles.infoNotice}>
+          <View style={styles.infoNoticeIcon}>
+            <Text style={styles.infoNoticeIconText}>i</Text>
+          </View>
+          <View style={styles.infoNoticeBody}>
+            <Text style={styles.infoNoticeTitle}>Datos para facturacion</Text>
+            <Text style={styles.infoNoticeText}>Esta informacion se utilizara para emitir correctamente tus comprobantes.</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.clientFormCard}>
-      <Text style={styles.clientFormTitle}>Mi perfil</Text>
+      <View style={styles.profileEditHeader}>
+        <View style={styles.profileEditTitleBlock}>
+          <Text style={styles.clientFormTitle}>Editar perfil</Text>
+          <Text style={styles.profileEditHint}>Actualiza solo los datos que necesites cambiar.</Text>
+        </View>
+        <Pressable style={styles.profileCloseEditButton} onPress={() => setEditing(false)}>
+          <MaterialCommunityIcons name="close" size={20} color={EFACT_THEME.colors.primary} />
+        </Pressable>
+      </View>
 
       <View style={styles.profileAvatarPanel}>
         {usesInitials ? (
@@ -9804,8 +9873,35 @@ function PerfilForm({
       </View>
 
       <View style={styles.formActions}>
-        <SecondaryButton label="Restaurar datos" onPress={onReset} />
+        <SecondaryButton label="Cancelar" onPress={() => {
+          onReset();
+          setEditing(false);
+        }} />
         <PrimaryButton label="Guardar cambios" loading={saving} onPress={onSave} />
+      </View>
+    </View>
+  );
+}
+
+function ProfileInfoTile({
+  icon,
+  label,
+  value,
+  full,
+}: {
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  label: string;
+  value: string;
+  full?: boolean;
+}) {
+  return (
+    <View style={[styles.profileInfoTile, full && styles.profileInfoTileFull]}>
+      <View style={styles.profileInfoIcon}>
+        <MaterialCommunityIcons name={icon} size={19} color={EFACT_THEME.colors.primary} />
+      </View>
+      <View style={styles.profileInfoCopy}>
+        <Text style={styles.profileInfoLabel}>{label}</Text>
+        <Text style={styles.profileInfoValue} numberOfLines={full ? 2 : 1}>{value}</Text>
       </View>
     </View>
   );
@@ -14324,6 +14420,189 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     marginBottom: 8,
+  },
+  profileOverview: {
+    gap: EFACT_THEME.spacing.lg,
+  },
+  profileHeroCard: {
+    backgroundColor: EFACT_THEME.colors.primaryDark,
+    borderRadius: EFACT_THEME.radius.card,
+    gap: EFACT_THEME.spacing.lg,
+    padding: EFACT_THEME.spacing.lg,
+  },
+  profileHeroTop: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: EFACT_THEME.spacing.md,
+  },
+  profileHeroImage: {
+    borderColor: 'rgba(255,255,255,0.28)',
+    borderRadius: 22,
+    borderWidth: 2,
+    height: 88,
+    width: 88,
+  },
+  profileHeroCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  profileHeroEyebrow: {
+    color: '#B8D6EC',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  profileHeroName: {
+    color: '#FFFFFF',
+    fontSize: 21,
+    fontWeight: '900',
+    lineHeight: 26,
+    marginTop: 4,
+  },
+  profileHeroMeta: {
+    color: '#DDF0FA',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  profileHeroActions: {
+    flexDirection: 'row',
+    gap: EFACT_THEME.spacing.sm,
+  },
+  profileMainAction: {
+    alignItems: 'center',
+    backgroundColor: EFACT_THEME.colors.primary,
+    borderRadius: EFACT_THEME.radius.button,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    minHeight: 46,
+    paddingHorizontal: EFACT_THEME.spacing.md,
+  },
+  profileMainActionText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  profileSecondaryAction: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: EFACT_THEME.radius.button,
+    flexDirection: 'row',
+    gap: 7,
+    justifyContent: 'center',
+    minHeight: 46,
+    paddingHorizontal: EFACT_THEME.spacing.md,
+  },
+  profileSecondaryActionText: {
+    color: EFACT_THEME.colors.primary,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  profileInfoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: EFACT_THEME.spacing.sm,
+  },
+  profileInfoTile: {
+    backgroundColor: EFACT_THEME.colors.surface,
+    borderColor: EFACT_THEME.colors.border,
+    borderRadius: EFACT_THEME.radius.card,
+    borderWidth: 1,
+    flexBasis: '48%',
+    flexGrow: 1,
+    flexDirection: 'row',
+    gap: EFACT_THEME.spacing.sm,
+    minHeight: 76,
+    padding: EFACT_THEME.spacing.md,
+  },
+  profileInfoTileFull: {
+    flexBasis: '100%',
+  },
+  profileInfoIcon: {
+    alignItems: 'center',
+    backgroundColor: EFACT_THEME.colors.primaryLight,
+    borderRadius: 11,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  profileInfoCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  profileInfoLabel: {
+    color: EFACT_THEME.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  profileInfoValue: {
+    color: EFACT_THEME.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  profileSecurityCard: {
+    alignItems: 'center',
+    backgroundColor: '#F3FCF7',
+    borderColor: '#BDEED2',
+    borderRadius: EFACT_THEME.radius.card,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: EFACT_THEME.spacing.md,
+    padding: EFACT_THEME.spacing.md,
+  },
+  profileSecurityIcon: {
+    alignItems: 'center',
+    backgroundColor: '#E8F7EF',
+    borderRadius: 12,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  profileSecurityCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  profileSecurityTitle: {
+    color: '#145A36',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  profileSecurityText: {
+    color: '#32724E',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  profileEditHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: EFACT_THEME.spacing.md,
+    justifyContent: 'space-between',
+  },
+  profileEditTitleBlock: {
+    flex: 1,
+  },
+  profileEditHint: {
+    color: EFACT_THEME.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+    marginTop: 3,
+  },
+  profileCloseEditButton: {
+    alignItems: 'center',
+    backgroundColor: EFACT_THEME.colors.primaryLight,
+    borderRadius: 12,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
   },
   profileAvatarPanel: {
     alignItems: 'center',
