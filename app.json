@@ -29,6 +29,13 @@
           "faceIDPermission": "e-fact usa Face ID para proteger el acceso a tu cuenta."
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0072BD",
+          "defaultChannel": "efact-activity"
+        }
+      ],
       "expo-secure-store"
     ],
     "web": {
