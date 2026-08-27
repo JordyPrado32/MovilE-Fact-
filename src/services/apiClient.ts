@@ -75,6 +75,40 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   return body as T;
 }
 
+export async function apiRequestBinary(path: string, options: RequestOptions = {}) {
+  const { token, timeoutMs, headers, ...requestOptions } = options;
+  const authToken = token ?? sessionToken;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? REQUEST_TIMEOUT_MS);
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      credentials: 'include',
+      ...requestOptions,
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/pdf, application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        ...(authSessionCookie ? { Cookie: authSessionCookie } : {}),
+        ...headers,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw new ApiError(0, 'La conexion con el servidor tardo demasiado.');
+    throw new ApiError(0, 'No se pudo conectar con el servidor.');
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiError(response.status, text || `HTTP ${response.status}: ${DEFAULT_ERROR_MESSAGE}`);
+  }
+
+  return { bytes: await response.arrayBuffer(), contentType: response.headers.get('content-type') ?? 'application/pdf' };
+}
+
 function safeParseJson(text: string) {
   try {
     return JSON.parse(text);

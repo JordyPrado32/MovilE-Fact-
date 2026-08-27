@@ -130,6 +130,7 @@ export type SubcategoriaUpsert = {
 
 export type Emisor = {
   codigo: number;
+  id?: number | null;
   razonSocial?: string | null;
   ruc?: string | null;
   nomComercial?: string | null;
@@ -154,13 +155,18 @@ export type Emisor = {
 export type EmisorUpsert = Omit<Emisor, 'tieneClaveCertificadoConfigurada'>;
 
 export type FirmaEstado = {
+  tieneCertificado?: boolean;
+  tieneClave?: boolean;
   esValida: boolean;
   estadoVigencia?: string | null;
   mensaje?: string | null;
   nombreTitular?: string | null;
   identificacion?: string | null;
+  fechaEmision?: string | null;
   fechaExpiracion?: string | null;
   diasRestantes?: number | null;
+  numeroSerie?: string | null;
+  huellaDigital?: string | null;
 };
 
 export type PerfilUsuario = {

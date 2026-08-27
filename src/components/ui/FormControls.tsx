@@ -67,12 +67,12 @@ export function SearchField({ label, value, onChangeText, placeholder, resultCou
   );
 }
 
-export function PrimaryButton({ label, loading, onPress }: { label: string; loading: boolean; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ busy: loading, disabled: loading }} disabled={loading} style={[styles.primaryButton, loading && styles.disabledButton]} onPress={onPress}>{loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryButtonText}>{label}</Text>}</Pressable>;
+export function PrimaryButton({ label, loading, onPress, accentColor }: { label: string; loading: boolean; onPress: () => void; accentColor?: string }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ busy: loading, disabled: loading }} disabled={loading} style={[styles.primaryButton, accentColor ? { backgroundColor: accentColor } : null, loading && styles.disabledButton]} onPress={onPress}>{loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryButtonText}>{label}</Text>}</Pressable>;
 }
 
-export function SecondaryButton({ label, onPress }: { label: string; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} style={styles.secondaryButton} onPress={onPress}><Text style={styles.secondaryButtonText}>{label}</Text></Pressable>;
+export function SecondaryButton({ label, onPress, accentColor }: { label: string; onPress: () => void; accentColor?: string }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} style={[styles.secondaryButton, accentColor ? { borderColor: accentColor, backgroundColor: `${accentColor}15` } : null]} onPress={onPress}><Text style={[styles.secondaryButtonText, accentColor ? { color: accentColor } : null]}>{label}</Text></Pressable>;
 }
 
 export function BiometricButton({ label, loading, onPress }: { label: string; loading: boolean; onPress: () => void }) {
@@ -88,10 +88,10 @@ function LoginActionTile({ active, icon, label, onPress }: { active: boolean; ic
   return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} style={[styles.loginActionTile, active && styles.loginActionTileActive]} onPress={onPress}><MaterialCommunityIcons name={icon} size={27} color={active ? '#0072BD' : '#668196'} /><Text style={[styles.loginActionLabel, active && styles.loginActionLabelActive]}>{label}</Text></Pressable>;
 }
 
-export function SegmentButton({ active, label, description, icon, onPress }: { active: boolean; label: string; description?: string; icon?: React.ComponentProps<typeof MaterialCommunityIcons>['name']; onPress: () => void }) {
-  return <Pressable accessibilityLabel={description ? `${label}. ${description}` : label} accessibilityState={{ selected: active }} style={[styles.segmentButton, active && styles.segmentButtonActive]} onPress={onPress}>
-    {icon ? <MaterialCommunityIcons name={icon} size={20} color={active ? '#0072BD' : '#668196'} /> : null}
-    <View style={styles.segmentCopy}><Text style={[styles.segmentText, active && styles.segmentTextActive]}>{label}</Text>{description ? <Text style={[styles.segmentDescription, active && styles.segmentDescriptionActive]}>{description}</Text> : null}</View>
+export function SegmentButton({ active, label, description, icon, onPress, accentColor }: { active: boolean; label: string; description?: string; icon?: React.ComponentProps<typeof MaterialCommunityIcons>['name']; onPress: () => void; accentColor?: string }) {
+  return <Pressable accessibilityLabel={description ? `${label}. ${description}` : label} accessibilityState={{ selected: active }} style={[styles.segmentButton, active && styles.segmentButtonActive, active && accentColor ? { backgroundColor: `${accentColor}15`, borderColor: accentColor } : null]} onPress={onPress}>
+    {icon ? <MaterialCommunityIcons name={icon} size={20} color={active ? accentColor ?? '#0072BD' : '#668196'} /> : null}
+    <View style={styles.segmentCopy}><Text style={[styles.segmentText, active && styles.segmentTextActive, active && accentColor ? { color: accentColor } : null]}>{label}</Text>{description ? <Text style={[styles.segmentDescription, active && styles.segmentDescriptionActive]}>{description}</Text> : null}</View>
   </Pressable>;
 }
 

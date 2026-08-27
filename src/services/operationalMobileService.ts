@@ -1,4 +1,5 @@
 import { ApiError, apiRequest } from './apiClient';
+import { DOCUMENTOS_COMPRA_PAGO_PATH } from '../config/api';
 
 export type OperationalModule =
   | 'compras'
@@ -19,6 +20,21 @@ export type OperationalMobileItem = {
 
 export type OperationalRequestContext = {
   userId?: number;
+};
+
+export type CompraDocumentosPagoInput = {
+  documentos: number;
+  montoTotal: number;
+  descripcion?: string;
+  emailDestino?: string | null;
+  esIlimitado?: boolean;
+  esPermanente?: boolean;
+};
+
+export type CompraDocumentosPagoResponse = {
+  paymentUrl: string;
+  purchaseId: string;
+  status: string;
 };
 
 export type OperationalModuleConfig = {
@@ -119,6 +135,14 @@ export function createOperationalItem(module: OperationalModule, tab: string, pa
   return requestWithFallback<void>(getOperationalEndpoints(module, tab), (endpoint) => withUserQuery(endpoint, context), {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export function iniciarPagoCompraDocumentos(userId: number, payload: CompraDocumentosPagoInput) {
+  return apiRequest<CompraDocumentosPagoResponse>(`${DOCUMENTOS_COMPRA_PAGO_PATH}?idUsuario=${userId}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    timeoutMs: 30000,
   });
 }
 

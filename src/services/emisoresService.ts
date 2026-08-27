@@ -2,6 +2,8 @@ import { apiRequest } from './apiClient';
 import { Emisor, EmisorUpsert, FirmaEstado } from '../types/business';
 
 type EmisorApi = Emisor & {
+  id?: number;
+  Id?: number;
   Codigo?: number;
   RazonSocial?: string | null;
   Ruc?: string | null;
@@ -30,6 +32,7 @@ type EmisorApi = Emisor & {
 function normalizeEmisor(emisor: EmisorApi): Emisor {
   return {
     codigo: emisor.codigo ?? emisor.Codigo ?? 0,
+    id: emisor.id ?? emisor.Id ?? emisor.codigo ?? emisor.Codigo ?? 0,
     razonSocial: emisor.razonSocial ?? emisor.RazonSocial,
     ruc: emisor.ruc ?? emisor.Ruc ?? emisor.RUC,
     nomComercial: emisor.nomComercial ?? emisor.NomComercial,
