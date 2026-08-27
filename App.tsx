@@ -2021,7 +2021,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const canUseEfact = authorizedViews.has('dashboard');
   const services = useMemo(() => getServicesFromUser(currentUser, menus), [currentUser, menus]);
   const profileAvatarUrl = getProfileAvatarUrl(currentUser, perfilData?.perfil);
-  const profileInitials = getInitials(perfilData?.perfil.nombres ?? currentUser.nombres, perfilData?.perfil.apellidos ?? currentUser.apellidos, currentUser.email);
   const portalFirstName = getDisplayFirstName(currentUser, perfilData?.perfil);
   const portalNotifications = [
     { title: 'SERVICIOS AUTORIZADOS', text: `${services.length || 1} servicios disponibles para esta sesion movil.` },
@@ -4825,10 +4824,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         {activeView === 'portal' ? (
           <View style={styles.dashboardHeader}>
             <View style={styles.dashboardBrandBlock}>
-              <PortalHeaderAvatar avatarUrl={profileAvatarUrl} initials={profileInitials} />
+              <PortalHeaderAvatar />
               <View style={styles.dashboardBrandText}>
-                <Text style={styles.dashboardBrandTitle}>Portal de servicios</Text>
-                <Text style={styles.dashboardBrandName}>{portalFirstName}</Text>
+                <Text style={styles.dashboardBrandTitle}>{getWorkspaceTitle(activeView)}</Text>
               </View>
             </View>
             <View style={styles.dashboardHeaderActions}>
@@ -4844,10 +4842,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         ) : activeView === 'dashboard' ? (
           <View style={styles.dashboardHeader}>
             <View style={styles.dashboardBrandBlock}>
-              <PortalHeaderAvatar avatarUrl={profileAvatarUrl} initials={profileInitials} />
+              <PortalHeaderAvatar />
               <View style={styles.dashboardBrandText}>
-                <Text style={styles.dashboardBrandTitle}>e-fact móvil</Text>
-                <Text style={styles.dashboardBrandName}>{portalFirstName}</Text>
+                <Text style={styles.dashboardBrandTitle}>{getWorkspaceTitle(activeView)}</Text>
               </View>
             </View>
             <View style={styles.dashboardHeaderActions}>
@@ -4866,7 +4863,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <BrandMark />
               <View style={styles.workspaceBrandText}>
                 <Text style={styles.workspaceTitle}>{getWorkspaceTitle(activeView)}</Text>
-                <Text style={styles.workspaceSubtitle}>{currentUser.nombres ?? currentUser.email ?? 'Usuario conectado'}</Text>
               </View>
             </View>
             <View style={styles.workspaceHeaderActions}>
@@ -4964,7 +4960,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
         {!loadingMenus && activeView === 'dashboard' ? (
           <DashboardHomeScreen
-            name={portalFirstName}
             clientesCount={clientes.length}
             productosCount={productos.length}
             facturas={facturasList}
@@ -4979,7 +4974,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                  <Pressable style={styles.backButton} onPress={() => openView(activeView === 'nuevo-cliente' ? 'clientes' : activeView === 'nuevo-producto' ? 'productos' : canUsePortal ? 'portal' : 'dashboard')}>
                   <Text style={styles.backButtonText}>{activeView === 'nuevo-cliente' || activeView === 'nuevo-producto' ? activeView === 'nuevo-producto' ? 'Productos' : 'Clientes' : 'Inicio'}</Text>
                </Pressable>
-                <Text style={styles.viewToolbarTitle}>{getWorkspaceTitle(activeView)}</Text>
               </View> : null}
 
              {activeView !== 'clientes' && activeView !== 'nuevo-cliente' && activeView !== 'nuevo-producto' ? <View style={styles.directoryStats}>
@@ -8373,14 +8367,12 @@ function EfactBotScreen({ userName }: { userName: string }) {
 }
 
 function DashboardHomeScreen({
-  name,
   clientesCount,
   productosCount,
   facturas,
   modules,
   onOpenView,
 }: {
-  name: string;
   clientesCount: number;
   productosCount: number;
   facturas: FacturaListItem[];
@@ -8401,7 +8393,7 @@ function DashboardHomeScreen({
       <View style={styles.dashboardIntro}>
         <View style={styles.dashboardIntroText}>
           <Text style={styles.dashboardEyebrow}>E-FACT MOVIL</Text>
-          <Text style={styles.dashboardGreeting} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78}>Hola, {name}</Text>
+          <Text style={styles.dashboardGreeting} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78}>Inicio</Text>
           <Text style={styles.dashboardIntroCopy}>Tu operación tributaria al día, simple y ordenada.</Text>
         </View>
         <Pressable accessibilityLabel="Ver servicios" style={styles.dashboardSmallIconButton} onPress={() => onOpenView('portal')}>
@@ -8435,6 +8427,9 @@ function DashboardHomeScreen({
         <DashboardPrimaryAction icon="file-plus-outline" label="Nueva factura" text="Emitir comprobante" primary onPress={() => onOpenView('nueva-factura')} />
         <DashboardPrimaryAction icon="account-plus-outline" label="Nuevo cliente" text="Registrar datos" onPress={() => onOpenView('nuevo-cliente')} />
         <DashboardPrimaryAction icon="robot-outline" label="Númi" text="Asistente" onPress={() => onOpenView('bot')} />
+        <DashboardPrimaryAction icon="file-document-outline" label="Mis facturas" text="Consultar emitidas" onPress={() => onOpenView('mis-facturas')} />
+        <DashboardPrimaryAction icon="package-variant-closed" label="Productos" text="Catalogo" onPress={() => onOpenView('productos')} />
+        <DashboardPrimaryAction icon="chart-box-outline" label="Reportes" text="Documentos" onPress={() => onOpenView('reporte-documentos')} />
       </View>
 
       <View style={styles.dashboardActivityPanel}>
@@ -8607,15 +8602,9 @@ function DashboardActivityItem({ color, title, subtitle, amount, status }: { col
   );
 }
 
-function PortalHeaderAvatar({ avatarUrl, initials }: { avatarUrl?: string | null; initials: string }) {
-  if (avatarUrl && !isInitialsAvatar(avatarUrl)) {
-    return <Image source={{ uri: resolveImageUrl(avatarUrl) }} style={styles.portalHeaderAvatarImage} />;
-  }
-
+function PortalHeaderAvatar() {
   return (
-    <View style={styles.portalHeaderAvatarFallback}>
-      <Text style={styles.portalHeaderAvatarText}>{initials}</Text>
-    </View>
+    <Image source={require('./assets/logo-numerica.png')} style={styles.portalHeaderLogo} />
   );
 }
 
@@ -11614,6 +11603,10 @@ const styles = StyleSheet.create({
     width: 54,
     elevation: 3,
   },
+  portalHeaderLogo: {
+    height: 58,
+    width: 58,
+  },
   portalHeaderAvatarFallback: {
     alignItems: 'center',
     backgroundColor: EFACT_THEME.colors.primary,
@@ -12210,6 +12203,7 @@ const styles = StyleSheet.create({
   },
   dashboardActionRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: EFACT_THEME.spacing.sm,
   },
   dashboardActionRowCompact: {
@@ -12220,7 +12214,8 @@ const styles = StyleSheet.create({
     borderColor: EFACT_THEME.colors.border,
     borderRadius: EFACT_THEME.radius.card,
     borderWidth: 1,
-    flex: 1,
+    flexBasis: '31%',
+    flexGrow: 1,
     gap: 5,
     minHeight: 104,
     padding: EFACT_THEME.spacing.md,
