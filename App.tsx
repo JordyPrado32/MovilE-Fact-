@@ -5145,7 +5145,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                </Pressable>
               </View> : null}
 
-              {activeView !== 'clientes' && activeView !== 'nuevo-cliente' && activeView !== 'nuevo-producto' && activeView !== 'comprar-documentos' ? <View style={styles.directoryStats}>
+              {activeView !== 'clientes' && activeView !== 'nuevo-cliente' && activeView !== 'nuevo-producto' && activeView !== 'comprar-documentos' && activeView !== 'firma' ? <View style={styles.directoryStats}>
               <View>
                 <Text style={styles.statValue}>
                    {activeView === 'productos'
@@ -5156,11 +5156,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                         : subcategorias.length
                       : activeView === 'emisor'
                         ? emisores.length
-                      : activeView === 'firma'
-                          ? firmaMobileEmisores.length > 0
-                            ? firmaMobileEmisores.filter((emisor) => emisor.tieneCertificado === true).length
-                            : emisores.filter(hasFirmaConfigured).length
-                          : activeView === 'perfil'
+                      : activeView === 'perfil'
                             ? perfilData?.perfil ? 1 : 0
                             : activeView === 'punto-emision'
                               ? puntosData?.cajas.length ?? 0
@@ -5173,9 +5169,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                         ? 'registros'
                         : activeView === 'emisor'
                           ? 'emisores'
-                          : activeView === 'firma'
-                            ? 'configuradas'
-                            : activeView === 'perfil'
+                          : activeView === 'perfil'
                               ? 'perfil'
                               : activeView === 'punto-emision'
                                 ? 'puntos'
@@ -5189,7 +5183,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                      (activeView === 'productos' && authorizedViews.has('productos')) ||
                     (activeView === 'categorias' && authorizedViews.has('categorias')) ||
                     (activeView === 'emisor' && authorizedViews.has('emisor')) ||
-                    (activeView === 'firma' && authorizedViews.has('firma')) ||
                     (activeView === 'perfil' && authorizedViews.has('perfil')) ||
                     (activeView === 'punto-emision' && authorizedViews.has('punto-emision'))
                   ) {
@@ -5487,6 +5480,17 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
             {activeView === 'firma' ? (
               <>
+                <View style={styles.firmaHero}>
+                  <View style={styles.firmaHeroCopy}>
+                    <Text style={styles.firmaHeroEyebrow}>Seguridad tributaria</Text>
+                    <Text style={styles.firmaHeroTitle}>Mi firma electrónica</Text>
+                    <Text style={styles.firmaHeroText}>Administra tu certificado, valida su vigencia y reemplázalo cuando necesites usar otra firma.</Text>
+                  </View>
+                  <Pressable style={styles.firmaRefreshButton} onPress={() => setReloadKey((value) => value + 1)}>
+                    <MaterialCommunityIcons name="refresh" size={18} color="#0072BD" />
+                    <Text style={styles.firmaRefreshText}>Actualizar estados</Text>
+                  </Pressable>
+                </View>
                 {!hasConfiguredFirma ? (
                   <View style={styles.actionRow}>
                     <PrimaryButton label="Agregar firma" loading={false} onPress={openAddFirma} />
@@ -10150,7 +10154,7 @@ function FirmaForm({
 
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Archivo de firma</Text>
-        <SecondaryButton label="Seleccionar archivo .p12" onPress={onSelectArchivo} />
+        <SecondaryButton label={configured ? 'Cambiar archivo .p12' : 'Seleccionar archivo .p12'} onPress={onSelectArchivo} />
         <Text style={styles.mutedText}>{archivoLabel}</Text>
         <Field label="Clave del certificado" value={form.claveCertificado} onChangeText={(value) => onChange('claveCertificado', value)} secureTextEntry />
         {emisor.tieneClaveCertificadoConfigurada ? <Text style={styles.mutedText}>Clave configurada actualmente.</Text> : null}
@@ -10177,7 +10181,7 @@ function FirmaCard({ emisor, estado, onEdit }: { emisor: Emisor; estado?: FirmaE
         : 'Configurada';
 
   return (
-    <View style={styles.clientCard}>
+    <View style={styles.firmaCard}>
       <View style={styles.clientCardHeader}>
         <View style={[styles.clientAvatar, configured && styles.clientAvatarSystem]}>
           <Text style={styles.clientAvatarText}>F</Text>
@@ -10200,38 +10204,38 @@ function FirmaCard({ emisor, estado, onEdit }: { emisor: Emisor; estado?: FirmaE
       </View>
 
       {estado ? (
-        <View style={styles.clientDetailGrid}>
-          <View style={styles.clientDetailItem}>
+        <View style={[styles.clientDetailGrid, styles.firmaDetailGrid]}>
+          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
             <Text style={styles.clientDetailLabel}>Certificado / clave</Text>
             <Text style={styles.clientDetailValue}>{estado.tieneCertificado ? 'Cargado' : 'No disponible'}{estado.tieneClave === true ? ' · Clave lista' : ''}</Text>
           </View>
-          <View style={styles.clientDetailItem}>
+          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
             <Text style={styles.clientDetailLabel}>Días de vigencia</Text>
             <Text style={[styles.clientDetailValue, { color: estado.diasRestantes !== null && estado.diasRestantes !== undefined && estado.diasRestantes <= 30 ? EFACT_THEME.colors.warning : EFACT_THEME.colors.success }]}>
               {estado.diasRestantes !== null && estado.diasRestantes !== undefined ? `${estado.diasRestantes} días` : 'No disponible'}
             </Text>
           </View>
-          <View style={styles.clientDetailItem}>
+          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
             <Text style={styles.clientDetailLabel}>Expira</Text>
             <Text style={styles.clientDetailValue}>{formatDocumentDate(estado.fechaExpiracion)}</Text>
           </View>
-          <View style={styles.clientDetailItem}>
+          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
             <Text style={styles.clientDetailLabel}>Titular</Text>
             <Text style={styles.clientDetailValue}>{estado.nombreTitular || 'No disponible'}</Text>
           </View>
-          <View style={styles.clientDetailItem}>
+          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
             <Text style={styles.clientDetailLabel}>Identificacion</Text>
             <Text style={styles.clientDetailValue}>{estado.identificacion || emisor.ruc || 'No disponible'}</Text>
           </View>
-          <View style={styles.clientDetailItem}>
+          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
             <Text style={styles.clientDetailLabel}>Emision</Text>
             <Text style={styles.clientDetailValue}>{formatDocumentDate(estado.fechaEmision)}</Text>
           </View>
-          <View style={styles.clientDetailItem}>
+          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
             <Text style={styles.clientDetailLabel}>Numero de serie</Text>
             <Text style={styles.clientDetailValue} numberOfLines={1}>{estado.numeroSerie || 'No disponible'}</Text>
           </View>
-          <View style={styles.clientDetailItem}>
+          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
             <Text style={styles.clientDetailLabel}>Huella digital</Text>
             <Text style={styles.clientDetailValue} numberOfLines={1}>{estado.huellaDigital || 'No disponible'}</Text>
           </View>
@@ -10240,7 +10244,7 @@ function FirmaCard({ emisor, estado, onEdit }: { emisor: Emisor; estado?: FirmaE
 
       <View style={styles.clientActions}>
         <Pressable style={styles.smallActionButton} onPress={onEdit}>
-          <Text style={styles.smallActionText}>{configured ? 'Editar' : 'Agregar firma'}</Text>
+          <Text style={styles.smallActionText}>{configured ? 'Cambiar firma' : 'Agregar firma'}</Text>
         </Pressable>
       </View>
     </View>
@@ -15628,6 +15632,16 @@ const styles = StyleSheet.create({
   botSendButton: { alignItems: 'center', backgroundColor: '#0878C9', borderRadius: 14, height: 44, justifyContent: 'center', width: 44 },
   botSendButtonDisabled: { backgroundColor: '#AFC8D8' },
   botSendText: { color: '#FFFFFF', fontSize: 22, fontWeight: '900' },
+  firmaHero: { alignItems: 'flex-start', backgroundColor: '#F1F8FD', borderColor: '#CFE5F4', borderRadius: 22, borderWidth: 1, flexDirection: 'row', gap: 14, justifyContent: 'space-between', marginBottom: 18, padding: 20 },
+  firmaHeroCopy: { flex: 1, gap: 6 },
+  firmaHeroEyebrow: { color: '#0072BD', fontSize: 11, fontWeight: '900', letterSpacing: 1, textTransform: 'uppercase' },
+  firmaHeroTitle: { color: '#173E61', fontSize: 23, fontWeight: '900', lineHeight: 29 },
+  firmaHeroText: { color: '#668198', fontSize: 13, fontWeight: '600', lineHeight: 19 },
+  firmaRefreshButton: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#B8D8EA', borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 6, paddingHorizontal: 11, paddingVertical: 9 },
+  firmaRefreshText: { color: '#0072BD', fontSize: 11, fontWeight: '900' },
+  firmaCard: { backgroundColor: '#FFFFFF', borderColor: '#D8EAF4', borderLeftColor: '#0072BD', borderLeftWidth: 5, borderRadius: 20, borderWidth: 1, gap: 16, padding: 18, shadowColor: '#123B58', shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.1, shadowRadius: 15, elevation: 3 },
+  firmaDetailGrid: { flexWrap: 'wrap', gap: 10 },
+  firmaDetailItem: { flexBasis: '46%', flexGrow: 1, minWidth: 130 },
 });
 
 
