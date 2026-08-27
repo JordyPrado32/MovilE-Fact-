@@ -44,7 +44,9 @@ import { getMenusByRol, hasMenusByRolEndpoint } from './src/services/menuService
 import { buscarLiquidacionProductos, buscarLiquidacionProveedores, enviarLiquidacionCompraCorreo, getLiquidacionCompraPdf, getLiquidacionCompraPreparacion, getLiquidacionesCompra, getLiquidacionCompraXml, guardarLiquidacionCompra, LiquidacionCompraListItem } from './src/services/liquidacionesCompraMobileService';
 import { buscarNotaCreditoFacturas, enviarNotaCreditoCorreo, getNotaCreditoPdf, getNotaCreditoPreparacion, getNotasCredito, getNotaCreditoXml, guardarNotaCredito, NotaCreditoListItem } from './src/services/notasCreditoMobileService';
 import { buscarNotaDebitoFacturas, enviarNotaDebitoCorreo, getNotaDebitoPdf, getNotaDebitoPreparacion, getNotasDebito, getNotaDebitoXml, guardarNotaDebito, NotaDebitoListItem } from './src/services/notasDebitoMobileService';
-import { createOperationalItem, deleteOperationalItem, getOperationalMobileModule, getOperationalModuleConfig, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, updateOperationalItem } from './src/services/operationalMobileService';
+import { getNotificaciones, NotificacionItem } from './src/services/notificacionesService';
+import { syncDeviceNotifications } from './src/services/deviceNotificationsService';
+import { createOperationalItem, deleteOperationalItem, getOperationalMobileModule, getOperationalModuleConfig, OperationalMobileItem, OperationalModule, updateOperationalItem } from './src/services/operationalMobileService';
 import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
 import { createPuntoEmision, deletePuntoEmision, getPuntosEmision, markPuntoPrincipal, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
@@ -1911,6 +1913,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const reduceMotion = useReducedMotion();
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificacionItem[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [notificationsMessage, setNotificationsMessage] = useState<MessageState>(null);
   const [menus, setMenus] = useState<DynamicMenu[]>(getInitialMenus(currentUser));
   const [loadingMenus, setLoadingMenus] = useState(false);
   const [menuMessage, setMenuMessage] = useState<MessageState>(null);
@@ -1944,7 +1949,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [loadingProductoLookups, setLoadingProductoLookups] = useState(false);
   const [directoryMessage, setDirectoryMessage] = useState<MessageState>(null);
   const [search, setSearch] = useState('');
-  const [clienteEstadoFiltro, setClienteEstadoFiltro] = useState<'todos' | 'activos' | 'inactivos'>('todos');
   const [clienteTipoFiltro, setClienteTipoFiltro] = useState<'todos' | 'personas' | 'empresas'>('todos');
   const [clienteProveedorFiltro, setClienteProveedorFiltro] = useState<'todos' | 'proveedores'>('todos');
   const debouncedSearch = useDebouncedValue(search, 350);
@@ -2011,6 +2015,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [loadingRetenciones, setLoadingRetenciones] = useState(false);
   const [clienteFormMode, setClienteFormMode] = useState<ClienteFormMode>(null);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
+  const [viewingCliente, setViewingCliente] = useState<Cliente | null>(null);
   const [clienteForm, setClienteForm] = useState<ClienteFormState>(initialClienteForm);
   const [savingCliente, setSavingCliente] = useState(false);
   const [productoFormMode, setProductoFormMode] = useState<ProductoFormMode>(null);
@@ -2044,13 +2049,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const canUsePortal = isSuperAdmin(currentUser);
   const canUseEfact = authorizedViews.has('dashboard');
   const services = useMemo(() => getServicesFromUser(currentUser, menus), [currentUser, menus]);
-  const profileAvatarUrl = getProfileAvatarUrl(currentUser, perfilData?.perfil);
   const portalFirstName = getDisplayFirstName(currentUser, perfilData?.perfil);
-  const portalNotifications = [
-    { title: 'SERVICIOS AUTORIZADOS', text: `${services.length || 1} servicios disponibles para esta sesion movil.` },
-    { title: 'PERFIL', text: profileAvatarUrl ? 'Foto de perfil cargada correctamente.' : 'Completa tu foto de perfil desde la pestana Perfil.' },
-    { title: 'E-FACT', text: canUseEfact ? 'Facturacion movil lista para abrir.' : 'Tu usuario no tiene acceso activo a E-FACT.' },
-  ];
+  const unreadNotifications = notifications.filter((notification) => !notification.read).length;
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -2061,6 +2061,34 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
     return () => subscription.remove();
   }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    let mounted = true;
+    setLoadingNotifications(true);
+    setNotificationsMessage(null);
+
+    getNotificaciones(userId)
+      .then((items) => {
+        if (mounted) setNotifications(items);
+        void syncDeviceNotifications(userId, items);
+      })
+      .catch((error) => {
+        const text = error instanceof ApiError ? error.message : 'No se pudieron cargar las notificaciones.';
+        if (mounted) {
+          setNotifications([]);
+          setNotificationsMessage({ type: 'info', text });
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoadingNotifications(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [reloadKey, userId]);
 
   useEffect(() => {
     if (!userId || !hasMenusByRolEndpoint()) return;
@@ -2825,11 +2853,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(term))) &&
-      (clienteEstadoFiltro === 'todos' || (clienteEstadoFiltro === 'activos' ? cliente.estado !== false : cliente.estado === false)) &&
       (clienteTipoFiltro === 'todos' || (clienteTipoFiltro === 'personas' ? cliente.tipoCliente === 1 : cliente.tipoCliente === 2)) &&
       (clienteProveedorFiltro === 'todos' || cliente.esProveedor === true),
     );
-  }, [clientes, search, clienteEstadoFiltro, clienteTipoFiltro, clienteProveedorFiltro]);
+  }, [clientes, search, clienteTipoFiltro, clienteProveedorFiltro]);
 
   const clientesActivos = useMemo(() => clientes.filter((cliente) => cliente.estado !== false).length, [clientes]);
   const clientesProveedores = useMemo(() => clientes.filter((cliente) => cliente.esProveedor === true).length, [clientes]);
@@ -4973,7 +5000,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             <View style={styles.dashboardHeaderActions}>
               <Pressable style={styles.dashboardIconButton} onPress={() => setNotificationsOpen(true)}>
                 <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
-                <View style={styles.dashboardNotificationDot} />
+                {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
               </Pressable>
               <Pressable style={styles.dashboardIconButton} onPress={() => setMenuOpen(true)}>
                 <MaterialCommunityIcons name="menu" size={25} color="#FFFFFF" />
@@ -4991,7 +5018,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             <View style={styles.dashboardHeaderActions}>
               <Pressable style={styles.dashboardIconButton} onPress={() => setNotificationsOpen(true)}>
                 <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
-                <View style={styles.dashboardNotificationDot} />
+                {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
               </Pressable>
               <Pressable style={styles.dashboardIconButton} onPress={() => setMenuOpen(true)}>
                 <MaterialCommunityIcons name="menu" size={25} color="#FFFFFF" />
@@ -5007,6 +5034,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </View>
             </View>
             <View style={styles.workspaceHeaderActions}>
+              <Pressable style={styles.menuButton} onPress={() => setNotificationsOpen(true)}>
+                <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
+                {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
+              </Pressable>
               <Pressable style={styles.menuButton} onPress={() => setMenuOpen(true)}>
                 <Text style={styles.menuButtonIcon}>☰</Text>
               </Pressable>
@@ -5247,33 +5278,53 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                      </View>
                    </View>
                  </View>
-                 <SearchField label="Buscar clientes" placeholder="Buscar cliente, RUC, correo..." value={search} onChangeText={setSearch} resultCount={filteredClientes.length} totalCount={clientes.length} />
-                 <View style={styles.clientFilterPanel}>
-                  <View style={styles.clientFilterHeader}>
-                    <Text style={styles.clientFilterTitle}>Filtros de cartera</Text>
-                    <Pressable onPress={() => { setClienteEstadoFiltro('todos'); setClienteTipoFiltro('todos'); setClienteProveedorFiltro('todos'); }}>
-                      <Text style={styles.clientFilterClear}>Limpiar</Text>
-                    </Pressable>
-                  </View>
-                  <Text style={styles.clientFilterLabel}>Estado</Text>
-                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientFilterRow}>
-                     {([['todos', 'Todos'], ['activos', 'Activos'], ['inactivos', 'Inactivos']] as const).map(([value, label]) => (
-                      <Pressable key={value} style={[styles.clientFilterChip, clienteEstadoFiltro === value && styles.clientFilterChipActive]} onPress={() => setClienteEstadoFiltro(value)}>
-                        <Text style={[styles.clientFilterChipText, clienteEstadoFiltro === value && styles.clientFilterChipTextActive]}>{label}</Text>
-                      </Pressable>
-                     ))}
-                   </ScrollView>
-                   <Text style={styles.clientFilterLabel}>Perfil</Text>
-                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientFilterRow}>
-                    {([['todos', 'Todos'], ['personas', 'Personas'], ['empresas', 'Empresas'], ['proveedores', 'Proveedores']] as const).map(([value, label]) => {
-                      const active = value === 'proveedores' ? clienteProveedorFiltro === 'proveedores' : clienteTipoFiltro === value;
-                      return (
-                        <Pressable key={value} style={[styles.clientFilterChip, active && styles.clientFilterChipActive]} onPress={() => value === 'proveedores' ? setClienteProveedorFiltro(active ? 'todos' : 'proveedores') : setClienteTipoFiltro(value as 'todos' | 'personas' | 'empresas')}>
-                          <Text style={[styles.clientFilterChipText, active && styles.clientFilterChipTextActive]}>{label}</Text>
-                        </Pressable>
-                      );
-                     })}
-                   </ScrollView>
+                 <View style={styles.clientToolsPanel}>
+                   <View style={styles.clientToolsHeader}>
+                     <View>
+                       <Text style={styles.clientToolsEyebrow}>Filtros</Text>
+                       <Text style={styles.clientToolsTitle}>Clientes registrados</Text>
+                     </View>
+                     <Pressable style={styles.clientFilterResetButton} onPress={() => { setClienteTipoFiltro('todos'); setClienteProveedorFiltro('todos'); setSearch(''); }}>
+                       <MaterialCommunityIcons name="filter-remove-outline" size={17} color="#00649D" />
+                       <Text style={styles.clientFilterClear}>Limpiar</Text>
+                     </Pressable>
+                   </View>
+                   <View style={styles.clientSearchBar}>
+                     <MaterialCommunityIcons name="magnify" size={21} color="#0072BD" />
+                     <TextInput
+                       accessibilityLabel="Buscar clientes"
+                       autoCapitalize="none"
+                       autoCorrect={false}
+                       placeholder="Nombre, RUC, correo..."
+                       placeholderTextColor="#8191A2"
+                       style={styles.clientSearchInput}
+                       value={search}
+                       onChangeText={setSearch}
+                     />
+                     {search ? (
+                       <Pressable accessibilityLabel="Limpiar busqueda" hitSlop={8} onPress={() => setSearch('')}>
+                         <MaterialCommunityIcons name="close-circle" size={19} color="#8AA0B2" />
+                       </Pressable>
+                     ) : null}
+                     <View style={styles.clientSearchCount}>
+                       <Text style={styles.clientSearchCountText}>{filteredClientes.length}</Text>
+                     </View>
+                   </View>
+                   <View style={styles.clientFilterPanel}>
+                     <View style={styles.clientFilterLine}>
+                       <Text style={styles.clientFilterLabel}>Perfil</Text>
+                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientFilterRow}>
+                      {([['todos', 'Todos'], ['personas', 'Persona Natural'], ['empresas', 'Persona Juridica'], ['proveedores', 'Proveedores']] as const).map(([value, label]) => {
+                        const active = value === 'proveedores' ? clienteProveedorFiltro === 'proveedores' : clienteTipoFiltro === value;
+                        return (
+                          <Pressable key={value} style={[styles.clientFilterChip, active && styles.clientFilterChipActive]} onPress={() => value === 'proveedores' ? setClienteProveedorFiltro(active ? 'todos' : 'proveedores') : setClienteTipoFiltro(value as 'todos' | 'personas' | 'empresas')}>
+                            <Text style={[styles.clientFilterChipText, active && styles.clientFilterChipTextActive]}>{label}</Text>
+                          </Pressable>
+                        );
+                       })}
+                     </ScrollView>
+                     </View>
+                   </View>
                  </View>
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingClientes ? (
@@ -5285,20 +5336,32 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 {!loadingClientes && filteredClientes.length === 0 ? (
                   <EmptyState title={search ? 'Sin coincidencias' : 'Sin clientes para mostrar'} text={search ? 'Prueba con otro nombre, identificacion o correo.' : 'Cuando existan registros, apareceran aqui.'} />
                 ) : null}
-                <ResultCollection
-                  items={filteredClientes}
-                  resetKey={`${search}-${clienteEstadoFiltro}-${clienteTipoFiltro}-${clienteProveedorFiltro}`}
-                  pageSize={8}
-                  keyExtractor={(cliente, index) => `cliente-${cliente.codcliente}-${cliente.numeroidentificacion ?? index}`}
-                  renderItem={(cliente) => (
-                    <ClienteCard
-                      cliente={cliente}
-                      tipoClienteLabel={getTipoClienteLabel(cliente.tipoCliente, clienteLookups)}
-                      onEdit={() => openEditCliente(cliente)}
-                      onDelete={() => confirmDeleteCliente(cliente)}
-                    />
-                  )}
-                />
+                <View style={styles.clientListPanel}>
+                  <View style={styles.clientListHeader}>
+                    <View>
+                      <Text style={styles.clientListEyebrow}>Listado</Text>
+                      <Text style={styles.clientListTitle}>Clientes registrados</Text>
+                    </View>
+                    <Text style={styles.clientListCount}>{filteredClientes.length}</Text>
+                  </View>
+                  <ResultCollection
+                    items={filteredClientes}
+                    variant="plain"
+                    resetKey={`${search}-${clienteTipoFiltro}-${clienteProveedorFiltro}`}
+                    pageSize={8}
+                    keyExtractor={(cliente, index) => `cliente-${cliente.codcliente}-${cliente.numeroidentificacion ?? index}`}
+                    renderItem={(cliente) => (
+                      <ClienteCard
+                        cliente={cliente}
+                        tipoClienteLabel={getTipoClienteLabel(cliente.tipoCliente, clienteLookups)}
+                        stats={getClienteFacturaStats(cliente, facturasList)}
+                        onView={() => setViewingCliente(cliente)}
+                        onEdit={() => openEditCliente(cliente)}
+                        onDelete={() => confirmDeleteCliente(cliente)}
+                      />
+                    )}
+                  />
+                </View>
               </>
             ) : null}
 
@@ -5916,30 +5979,50 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         onNewInvoice={() => openView('nueva-factura')}
         onProfile={() => openView('perfil')}
       />
-      <Modal visible={notificationsOpen} animationType="fade" transparent onRequestClose={() => setNotificationsOpen(false)}>
-        <View style={styles.menuOverlay}>
-          <Pressable style={styles.menuBackdrop} onPress={() => setNotificationsOpen(false)} />
-          <View style={styles.notificationsPanel}>
+      <ItemDetailModal
+        visible={Boolean(viewingCliente)}
+        title={viewingCliente ? getClienteDisplayName(viewingCliente) : 'Cliente'}
+        values={viewingCliente ? getClienteDetailValues(viewingCliente, getTipoClienteLabel(viewingCliente.tipoCliente, clienteLookups), facturasList) : []}
+        onClose={() => setViewingCliente(null)}
+      />
+      <Modal visible={notificationsOpen} animationType="fade" transparent statusBarTranslucent onRequestClose={() => setNotificationsOpen(false)}>
+        <View style={styles.notificationsOverlay}>
+          <Pressable style={styles.notificationsBackdrop} onPress={() => setNotificationsOpen(false)} />
+          <View style={[styles.notificationsPanel, { marginTop: Math.max(16, insets.top + 12), marginBottom: Math.max(16, insets.bottom + 12) }]}>
             <View style={styles.notificationsHeader}>
               <View>
                 <Text style={styles.notificationsTitle}>NOTIFICACIONES</Text>
-                <Text style={styles.notificationsSubtitle}>Actividad del portal movil</Text>
+                <Text style={styles.notificationsSubtitle}>{loadingNotifications ? 'Cargando actividad...' : `${notifications.length} registros del sistema`}</Text>
               </View>
               <Pressable style={styles.menuCloseButton} onPress={() => setNotificationsOpen(false)}>
                 <Text style={styles.menuCloseText}>×</Text>
               </Pressable>
             </View>
-            <View style={styles.notificationsList}>
-              {portalNotifications.map((notification) => (
-                <View key={notification.title} style={styles.notificationItem}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.notificationsList}>
+              {notificationsMessage ? <MessageBox message={notificationsMessage} /> : null}
+              {loadingNotifications ? (
+                <View style={styles.notificationsLoading}>
+                  <ActivityIndicator color="#FFFFFF" />
+                  <Text style={styles.notificationText}>Cargando notificaciones...</Text>
+                </View>
+              ) : null}
+              {!loadingNotifications && !notifications.length && !notificationsMessage ? (
+                <View style={styles.notificationEmpty}>
+                  <Text style={styles.notificationTitle}>Sin notificaciones</Text>
+                  <Text style={styles.notificationText}>No hay actividad pendiente para mostrar.</Text>
+                </View>
+              ) : null}
+              {!loadingNotifications ? notifications.map((notification) => (
+                <View key={notification.id} style={[styles.notificationItem, notification.read && styles.notificationItemRead]}>
                   <View style={styles.notificationBullet} />
                   <View style={styles.notificationCopy}>
                     <Text style={styles.notificationTitle}>{notification.title}</Text>
                     <Text style={styles.notificationText}>{notification.text}</Text>
+                    {notification.date ? <Text style={styles.notificationMeta}>{notification.date}</Text> : null}
                   </View>
                 </View>
-              ))}
-            </View>
+              )) : null}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -6183,6 +6266,61 @@ function getClienteIdentification(cliente: Cliente) {
 function getClienteEmail(cliente: Cliente) {
   const row = cliente as Cliente & Record<string, unknown>;
   return String(cliente.correo || row.Correo || row.Email || '');
+}
+
+function getClienteDetailValues(cliente: Cliente, tipoClienteLabel: string, facturas: FacturaListItem[] = []) {
+  const stats = getClienteFacturaStats(cliente, facturas);
+  const values = [
+    `Identificacion: ${getClienteIdentification(cliente) || 'Sin identificacion'}`,
+    `Tipo: ${tipoClienteLabel}`,
+    `Correo: ${getClienteEmail(cliente) || 'Sin correo'}`,
+    `Telefono: ${cliente.celular || cliente.telefonoconvencional || 'Sin telefono'}`,
+    `Direccion: ${cliente.direccion || 'Sin direccion'}`,
+    `Facturas emitidas: ${stats.facturasEmitidas}`,
+    `Saldo pendiente: ${formatMoney(stats.saldoPendiente)}`,
+    `Estado: ${cliente.estado === false ? 'Inactivo' : 'Activo'}`,
+    cliente.esProveedor ? 'Perfil: Proveedor' : 'Perfil: Cliente',
+    cliente.oblgconta ? `Obligado a contabilidad: ${cliente.oblgconta}` : '',
+    typeof cliente.diasCredito === 'number' ? `Dias de credito: ${cliente.diasCredito}` : '',
+    cliente.observaciones ? `Observaciones: ${cliente.observaciones}` : '',
+  ];
+
+  return values.filter(Boolean);
+}
+
+function getClienteFacturaStats(cliente: Cliente, facturas: FacturaListItem[]) {
+  const row = cliente as Cliente & Record<string, unknown>;
+  const directFacturas = numberValue(
+    row.facturasEmitidas ??
+      row.FacturasEmitidas ??
+      row.totalFacturas ??
+      row.TotalFacturas,
+  );
+  const directSaldo = numberValue(
+    row.saldoPendiente ??
+      row.SaldoPendiente ??
+      row.saldo ??
+      row.Saldo,
+  );
+  const identification = getClienteIdentification(cliente).trim();
+  const matched = identification
+    ? facturas.filter((factura) => String(factura.identificacionCliente ?? '').trim() === identification)
+    : [];
+
+  return {
+    facturasEmitidas: directFacturas || matched.length,
+    saldoPendiente: directSaldo || matched.reduce((sum, factura) => sum + Number(factura.saldoPendiente ?? 0), 0),
+  };
+}
+
+function numberValue(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
 }
 
 function getClienteKey(cliente: Cliente, index: number) {
@@ -9469,29 +9607,45 @@ function ClienteForm({
 
   return (
     <View style={styles.clientFormCard}>
+      <View style={styles.clientFormTopBar}>
+        <Pressable accessibilityLabel="Volver a clientes" style={styles.clientFormBackButton} onPress={onCancel}>
+          <MaterialCommunityIcons name="arrow-left" size={19} color="#00649D" />
+          <Text style={styles.clientFormBackText}>Volver</Text>
+        </Pressable>
+        <Pressable accessibilityLabel="Descartar cambios" style={styles.clientFormDiscardButton} onPress={onReset}>
+          <MaterialCommunityIcons name="close" size={17} color="#6B7D8C" />
+          <Text style={styles.clientFormDiscardText}>Descartar</Text>
+        </Pressable>
+      </View>
       <Text style={styles.clientFormTitle}>{mode === 'edit' ? 'Editar cliente / proveedor' : 'Nuevo cliente / proveedor'}</Text>
       {loadingLookups ? <Text style={styles.mutedText}>Cargando catalogos...</Text> : null}
 
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Informacion basica</Text>
-        <DropdownField
-          label="Tipo de cliente *"
-          options={tiposCliente.map((tipo) => ({ label: tipo.descripcion, value: tipo.tclCodigo }))}
-          value={form.tipoCliente || null}
-          placeholder="-- Seleccione Tipo --"
-          allowClear
-          onChange={(value) => {
-            onChange('tipoCliente', value ?? 0);
-          }}
-        />
-        <DropdownField
-          label="Tipo identificacion *"
-          options={identificaciones.map((item) => ({ label: item.ideDescripcion, value: item.ideSec }))}
-          value={form.tipoidentificacion}
-          onChange={(value) => {
-            if (value !== null) onChange('tipoidentificacion', value);
-          }}
-        />
+        <View style={styles.compactFieldRow}>
+          <View style={styles.compactFieldGrow}>
+            <DropdownField
+              label="Tipo de cliente *"
+              options={tiposCliente.map((tipo) => ({ label: tipo.descripcion, value: tipo.tclCodigo }))}
+              value={form.tipoCliente || null}
+              placeholder="-- Seleccione Tipo --"
+              allowClear
+              onChange={(value) => {
+                onChange('tipoCliente', value ?? 0);
+              }}
+            />
+          </View>
+          <View style={styles.compactFieldGrow}>
+            <DropdownField
+              label="Tipo identificacion *"
+              options={identificaciones.map((item) => ({ label: item.ideDescripcion, value: item.ideSec }))}
+              value={form.tipoidentificacion}
+              onChange={(value) => {
+                if (value !== null) onChange('tipoidentificacion', value);
+              }}
+            />
+          </View>
+        </View>
         <Field
           label="Numero identificacion *"
           value={form.numeroidentificacion}
@@ -9500,19 +9654,27 @@ function ClienteForm({
         />
         {isEmpresa ? (
           <>
-            <Field label="Nombre comercial *" value={form.nombrecomercial} onChangeText={(value) => onChange('nombrecomercial', value)} />
-            <Field label="Razon social *" value={form.nombrerazonsocial} onChangeText={(value) => onChange('nombrerazonsocial', value)} />
+            <View style={styles.compactFieldRow}>
+              <View style={styles.compactFieldGrow}>
+                <Field label="Nombre comercial *" value={form.nombrecomercial} onChangeText={(value) => onChange('nombrecomercial', value)} />
+              </View>
+              <View style={styles.compactFieldGrow}>
+                <Field label="Razon social *" value={form.nombrerazonsocial} onChangeText={(value) => onChange('nombrerazonsocial', value)} />
+              </View>
+            </View>
           </>
         ) : (
           <>
-            <Field label="Apellidos *" value={form.apellidos} onChangeText={(value) => onChange('apellidos', value)} />
-            <Field label="Nombres *" value={form.nombres} onChangeText={(value) => onChange('nombres', value)} />
+            <View style={styles.compactFieldRow}>
+              <View style={styles.compactFieldGrow}>
+                <Field label="Apellidos *" value={form.apellidos} onChangeText={(value) => onChange('apellidos', value)} />
+              </View>
+              <View style={styles.compactFieldGrow}>
+                <Field label="Nombres *" value={form.nombres} onChangeText={(value) => onChange('nombres', value)} />
+              </View>
+            </View>
           </>
         )}
-      </View>
-
-      <View style={styles.formSectionBox}>
-        <Text style={styles.clientFormSubtitle}>Proveedor</Text>
         <ToggleRow
           label="Es proveedor"
           text="Tambien se registra para compras, retenciones y liquidaciones."
@@ -9523,7 +9685,18 @@ function ClienteForm({
 
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Contacto</Text>
-        <Field label="Correo principal *" value={form.correo} onChangeText={(value) => onChange('correo', value)} autoCapitalize="none" keyboardType="email-address" />
+        <View style={styles.compactFieldRow}>
+          <View style={styles.compactFieldGrow}>
+            <Field label="Correo principal *" value={form.correo} onChangeText={(value) => onChange('correo', value)} autoCapitalize="none" keyboardType="email-address" />
+          </View>
+          <View style={styles.compactFieldGrow}>
+            {form.tipoContactoTelefonico === 'CONVENCIONAL' ? (
+              <Field label="Telefono convencional" value={form.telefonoconvencional} onChangeText={(value) => onChange('telefonoconvencional', value)} keyboardType="phone-pad" />
+            ) : (
+              <Field label="Celular" value={form.celular} onChangeText={(value) => onChange('celular', value)} keyboardType="phone-pad" />
+            )}
+          </View>
+        </View>
         {form.correosAdicionales.map((correo, index) => (
           <View key={`correo-${index}`} style={styles.inlineFieldRow}>
             <View style={styles.inlineFieldGrow}>
@@ -9558,40 +9731,43 @@ function ClienteForm({
           <SegmentButton active={form.tipoContactoTelefonico === 'CELULAR'} label="Celular" onPress={() => onChange('tipoContactoTelefonico', 'CELULAR')} />
           <SegmentButton active={form.tipoContactoTelefonico === 'CONVENCIONAL'} label="Convencional" onPress={() => onChange('tipoContactoTelefonico', 'CONVENCIONAL')} />
         </View>
-        {form.tipoContactoTelefonico === 'CONVENCIONAL' ? (
-          <Field label="Telefono convencional (opcional)" value={form.telefonoconvencional} onChangeText={(value) => onChange('telefonoconvencional', value)} keyboardType="phone-pad" />
-        ) : (
-          <Field label="Celular (opcional)" value={form.celular} onChangeText={(value) => onChange('celular', value)} keyboardType="phone-pad" />
-        )}
       </View>
 
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Direccion</Text>
         <Field label="Direccion" value={form.direccion} onChangeText={(value) => onChange('direccion', value)} />
-        {paises.length ? (
-          <DropdownField
-            label="Pais"
-            options={paises.map((pais) => ({ label: pais.descripcion, value: pais.idPais }))}
-            value={form.pais}
-            onChange={(value) => onChange('pais', value)}
-          />
-        ) : null}
-        {provincias.length ? (
-          <DropdownField
-            label="Provincia"
-            options={provincias.map((provincia) => ({ label: provincia.descripcion, value: provincia.idProvincia }))}
-            value={form.provincia}
-            onChange={(value) => onChange('provincia', value)}
-          />
-        ) : null}
-        {ciudades.length ? (
-          <DropdownField
-            label="Canton"
-            options={ciudades.map((ciudad) => ({ label: ciudad.descripcion, value: ciudad.idCiudad }))}
-            value={form.ciudad}
-            onChange={(value) => onChange('ciudad', value)}
-          />
-        ) : null}
+        <View style={styles.compactFieldRow}>
+          {paises.length ? (
+            <View style={styles.compactFieldGrow}>
+              <DropdownField
+                label="Pais"
+                options={paises.map((pais) => ({ label: pais.descripcion, value: pais.idPais }))}
+                value={form.pais}
+                onChange={(value) => onChange('pais', value)}
+              />
+            </View>
+          ) : null}
+          {provincias.length ? (
+            <View style={styles.compactFieldGrow}>
+              <DropdownField
+                label="Provincia"
+                options={provincias.map((provincia) => ({ label: provincia.descripcion, value: provincia.idProvincia }))}
+                value={form.provincia}
+                onChange={(value) => onChange('provincia', value)}
+              />
+            </View>
+          ) : null}
+          {ciudades.length ? (
+            <View style={styles.compactFieldGrow}>
+              <DropdownField
+                label="Canton"
+                options={ciudades.map((ciudad) => ({ label: ciudad.descripcion, value: ciudad.idCiudad }))}
+                value={form.ciudad}
+                onChange={(value) => onChange('ciudad', value)}
+              />
+            </View>
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.formSectionBox}>
@@ -9607,7 +9783,6 @@ function ClienteForm({
 
       <View style={styles.formActions}>
         <SecondaryButton label="Limpiar formulario" onPress={onReset} />
-        <SecondaryButton label="Cancelar" onPress={onCancel} />
         <PrimaryButton label={mode === 'edit' ? 'Guardar' : 'Registrar'} loading={saving} onPress={onSave} />
       </View>
     </View>
@@ -9617,11 +9792,15 @@ function ClienteForm({
 function ClienteCard({
   cliente,
   tipoClienteLabel,
+  stats,
+  onView,
   onEdit,
   onDelete,
 }: {
   cliente: Cliente;
   tipoClienteLabel: string;
+  stats: { facturasEmitidas: number; saldoPendiente: number };
+  onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -9650,7 +9829,6 @@ function ClienteCard({
              </View>
            </View>
          ) : null}
-          {!protectedSystem ? <MaterialCommunityIcons name="chevron-right" size={27} color="#123E78" style={styles.clientCardChevron} /> : null}
        </View>
 
       <View style={styles.clientDetailGrid}>
@@ -9664,16 +9842,39 @@ function ClienteCard({
         </View>
       </View>
 
+      <View style={styles.clientStatsGrid}>
+        <View style={styles.clientStatItem}>
+          <Text style={styles.clientDetailLabel}>Facturas emitidas</Text>
+          <Text style={styles.clientStatValue}>{stats.facturasEmitidas}</Text>
+        </View>
+        <View style={styles.clientStatItem}>
+          <Text style={styles.clientDetailLabel}>Saldo pendiente</Text>
+          <Text style={styles.clientStatValue}>{formatMoney(stats.saldoPendiente)}</Text>
+        </View>
+      </View>
+
       {protectedSystem ? (
-        <View style={styles.systemNotice}>
-          <Text style={styles.systemNoticeText}>Registro fijo para facturacion. No admite acciones manuales.</Text>
+        <View style={styles.clientActions}>
+          <View style={styles.systemNoticeCompact}>
+            <Text style={styles.systemNoticeText}>Registro fijo para facturacion.</Text>
+          </View>
+          <Pressable style={styles.smallActionButton} onPress={onView}>
+            <MaterialCommunityIcons name="eye-outline" size={16} color="#00649D" />
+            <Text style={styles.smallActionText}>Ver</Text>
+          </Pressable>
         </View>
       ) : (
         <View style={styles.clientActions}>
+          <Pressable style={styles.smallActionButton} onPress={onView}>
+            <MaterialCommunityIcons name="eye-outline" size={16} color="#00649D" />
+            <Text style={styles.smallActionText}>Ver</Text>
+          </Pressable>
           <Pressable style={styles.smallActionButton} onPress={onEdit}>
+            <MaterialCommunityIcons name="pencil-outline" size={16} color="#00649D" />
             <Text style={styles.smallActionText}>Editar</Text>
           </Pressable>
           <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={onDelete}>
+            <MaterialCommunityIcons name="trash-can-outline" size={16} color="#B4232D" />
             <Text style={[styles.smallActionText, styles.smallDangerText]}>Eliminar</Text>
           </Pressable>
         </View>
@@ -12329,6 +12530,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     height: 38,
     justifyContent: 'center',
+    position: 'relative',
     width: 42,
   },
   menuButtonIcon: {
@@ -13751,24 +13953,37 @@ const styles = StyleSheet.create({
   portalTabTextActive: {
     color: EFACT_THEME.colors.primary,
   },
+  notificationsOverlay: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'flex-start',
+    paddingHorizontal: 16,
+  },
+  notificationsBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(4, 24, 44, 0.58)',
+  },
   notificationsPanel: {
     backgroundColor: '#071433',
     borderColor: '#244184',
     borderRadius: 22,
     borderWidth: 1,
     gap: 16,
-    marginHorizontal: 20,
+    maxHeight: '84%',
+    maxWidth: 430,
     padding: 18,
-    width: '90%',
+    width: '100%',
   },
   notificationsHeader: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 12,
   },
   notificationsTitle: {
     color: '#FFFFFF',
-    fontSize: 17,
+    flexShrink: 1,
+    fontSize: 16,
     fontWeight: '900',
   },
   notificationsSubtitle: {
@@ -13779,6 +13994,7 @@ const styles = StyleSheet.create({
   },
   notificationsList: {
     gap: 10,
+    paddingBottom: 4,
   },
   notificationItem: {
     alignItems: 'flex-start',
@@ -13789,6 +14005,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     padding: 12,
+  },
+  notificationItemRead: {
+    opacity: 0.72,
   },
   notificationBullet: {
     backgroundColor: '#2DE2FF',
@@ -13811,6 +14030,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 17,
+  },
+  notificationMeta: {
+    color: '#8EA3C7',
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  notificationsLoading: {
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 22,
+  },
+  notificationEmpty: {
+    backgroundColor: '#0A1F49',
+    borderColor: '#1B3470',
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 4,
+    padding: 14,
   },
   heroPanel: {
     backgroundColor: '#FFFFFF',
@@ -14267,12 +14505,46 @@ const styles = StyleSheet.create({
     borderColor: '#DDEAF5',
     borderRadius: 16,
     borderWidth: 1,
-    gap: 12,
-    padding: 14,
+    gap: 10,
+    padding: 12,
+  },
+  clientFormTopBar: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  clientFormBackButton: {
+    alignItems: 'center',
+    backgroundColor: '#EAF5FC',
+    borderColor: '#CFE4F2',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 5,
+    minHeight: 36,
+    paddingHorizontal: 12,
+  },
+  clientFormBackText: {
+    color: '#00649D',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  clientFormDiscardButton: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    minHeight: 36,
+    paddingHorizontal: 6,
+  },
+  clientFormDiscardText: {
+    color: '#6B7D8C',
+    fontSize: 12,
+    fontWeight: '800',
   },
   clientFormTitle: {
     color: '#263A4F',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
   },
   clientFormSubtitle: {
@@ -14286,8 +14558,8 @@ const styles = StyleSheet.create({
     borderColor: '#E3ECF4',
     borderRadius: 14,
     borderWidth: 1,
-    gap: 12,
-    padding: 12,
+    gap: 9,
+    padding: 10,
   },
   invoiceHeroCard: {
     gap: 14,
@@ -14621,6 +14893,16 @@ const styles = StyleSheet.create({
   inlineFieldGrow: {
     flex: 1,
   },
+  compactFieldRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 9,
+  },
+  compactFieldGrow: {
+    flexBasis: 145,
+    flexGrow: 1,
+    minWidth: 0,
+  },
   smallDangerButtonSolid: {
     alignItems: 'center',
     backgroundColor: '#FDEBEC',
@@ -14873,24 +15155,21 @@ const styles = StyleSheet.create({
   },
   clientCard: {
     backgroundColor: '#FFFFFF',
-    borderColor: '#E5EEF7',
-    borderLeftColor: '#0878C9',
-    borderLeftWidth: 4,
-    borderRadius: 17,
+    borderColor: '#DCE8F1',
+    borderRadius: 16,
     borderWidth: 1,
-    gap: 12,
+    gap: 11,
     padding: 14,
     shadowColor: '#002C50',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
     elevation: 2,
   },
   clientBankSummary: {
     backgroundColor: '#06295A',
     borderRadius: 20,
     gap: 18,
-    marginBottom: 14,
     overflow: 'hidden',
     padding: 18,
     position: 'relative',
@@ -14995,14 +15274,79 @@ const styles = StyleSheet.create({
     height: 26,
     width: 1,
   },
-  clientFilterPanel: {
-    backgroundColor: '#F7FBFE',
+  clientToolsPanel: {
+    backgroundColor: '#FFFFFF',
     borderColor: '#D6E6F1',
     borderRadius: 16,
     borderWidth: 1,
+    gap: 10,
+    padding: 12,
+  },
+  clientToolsHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  clientToolsEyebrow: {
+    color: '#0072BD',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+  clientToolsTitle: {
+    color: '#173E61',
+    fontSize: 15,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  clientSearchBar: {
+    alignItems: 'center',
+    backgroundColor: '#F7FAFD',
+    borderColor: '#DCE8F1',
+    borderRadius: 13,
+    borderWidth: 1,
+    flexDirection: 'row',
     gap: 8,
-    marginBottom: 14,
-    padding: 13,
+    minHeight: 48,
+    paddingHorizontal: 12,
+  },
+  clientSearchInput: {
+    color: '#263A4F',
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    paddingVertical: 10,
+  },
+  clientSearchCount: {
+    alignItems: 'center',
+    backgroundColor: '#EAF5FC',
+    borderRadius: 999,
+    justifyContent: 'center',
+    minWidth: 28,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  clientSearchCountText: {
+    color: '#00649D',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  clientFilterResetButton: {
+    alignItems: 'center',
+    backgroundColor: '#EAF5FC',
+    borderRadius: 999,
+    flexDirection: 'row',
+    gap: 5,
+    minHeight: 34,
+    paddingHorizontal: 11,
+  },
+  clientFilterPanel: {
+    gap: 9,
+  },
+  clientFilterLine: {
+    gap: 6,
   },
   clientFilterHeader: {
     alignItems: 'center',
@@ -15020,10 +15364,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   clientFilterLabel: {
-    color: '#7A8794',
+    color: '#315A7A',
     fontSize: 10,
     fontWeight: '900',
-    marginTop: 3,
     textTransform: 'uppercase',
   },
   clientFilterRow: {
@@ -15032,12 +15375,12 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   clientFilterChip: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F6FAFD',
     borderColor: '#D6E6F1',
     borderRadius: 999,
     borderWidth: 1,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
   clientFilterChipActive: {
     backgroundColor: '#0072BD',
@@ -15050,6 +15393,44 @@ const styles = StyleSheet.create({
   },
   clientFilterChipTextActive: {
     color: '#FFFFFF',
+  },
+  clientListPanel: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#DCE8F1',
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 12,
+    padding: 12,
+  },
+  clientListHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  clientListEyebrow: {
+    color: '#0072BD',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+  clientListTitle: {
+    color: '#173E61',
+    fontSize: 16,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  clientListCount: {
+    backgroundColor: '#0072BD',
+    borderRadius: 999,
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    minWidth: 34,
+    overflow: 'hidden',
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    textAlign: 'center',
   },
   clientCardSystem: {
     backgroundColor: '#F4F8FC',
@@ -15115,7 +15496,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   clientDetailItem: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F7FBFE',
     borderColor: '#E3ECF4',
     borderRadius: 12,
     borderWidth: 1,
@@ -15136,10 +15517,36 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
+  clientStatsGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  clientStatItem: {
+    backgroundColor: '#F2F8FC',
+    borderRadius: 12,
+    flex: 1,
+    gap: 4,
+    minHeight: 58,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  clientStatValue: {
+    color: '#07305E',
+    fontSize: 14,
+    fontWeight: '900',
+  },
   systemNotice: {
     backgroundColor: '#EAF5FC',
     borderRadius: 12,
     padding: 10,
+  },
+  systemNoticeCompact: {
+    backgroundColor: '#EAF5FC',
+    borderRadius: 11,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 36,
+    paddingHorizontal: 10,
   },
   systemNoticeText: {
     color: '#46657D',
@@ -15148,18 +15555,27 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   clientActions: {
+    alignItems: 'center',
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     justifyContent: 'flex-end',
   },
   smallActionButton: {
+    alignItems: 'center',
     backgroundColor: '#EAF5FC',
+    borderColor: '#D6E6F1',
     borderRadius: 9,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 5,
+    minHeight: 36,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 7,
   },
   smallDangerButton: {
     backgroundColor: '#FDEBEC',
+    borderColor: '#F7D4D8',
   },
   smallActionText: {
     color: '#00649D',

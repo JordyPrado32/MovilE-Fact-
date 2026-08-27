@@ -7,6 +7,7 @@ type ResultCollectionProps<T> = {
   keyExtractor: (item: T, index: number) => string;
   resetKey?: string;
   pageSize?: number;
+  variant?: 'default' | 'plain';
 };
 
 export function ResultCollection<T>({
@@ -15,6 +16,7 @@ export function ResultCollection<T>({
   keyExtractor,
   resetKey,
   pageSize = 6,
+  variant = 'default',
 }: ResultCollectionProps<T>) {
   const [page, setPage] = useState(1);
 
@@ -32,7 +34,7 @@ export function ResultCollection<T>({
   const pages = Array.from({ length: totalPages }, (_, index) => index + 1).slice(firstPage, firstPage + 3);
 
   return (
-    <View style={styles.collection}>
+    <View style={[styles.collection, variant === 'plain' && styles.collectionPlain]}>
       <View style={styles.header}>
         <Text style={styles.title}>Resultados</Text>
         <Text style={styles.meta}>Página {safePage} de {totalPages} · {items.length} registros</Text>
@@ -115,6 +117,7 @@ export function ItemDetailModal({
 
 const styles = StyleSheet.create({
   collection: { backgroundColor: '#EFF6FB', borderColor: '#D5E5F0', borderRadius: 20, borderWidth: 1, gap: 12, padding: 9 },
+  collectionPlain: { backgroundColor: 'transparent', borderWidth: 0, padding: 0 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 5, paddingTop: 3 },
   title: { color: '#263A4F', fontSize: 15, fontWeight: '900' },
   meta: { color: '#617A90', fontSize: 11, fontWeight: '800' },
