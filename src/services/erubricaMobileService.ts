@@ -72,6 +72,15 @@ export const getERubricaFirmas = () => apiRequest<unknown[]>(`${ROOT}/firmas`);
 
 export const getERubricaRenovacion = () => apiRequest<unknown>(`${ROOT}/renovacion`);
 
+export const getERubricaNotificaciones = (take = 8) =>
+  apiRequest<unknown[]>(`${ROOT}/notificaciones?take=${Math.max(1, Math.min(50, take))}`);
+
+export const getERubricaEntregas = (take = 8) =>
+  apiRequest<unknown[]>(`${ROOT}/entregas-firma?take=${Math.max(1, Math.min(50, take))}`);
+
+export const descargarERubricaFirmaP12 = (solId: number) =>
+  apiRequestBinary(`${ROOT}/solicitudes/${solId}/firma-p12`);
+
 export const getERubricaProductos = () => apiRequest<unknown[]>(`${ROOT}/catalogos/productos`);
 
 export const getERubricaStakeholderProductos = (stakeholderUuid?: string) =>
@@ -97,6 +106,16 @@ export const marcarEntregaERubricaVista = (observacionId: number) =>
 
 export const validarERubricaQr = (entrada: string) =>
   apiRequest<unknown>(`${ROOT}/documentos/validar-qr?entrada=${encodeURIComponent(entrada)}`);
+
+export const validarERubricaFirmaPdf = (pdf: { uri: string; name: string; mimeType?: string | null }) => {
+  const form = new FormData();
+  form.append('pdf', {
+    uri: pdf.uri,
+    name: pdf.name || 'documento.pdf',
+    type: pdf.mimeType || 'application/pdf',
+  } as unknown as Blob);
+  return apiRequest<unknown>(`${ROOT}/documentos/validar-firma`, { method: 'POST', body: form, timeoutMs: 30000 });
+};
 
 export const firmarERubricaDocumento = (form: FormData) =>
   apiRequestBinary(`${ROOT}/documentos/firmar`, { method: 'POST', body: form });

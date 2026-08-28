@@ -29,6 +29,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ApiError, setSessionToken } from './src/services/apiClient';
 import { sendBotMessage } from './src/services/botService';
@@ -51,7 +52,7 @@ import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perf
 import { createPuntoEmision, deletePuntoEmision, getPuntosEmision, markPuntoPrincipal, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
 import { enviarRetencionCorreo, getRetencionPdf, getRetenciones, getRetencionXml, RetencionListItem } from './src/services/retencionesMobileService';
-import { ERubricaDashboard, ERubricaEmisor, firmarERubricaDocumento, getERubricaDashboard, getERubricaEmisores, getERubricaFirmaEstado, sincronizarERubricaPendientes, validarERubricaQr } from './src/services/erubricaMobileService';
+import { ERubricaDashboard, ERubricaEmisor, buscarERubricaSolicitudesProveedor, descargarERubricaFirmaP12, firmarERubricaDocumento, getERubricaDashboard, getERubricaEmisores, getERubricaFirmaEstado, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, sincronizarERubricaPendientes, validarERubricaFirmaPdf, validarERubricaQr } from './src/services/erubricaMobileService';
 import { ChangePasswordRequest, DynamicMenu, LoginResponse, RegisterRequest, ServiceAccess, TipoDocumento } from './src/types/auth';
 import { CategoriaCatalogo, CiudadLookup, Cliente, ClienteLookups, Emisor, FirmaEstado, PerfilLookup, PerfilUsuario, Producto, ProductoLookups, ProductoTipo, ProvinciaLookup, PuntoEmision, PuntosEmisionData, SubcategoriaCatalogo, SubcategoriaLookup } from './src/types/business';
 import {
@@ -202,6 +203,7 @@ type WorkspaceView =
   | 'tutoriales'
   | 'centro-normativo'
   | 'no-autorizado';
+type ERubricaTab = 'solicitudes' | 'firmas' | 'firmar' | 'validar' | 'renovacion' | 'proveedor' | 'catalogos' | 'soporte';
 type ClienteFormMode = 'create' | 'edit' | null;
 type ProductoFormMode = 'create' | 'edit' | null;
 type CategoriaFormMode = 'create' | 'edit' | null;
@@ -738,6 +740,7 @@ type DrawerMenuNode = {
   view?: WorkspaceView;
   count?: number;
   disabled?: boolean;
+  action?: () => void;
   children?: DrawerMenuNode[];
 };
 
@@ -940,6 +943,15 @@ function formatDashboardMoney(value?: number | null) {
 function escapeCsvCell(value: unknown) {
   const text = value === null || value === undefined ? '' : String(value);
   return `"${text.replace(/"/g, '""')}"`;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return btoa(binary);
 }
 
 async function exportRowsToCsv(filename: string, rows: Record<string, unknown>[]) {
@@ -1962,7 +1974,10 @@ function AppContent() {
 
 function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; onLogout: () => void }) {
   const insets = useSafeAreaInsets();
-  const [activeView, setActiveView] = useState<WorkspaceView>(isSuperAdmin(currentUser) ? 'portal' : 'dashboard');
+  const [activeView, setActiveView] = useState<WorkspaceView>(() => {
+    if (isSuperAdmin(currentUser)) return 'portal';
+    return getAuthorizedViews(getInitialMenus(currentUser)).has('dashboard') ? 'dashboard' : 'e-rubrica';
+  });
   const [menuOpen, setMenuOpen] = useState(false);
   const drawerProgress = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReducedMotion();
@@ -1985,6 +2000,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [erubricaData, setErubricaData] = useState<ERubricaDashboard | null>(null);
   const [loadingErubrica, setLoadingErubrica] = useState(false);
   const [erubricaInitialPdf, setErubricaInitialPdf] = useState<{ uri: string; name: string; mimeType?: string } | null>(null);
+  const [erubricaTabRequest, setErubricaTabRequest] = useState<ERubricaTab | null>(null);
   const [perfilData, setPerfilData] = useState<PerfilLookup | null>(null);
   const [puntosData, setPuntosData] = useState<PuntosEmisionData | null>(null);
   const [clienteLookups, setClienteLookups] = useState<ClienteLookups | null>(null);
@@ -2109,9 +2125,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const catalogUserId = getClaimNumber(currentUser, 'idJefe') ?? userId;
   const idTipoUsuario = getClaimNumber(currentUser, 'idTipoUsuario');
   const authorizedViews = useMemo(() => getAuthorizedViews(menus), [menus]);
-  const canUsePortal = isSuperAdmin(currentUser);
   const canUseEfact = authorizedViews.has('dashboard');
   const services = useMemo(() => getServicesFromUser(currentUser, menus), [currentUser, menus]);
+  const canUseERubrica = isSuperAdmin(currentUser) || authorizedViews.has('e-rubrica') || services.some(isERubricaService);
+  const canUsePortal = isSuperAdmin(currentUser) || services.length > 0;
   const portalFirstName = getDisplayFirstName(currentUser, perfilData?.perfil);
   const unreadNotifications = notifications.filter((notification) => !notification.read).length;
 
@@ -2462,7 +2479,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   }, [authorizedViews, catalogUserId, reloadKey]);
 
   useEffect(() => {
-    if (!authorizedViews.has('e-rubrica') || activeView !== 'e-rubrica') return;
+    if (!canUseERubrica || activeView !== 'e-rubrica') return;
 
     let mounted = true;
     setLoadingErubrica(true);
@@ -2475,7 +2492,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       .finally(() => { if (mounted) setLoadingErubrica(false); });
 
     return () => { mounted = false; };
-  }, [activeView, authorizedViews, reloadKey]);
+  }, [activeView, authorizedViews, canUseERubrica, reloadKey]);
 
   useEffect(() => {
     if (loadingMenus) return;
@@ -2488,11 +2505,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       activeView !== 'no-autorizado' &&
       activeView !== 'nuevo-cliente' &&
       activeView !== 'nuevo-producto' &&
-      !authorizedViews.has(activeView)
+       !(activeView === 'e-rubrica' ? canUseERubrica : authorizedViews.has(activeView))
     ) {
       setActiveView('no-autorizado');
     }
-  }, [activeView, authorizedViews, canUseEfact, canUsePortal, loadingMenus]);
+  }, [activeView, authorizedViews, canUseEfact, canUseERubrica, canUsePortal, loadingMenus]);
 
   useEffect(() => {
     if (!userId || !authorizedViews.has('clientes')) return;
@@ -4862,7 +4879,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         'mis-guias-remision',
         'retenciones',
         'emisor',
-        'firma',
+         'firma',
+         'e-rubrica',
         'perfil',
         'punto-emision',
         'cuentas-cobrar',
@@ -4901,6 +4919,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
 
     if (view === 'bot' && canUseEfact) {
+      setActiveView(view);
+      return;
+    }
+
+    if (view === 'e-rubrica' && canUseERubrica) {
       setActiveView(view);
       return;
     }
@@ -4949,7 +4972,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       disabled: module ? !module.enabled : !authorizedViews.has(view),
     };
   };
-  const drawerMenu: DrawerMenuNode[] = [
+  const efactDrawerMenu: DrawerMenuNode[] = [
     { key: 'dashboard', label: 'Inicio', view: 'dashboard', disabled: !canUseEfact },
     {
       ...menuNode('clientes', 'Clientes / Proveedores'),
@@ -5037,6 +5060,22 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ],
     },
   ];
+  const openERubricaTab = (tab: ERubricaTab) => {
+    setErubricaTabRequest(tab);
+    openView('e-rubrica');
+  };
+  const drawerMenu: DrawerMenuNode[] = activeView === 'e-rubrica' ? [
+    { key: 'erubrica-inicio', label: 'Inicio', view: 'e-rubrica', disabled: !canUseERubrica },
+    { key: 'erubrica-solicitudes', label: 'Solicitudes', action: () => openERubricaTab('solicitudes') },
+    { key: 'erubrica-firmar', label: 'Firmar PDF', action: () => openERubricaTab('firmar') },
+    { key: 'erubrica-firmas', label: 'Mis firmas', action: () => openERubricaTab('firmas') },
+    { key: 'erubrica-validar', label: 'Validar documento', action: () => openERubricaTab('validar') },
+    { key: 'erubrica-renovacion', label: 'Renovación', action: () => openERubricaTab('renovacion') },
+    { key: 'erubrica-catalogos', label: 'Productos y saldo', action: () => openERubricaTab('catalogos') },
+    { key: 'erubrica-proveedor', label: 'Solicitudes proveedor', action: () => openERubricaTab('proveedor') },
+    { key: 'erubrica-soporte', label: 'Soporte', action: () => openERubricaTab('soporte') },
+    { key: 'erubrica-volver', label: 'Volver a servicios', action: () => openView('portal'), },
+  ] : efactDrawerMenu;
   const renderDrawerNode = (node: DrawerMenuNode, inset = false) => {
     const active = node.view === activeView || Boolean(node.children?.some((child) => child.view === activeView));
     const enabledChildren = node.children?.filter((child) => !child.disabled) ?? [];
@@ -5060,7 +5099,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               toggleMenuSection(node.key);
               return;
             }
-            if (node.view && !disabled) openView(node.view);
+            if (node.action && !disabled) node.action();
+            else if (node.view && !disabled) openView(node.view);
           }}
         />
         {expanded ? (
@@ -5182,7 +5222,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 <PortalServiceCard
                   title="E-RÚBRICA"
                   description="Firma, valida y comparte documentos desde el móvil."
-                  enabled={true}
+                    enabled={canUseERubrica}
                   onPress={() => openView('e-rubrica')}
                   index={services.length + 1}
                 />
@@ -5212,6 +5252,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           <ERubricaMobileScreen
             data={erubricaData}
             initialPdf={erubricaInitialPdf}
+            requestedTab={erubricaTabRequest}
             loading={loadingErubrica}
             message={directoryMessage}
             onRefresh={() => setReloadKey((value) => value + 1)}
@@ -9229,20 +9270,35 @@ function EfactBotScreen({ userName }: { userName: string }) {
 }
 
 function PdfSignaturePositionPicker({
+  pdfUri,
   page,
   position,
+  pageSize,
   onPageChange,
   onPositionChange,
+  onPageSizeChange,
 }: {
+  pdfUri: string;
   page: number;
   position: { x: number; y: number };
+  pageSize: { widthMm: number; heightMm: number };
   onPageChange: (page: number) => void;
   onPositionChange: (position: { x: number; y: number }) => void;
+  onPageSizeChange: (size: { widthMm: number; heightMm: number }) => void;
 }) {
-  const pageWidth = 248;
-  const pageHeight = 350;
-  const signatureWidth = 92;
-  const signatureHeight = 42;
+  const [pdfBase64, setPdfBase64] = useState<string | null>(null);
+  const [viewerError, setViewerError] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    setViewerError(false);
+    setPdfBase64(null);
+    FileSystem.readAsStringAsync(pdfUri, { encoding: FileSystem.EncodingType.Base64 })
+      .then((value) => { if (mounted) setPdfBase64(value); })
+      .catch(() => { if (mounted) setPdfBase64(null); });
+    return () => { mounted = false; };
+  }, [pdfUri]);
+
+  const pdfHtml = pdfBase64 ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" /><style>html,body{margin:0;background:#eef3f7;font-family:Arial}#stage{position:relative;width:100%;min-height:100vh;display:flex;justify-content:center;align-items:flex-start;padding:10px;box-sizing:border-box}#canvas{max-width:100%;height:auto;background:#fff;box-shadow:0 2px 8px #8293a555}#marker{position:absolute;width:92px;height:42px;border:2px solid #0878c9;background:#dff2ffdd;color:#0878c9;font-weight:bold;font-size:12px;display:flex;align-items:center;justify-content:center;pointer-events:none;box-sizing:border-box;border-radius:4px}</style></head><body><div id="stage"><canvas id="canvas"></canvas><div id="marker">FIRMA AQUÍ</div></div><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script>try{const raw=atob('${pdfBase64}');const bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';const pageNumber=${page};const posX=${position.x};const posY=${position.y};pdfjsLib.getDocument({data:bytes}).promise.then(pdf=>pdf.getPage(pageNumber)).then(page=>{const base=page.getViewport({scale:1});const widthMm=base.width*25.4/72;const heightMm=base.height*25.4/72;window.ReactNativeWebView.postMessage(JSON.stringify({type:'size',widthMm,heightMm}));const maxWidth=Math.min(window.innerWidth-20,680);const viewport=page.getViewport({scale:maxWidth/base.width});const canvas=document.getElementById('canvas');canvas.width=viewport.width;canvas.height=viewport.height;canvas.style.width=viewport.width+'px';canvas.style.height=viewport.height+'px';page.render({canvasContext:canvas.getContext('2d'),viewport});const marker=document.getElementById('marker');marker.style.left=(10+posX*viewport.width-46)+'px';marker.style.top=(10+posY*viewport.height-21)+'px';canvas.onclick=e=>{const r=canvas.getBoundingClientRect();window.ReactNativeWebView.postMessage(JSON.stringify({type:'position',x:Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y:Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))}))}}).catch(()=>window.ReactNativeWebView.postMessage(JSON.stringify({type:'error'})))}catch(e){window.ReactNativeWebView.postMessage(JSON.stringify({type:'error'}))}</script></body></html>` : '<html><body style="font-family:Arial;text-align:center;padding:24px;color:#637587">Cargando previsualización del PDF…</body></html>';
 
   return (
     <View style={styles.pdfPositionCard}>
@@ -9264,29 +9320,23 @@ function PdfSignaturePositionPicker({
         </Pressable>
       </View>
       <View style={styles.pdfPageStage}>
-        <Pressable
-          accessibilityLabel="Seleccionar ubicación de firma en la página"
-          style={[styles.pdfPage, { width: pageWidth, height: pageHeight }]}
-          onPress={(event) => {
-            const { locationX, locationY } = event.nativeEvent;
-            const x = Math.min(1, Math.max(0, locationX / pageWidth));
-            const y = Math.min(1, Math.max(0, locationY / pageHeight));
-            onPositionChange({ x, y });
+        <WebView
+          originWhitelist={['*']}
+          source={{ html: pdfHtml }}
+          javaScriptEnabled
+          allowFileAccess
+          style={styles.pdfWebView}
+          onMessage={(event) => {
+            try {
+              const result = JSON.parse(event.nativeEvent.data) as { type?: string; x?: number; y?: number; widthMm?: number; heightMm?: number };
+              if (result.type === 'position' && typeof result.x === 'number' && typeof result.y === 'number') onPositionChange({ x: result.x, y: result.y });
+              if (result.type === 'size' && typeof result.widthMm === 'number' && typeof result.heightMm === 'number') onPageSizeChange({ widthMm: result.widthMm, heightMm: result.heightMm });
+              if (result.type === 'error') setViewerError(true);
+            } catch { /* ignore malformed viewer messages */ }
           }}
-        >
-          <View style={styles.pdfPageBrandLine} />
-          <View style={styles.pdfPageTitleLine} />
-          <View style={styles.pdfPageSubtitleLine} />
-          <View style={styles.pdfPageTable}>
-            {Array.from({ length: 9 }).map((_, index) => <View key={`pdf-line-${index}`} style={[styles.pdfPageTextLine, index % 3 === 0 && styles.pdfPageTextLineShort]} />)}
-          </View>
-          <View style={styles.pdfPageFooterLine} />
-          <View style={[styles.pdfSignatureMarker, { left: Math.max(0, Math.min(pageWidth - signatureWidth, position.x * pageWidth - signatureWidth / 2)), top: Math.max(0, Math.min(pageHeight - signatureHeight, position.y * pageHeight - signatureHeight / 2)), width: signatureWidth, height: signatureHeight }]}>
-            <MaterialCommunityIcons name="draw-pen" size={16} color={ERUBRICA_COLORS.primary} />
-            <Text style={styles.pdfSignatureMarkerText}>FIRMA AQUÍ</Text>
-          </View>
-        </Pressable>
+        />
       </View>
+      {viewerError ? <Text style={styles.pdfViewerError}>No se pudo cargar la previsualización. Verifica la conexión a internet y vuelve a seleccionar el PDF.</Text> : null}
       <View style={styles.pdfPositionInfo}>
         <MaterialCommunityIcons name="information-outline" size={18} color={ERUBRICA_COLORS.primary} />
         <Text style={styles.pdfPositionInfoText}>Página {page} · posición horizontal {Math.round(position.x * 100)}% · vertical {Math.round(position.y * 100)}%</Text>
@@ -9298,6 +9348,7 @@ function PdfSignaturePositionPicker({
 function ERubricaMobileScreen({
   data,
   initialPdf,
+  requestedTab,
   loading,
   message,
   onRefresh,
@@ -9305,12 +9356,13 @@ function ERubricaMobileScreen({
 }: {
   data: ERubricaDashboard | null;
   initialPdf?: { uri: string; name: string; mimeType?: string } | null;
+  requestedTab?: ERubricaTab | null;
   loading: boolean;
   message: MessageState;
   onRefresh: () => void;
   onSync: () => Promise<void>;
 }) {
-  const [tab, setTab] = useState<'solicitudes' | 'firmas' | 'firmar' | 'validar'>('solicitudes');
+  const [tab, setTab] = useState<ERubricaTab>('solicitudes');
   const [qrInput, setQrInput] = useState('');
   const [qrResult, setQrResult] = useState<unknown>(null);
   const [validatingQr, setValidatingQr] = useState(false);
@@ -9319,14 +9371,24 @@ function ERubricaMobileScreen({
   const [certificatePassword, setCertificatePassword] = useState('');
   const [signing, setSigning] = useState(false);
   const [signedFileUri, setSignedFileUri] = useState<string | null>(null);
+  const [pdfValidation, setPdfValidation] = useState<unknown>(null);
+  const [validatingPdf, setValidatingPdf] = useState(false);
+  const [catalogos, setCatalogos] = useState<unknown[]>([]);
+  const [saldo, setSaldo] = useState<number | null>(null);
+  const [renovacion, setRenovacion] = useState<unknown>(null);
+  const [proveedorItems, setProveedorItems] = useState<unknown[]>([]);
   const [signaturePage, setSignaturePage] = useState(1);
   const [signaturePosition, setSignaturePosition] = useState({ x: 0.68, y: 0.82 });
+  const [signaturePageSize, setSignaturePageSize] = useState({ widthMm: 210, heightMm: 297 });
   useEffect(() => {
     if (initialPdf) {
       setPdfFile(initialPdf);
       setTab('firmar');
     }
   }, [initialPdf]);
+  useEffect(() => {
+    if (requestedTab) setTab(requestedTab);
+  }, [requestedTab]);
   const solicitudes = Array.isArray(data?.solicitudes) ? data.solicitudes : [];
   const firmas = Array.isArray(data?.firmas) ? data.firmas : [];
   const notificaciones = Array.isArray(data?.notificaciones) ? data.notificaciones : [];
@@ -9338,6 +9400,15 @@ function ERubricaMobileScreen({
     const value = keys.map((key) => record[key]).find((candidate) => candidate !== null && candidate !== undefined && String(candidate).trim());
     return value === undefined ? fallback : String(value);
   };
+  useEffect(() => {
+    if (tab === 'catalogos' && catalogos.length === 0) {
+      void Promise.all([getERubricaProductos(), getERubricaSaldo()]).then(([items, balance]) => {
+        setCatalogos(items ?? []);
+        setSaldo(Number(balance?.balance ?? 0));
+      }).catch(() => undefined);
+    }
+    if (tab === 'renovacion' && renovacion === null) void getERubricaRenovacion().then(setRenovacion).catch(() => undefined);
+  }, [catalogos.length, renovacion, tab]);
 
   return (
     <View style={styles.portalStack}>
@@ -9376,9 +9447,9 @@ function ERubricaMobileScreen({
 
       <View style={styles.segment}>
         <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'solicitudes'} label={`Solicitudes (${solicitudes.length})`} onPress={() => setTab('solicitudes')} />
-        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'firmas'} label={`Firmas (${firmas.length})`} onPress={() => setTab('firmas')} />
+        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'firmas'} label={`Mis firmas (${firmas.length})`} onPress={() => setTab('firmas')} />
         <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'firmar'} label="Firmar PDF" onPress={() => setTab('firmar')} />
-        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'validar'} label="Validar QR" onPress={() => setTab('validar')} />
+        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'validar'} label="Validar" onPress={() => setTab('validar')} />
       </View>
 
       <View style={styles.portalSectionHeader}>
@@ -9390,7 +9461,7 @@ function ERubricaMobileScreen({
       {tab === 'firmar' ? (
         <View style={styles.clientCard}>
           <Text style={styles.clientDetailLabel}>Firmar documento PDF</Text>
-          <Text style={styles.clientMeta}>Selecciona el PDF y tu certificado .p12. Al finalizar podrás compartir el archivo firmado.</Text>
+           <Text style={styles.clientMeta}>Selecciona un PDF. Puedes usar la firma configurada en e-Fact o cargar un certificado .p12 temporal.</Text>
           <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label={pdfFile ? `PDF: ${pdfFile.name}` : 'Seleccionar PDF'} onPress={async () => {
             const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true });
             if (!result.canceled) {
@@ -9400,29 +9471,36 @@ function ERubricaMobileScreen({
               setSignaturePosition({ x: 0.68, y: 0.82 });
             }
           }} />
-          {pdfFile ? <PdfSignaturePositionPicker page={signaturePage} position={signaturePosition} onPageChange={setSignaturePage} onPositionChange={setSignaturePosition} /> : null}
-          <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label={certificateFile ? `Certificado: ${certificateFile.name}` : 'Seleccionar certificado .p12'} onPress={async () => {
+          {pdfFile ? <PdfSignaturePositionPicker pdfUri={pdfFile.uri} page={signaturePage} position={signaturePosition} pageSize={signaturePageSize} onPageChange={setSignaturePage} onPositionChange={setSignaturePosition} onPageSizeChange={setSignaturePageSize} /> : null}
+           <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label={certificateFile ? `Certificado: ${certificateFile.name}` : 'Usar firma configurada / cargar .p12'} onPress={async () => {
             const result = await DocumentPicker.getDocumentAsync({ type: 'application/x-pkcs12', copyToCacheDirectory: true });
             if (!result.canceled) setCertificateFile(result.assets[0]);
           }} />
           <Field label="Clave del certificado" value={certificatePassword} onChangeText={setCertificatePassword} secureTextEntry />
           <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Firmar documento" loading={signing} onPress={async () => {
-            if (!pdfFile || !certificateFile || !certificatePassword.trim()) return;
+             if (!pdfFile || (certificateFile && !certificatePassword.trim())) {
+               Alert.alert('Datos incompletos', certificateFile ? 'Ingresa la clave del certificado seleccionado.' : 'Selecciona un PDF válido.');
+               return;
+             }
             setSigning(true);
             setSignedFileUri(null);
             try {
               const form = new FormData();
               form.append('pdf', { uri: pdfFile.uri, name: pdfFile.name || 'documento.pdf', type: pdfFile.mimeType || 'application/pdf' } as unknown as Blob);
-              form.append('certificado', { uri: certificateFile.uri, name: certificateFile.name || 'certificado.p12', type: certificateFile.mimeType || 'application/x-pkcs12' } as unknown as Blob);
-              form.append('clave', certificatePassword);
+               if (certificateFile) {
+                 form.append('certificado', { uri: certificateFile.uri, name: certificateFile.name || 'certificado.p12', type: certificateFile.mimeType || 'application/x-pkcs12' } as unknown as Blob);
+                 form.append('clave', certificatePassword.trim());
+               }
               form.append('pagina', String(signaturePage));
-              form.append('posicionX', signaturePosition.x.toFixed(4));
-              form.append('posicionY', signaturePosition.y.toFixed(4));
+               const signatureWidthMm = 60;
+               const signatureHeightMm = 35;
+               const xMm = Math.min(Math.max(0, signaturePageSize.widthMm - signatureWidthMm), Math.max(0, signaturePosition.x * signaturePageSize.widthMm - signatureWidthMm / 2));
+               const yMm = Math.min(Math.max(0, signaturePageSize.heightMm - signatureHeightMm), Math.max(0, signaturePosition.y * signaturePageSize.heightMm - signatureHeightMm / 2));
+               form.append('xMm', xMm.toFixed(2));
+               form.append('yMm', yMm.toFixed(2));
+               form.append('anchoMm', '60');
               const result = await firmarERubricaDocumento(form);
-              const bytes = new Uint8Array(result.bytes);
-              let binary = '';
-              for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
-              const base64 = btoa(binary);
+               const base64 = arrayBufferToBase64(result.bytes);
               const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}documento-firmado-${Date.now()}.pdf`;
               await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
               setSignedFileUri(uri);
@@ -9430,7 +9508,16 @@ function ERubricaMobileScreen({
             } catch (error) {
               Alert.alert('No se pudo firmar', error instanceof ApiError ? error.message : 'Verifica los archivos y la clave del certificado.');
             } finally { setSigning(false); }
-          }} />
+           }} />
+           <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Validar firma del PDF" onPress={async () => {
+             if (!pdfFile) { Alert.alert('Selecciona un PDF', 'Carga primero el documento que deseas validar.'); return; }
+             setValidatingPdf(true); setPdfValidation(null);
+             try { setPdfValidation(await validarERubricaFirmaPdf(pdfFile)); }
+             catch (error) { setPdfValidation({ mensaje: error instanceof ApiError ? error.message : 'No se pudo validar el PDF.' }); }
+             finally { setValidatingPdf(false); }
+           }} />
+           {validatingPdf ? <ActivityIndicator color={ERUBRICA_COLORS.primary} /> : null}
+           {pdfValidation ? <Text style={styles.clientDetailValue}>{JSON.stringify(pdfValidation, null, 2)}</Text> : null}
           {signedFileUri ? <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Compartir documento firmado" loading={false} onPress={async () => {
             if (!signedFileUri) return;
             if (!(await Sharing.isAvailableAsync())) { Alert.alert('No disponible', 'Este dispositivo no permite compartir archivos.'); return; }
@@ -9459,6 +9546,35 @@ function ERubricaMobileScreen({
           {qrResult ? <Text style={styles.clientDetailValue}>{JSON.stringify(qrResult, null, 2)}</Text> : null}
         </View>
       ) : null}
+      {tab === 'renovacion' ? (
+        <View style={styles.clientCard}>
+          <Text style={styles.clientDetailLabel}>Renovación de firma</Text>
+          <Text style={styles.clientMeta}>Consulta la vigencia de tus certificados y las renovaciones pendientes.</Text>
+          <Text style={styles.clientDetailValue}>{renovacion ? JSON.stringify(renovacion, null, 2) : 'Cargando información de renovación...'}</Text>
+        </View>
+      ) : null}
+      {tab === 'catalogos' ? (
+        <View style={styles.clientCard}>
+          <Text style={styles.clientDetailLabel}>Productos y saldo</Text>
+          <Text style={styles.clientMeta}>Saldo disponible: {saldo === null ? 'Cargando...' : saldo}</Text>
+          {catalogos.length === 0 ? <EmptyState title="Sin productos" text="No hay productos disponibles para tu cuenta." /> : catalogos.slice(0, 20).map((item, index) => <Text key={`erubrica-producto-${index}`} style={styles.clientDetailValue}>{label(item, ['nombre', 'descripcion', 'name'], 'Producto')}</Text>)}
+        </View>
+      ) : null}
+      {tab === 'proveedor' ? (
+        <View style={styles.clientCard}>
+          <Text style={styles.clientDetailLabel}>Solicitudes del proveedor</Text>
+          <Text style={styles.clientMeta}>Consulta el estado de solicitudes asociadas al proveedor de firma.</Text>
+          <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Buscar solicitudes" loading={false} onPress={async () => { try { setProveedorItems(await buscarERubricaSolicitudesProveedor()); } catch (error) { Alert.alert('No se pudo consultar', error instanceof ApiError ? error.message : 'Intenta nuevamente.'); } }} />
+          {proveedorItems.length === 0 ? <EmptyState title="Sin resultados" text="No se encontraron solicitudes del proveedor." /> : proveedorItems.slice(0, 20).map((item, index) => <Text key={`erubrica-proveedor-${index}`} style={styles.clientDetailValue}>{label(item, ['status', 'estado', 'uuid', 'id'], 'Solicitud')}</Text>)}
+        </View>
+      ) : null}
+      {tab === 'soporte' ? (
+        <View style={styles.clientCard}>
+          <Text style={styles.clientDetailLabel}>Soporte E-Rúbrica</Text>
+          <Text style={styles.clientMeta}>Para firmar: carga un PDF, usa tu firma configurada o un .p12 temporal y verifica la clave. Si el certificado está vencido, renuévalo antes de estampar.</Text>
+          <Text style={styles.clientDetailValue}>El acceso web también dispone de ayuda y administración avanzada de roles, usuarios y planes.</Text>
+        </View>
+      ) : null}
       {tab === 'solicitudes' && !loading && solicitudes.length === 0 ? <EmptyState title="Sin solicitudes" text="No hay solicitudes de firma para mostrar." /> : null}
       {tab === 'solicitudes' && !loading && solicitudes.slice(0, 8).map((item, index) => (
         <View key={`erubrica-solicitud-${index}`} style={[styles.clientCard, { borderLeftColor: ERUBRICA_COLORS.primary, borderColor: ERUBRICA_COLORS.border }]}>
@@ -9469,7 +9585,16 @@ function ERubricaMobileScreen({
             </View>
             <MaterialCommunityIcons name="file-sign" size={25} color={ERUBRICA_COLORS.primary} />
           </View>
-          <Text style={styles.clientDetailValue}>{label(item, ['solFormatoFirma', 'formato', 'producto', 'descripcion'], 'Solicitud E-Rúbrica')}</Text>
+              <Text style={styles.clientDetailValue}>{label(item, ['solFormatoFirma', 'formato', 'producto', 'descripcion'], 'Solicitud E-Rúbrica')}</Text>
+              {Number(label(item, ['solId', 'id'], '0')) > 0 ? <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Descargar firma .p12" onPress={async () => {
+                try {
+                  const solId = Number(label(item, ['solId', 'id'], '0'));
+                  const result = await descargarERubricaFirmaP12(solId);
+                  const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}firma-${solId}.p12`;
+                  await FileSystem.writeAsStringAsync(uri, arrayBufferToBase64(result.bytes), { encoding: FileSystem.EncodingType.Base64 });
+                  if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/x-pkcs12', dialogTitle: 'Compartir firma .p12' });
+                } catch (error) { Alert.alert('No se pudo descargar', error instanceof ApiError ? error.message : 'La firma no está disponible.'); }
+              }} /> : null}
         </View>
       ))}
 
@@ -11487,6 +11612,8 @@ const styles = StyleSheet.create({
   pdfPageButtonDisabled: { backgroundColor: '#EDF1EF' },
   pdfPageNumber: { color: ERUBRICA_COLORS.text, fontSize: 13, fontWeight: '900', minWidth: 18, textAlign: 'center' },
   pdfPageStage: { alignItems: 'center', backgroundColor: '#E7EFEA', borderRadius: 10, minHeight: 370, padding: 10 },
+  pdfWebView: { alignSelf: 'stretch', backgroundColor: 'transparent', height: 520, width: '100%' },
+  pdfViewerError: { color: EFACT_THEME.colors.error, fontSize: 12, marginTop: 8, textAlign: 'center' },
   pdfPage: { backgroundColor: '#FFFFFF', borderColor: '#D7E1DC', borderRadius: 2, borderWidth: 1, elevation: 2, overflow: 'hidden', padding: 18, shadowColor: '#789184', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.16, shadowRadius: 4 },
   pdfPageBrandLine: { backgroundColor: ERUBRICA_COLORS.primary, height: 10, marginBottom: 20, width: '34%' },
   pdfPageTitleLine: { backgroundColor: '#294638', height: 8, marginBottom: 8, width: '67%' },
