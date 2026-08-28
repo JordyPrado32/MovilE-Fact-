@@ -197,7 +197,6 @@ type WorkspaceView =
   | 'recargas'
   | 'comprar-documentos'
   | 'reportes'
-  | 'reporte-documentos'
   | 'configuracion'
   | 'soporte'
   | 'bot'
@@ -423,7 +422,6 @@ const BASE_EFACT_MOBILE_MENUS: DynamicMenu[] = [
   { id: -1014, nombre: 'Cuentas por cobrar', ruta: '/cuentas-cobrar', icono: 'ri-money-dollar-circle-line', orden: 14, estado: true },
   { id: -1015, nombre: 'Estado de cuenta', ruta: '/estado-cuenta', icono: 'ri-file-chart-line', orden: 15, estado: true },
   { id: -1016, nombre: 'Comprar documentos', ruta: '/comprar-documentos', icono: 'ri-file-add-line', orden: 16, estado: true },
-  { id: -1017, nombre: 'Reporte documentos', ruta: '/reporte-documentos', icono: 'ri-file-list-3-line', orden: 17, estado: true },
   { id: -1018, nombre: 'Historial de recargas', ruta: '/recargas', icono: 'ri-history-line', orden: 18, estado: true },
   { id: -1019, nombre: 'Centro normativo', ruta: '/centro-normativo', icono: 'ri-book-open-line', orden: 19, estado: true },
   { id: -1020, nombre: 'Configuracion', ruta: '/configuracion', icono: 'ri-settings-3-line', orden: 20, estado: true },
@@ -448,7 +446,6 @@ const SUPER_ADMIN_SERVICE_CATALOG: ServiceAccess[] = [
   { codigo: 'e-conta', nombre: 'E-CONTAX', ruta: '/e-contax', estado: true, habilitado: true },
   { codigo: 'e-declara', nombre: 'E-DECLARA', ruta: '/e-declara', estado: true, habilitado: true },
   { codigo: 'e-rubrica', nombre: 'E-RÚBRICA', ruta: '/e-rubrica', estado: true, habilitado: true },
-  { codigo: 'backoffice', nombre: 'BACKOFFICE', ruta: '/backoffice', estado: true, habilitado: true },
 ];
 const AVATARS = [
   'Bandera-Argentina.png',
@@ -769,7 +766,6 @@ const EFACT_MODULES: Omit<MobileModule, 'count' | 'enabled'>[] = [
   { view: 'cuentas-cobrar', title: 'Cuentas por cobrar', description: 'Facturas pendientes y registro de abonos.' },
   { view: 'estado-cuenta', title: 'Estado de cuenta', description: 'Saldos, movimientos y resumen por cliente.' },
   { view: 'comprar-documentos', title: 'Comprar documentos', description: 'Compra paquetes y revisa el saldo disponible.' },
-  { view: 'reporte-documentos', title: 'Reporte documentos', description: 'Documentos emitidos, recibidos y autorizaciones.' },
   { view: 'recargas', title: 'Historial de recargas', description: 'Recargas y paquetes de documentos.' },
   { view: 'centro-normativo', title: 'Centro normativo', description: 'Identificaciones, categorias, impuestos y normativa.' },
   { view: 'configuracion', title: 'Configuracion', description: 'Usuarios, roles, permisos, impuestos y parametros.' },
@@ -787,7 +783,7 @@ const EFACT_MODULES: Omit<MobileModule, 'count' | 'enabled'>[] = [
   { view: 'admin-sql-auditoria', title: 'SQL Auditoria', description: 'Eventos de auditoria SQL y trazabilidad.' },
 ];
 
-const VIEW_ROUTE_ALIASES: Record<Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto'>, string[]> = {
+const VIEW_ROUTE_ALIASES: Partial<Record<Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto'>, string[]>> = {
   perfil: ['perfil', 'profile'],
   emisor: ['emisor', 'empresa'],
   firma: ['firma', 'certificado'],
@@ -825,7 +821,6 @@ const VIEW_ROUTE_ALIASES: Record<Exclude<WorkspaceView, 'portal' | 'dashboard' |
   'cuentas-cobrar': ['cuentas-cobrar', 'cuentas-por-cobrar', 'cobrar', 'cxc', 'abonos', 'registro-abonos'],
   'estado-cuenta': ['estado-cuenta', 'cuentas-por-cobrar/estado-cuenta', 'cuenta-cliente'],
   'comprar-documentos': ['compra-documentos', 'comprar-documentos', 'documentos-compra'],
-  'reporte-documentos': ['reporte-documentos', 'reportes-documentos', 'reportes/documentos'],
   recargas: ['recargas', 'historial-recargas'],
   reportes: ['reportes', 'logs', 'auditoria'],
   configuracion: ['configuracion', 'usuarios', 'roles', 'permisos', 'impuestos'],
@@ -982,7 +977,7 @@ function menuMatchesView(menu: DynamicMenu, view: Exclude<WorkspaceView, 'portal
   if (ADMIN_ROUTE_VIEW_MAP[normalizedRoute] === view) return true;
 
   const source = `${normalizedRoute} ${normalizeText(menu.nombre)} ${normalizeText(menu.descripcion)}`;
-  return VIEW_ROUTE_ALIASES[view].some((alias) => source.includes(alias));
+  return (VIEW_ROUTE_ALIASES[view] ?? []).some((alias) => source.includes(alias));
 }
 
 function getAuthorizedViews(menus: DynamicMenu[]) {
@@ -1410,6 +1405,26 @@ function getPuntoSerie(punto: PuntoEmision) {
   const serie = punto.serieFactura ?? punto.serieNotasCred ?? punto.serieGuia ?? '';
   if (serie.includes('-')) return serie;
   return normalizeSerieCode(punto.puntoEmision ?? punto.numCaja);
+}
+
+function getPuntoSequenceValue(punto: PuntoEmision, keys: string[]) {
+  const row = punto as PuntoEmision & Record<string, unknown>;
+  const value = keys.map((key) => row[key]).find((candidate) => candidate !== null && candidate !== undefined && String(candidate).trim());
+  if (value === undefined) return '-';
+  const numeric = numberValue(value);
+  return numeric > 0 ? String(numeric).padStart(9, '0') : String(value);
+}
+
+function getPuntoDocumentSequences(punto: PuntoEmision) {
+  const serie = getPuntoSerie(punto) || 'Sin serie';
+  return [
+    { label: 'Factura', serie: punto.serieFactura || serie, secuencia: getPuntoSequenceValue(punto, ['secFactura', 'secuencialFactura', 'secuenciaFactura', 'sec']) },
+    { label: 'Nota credito', serie: punto.serieNotasCred || serie, secuencia: getPuntoSequenceValue(punto, ['secNotaCredito', 'secuencialNotaCredito', 'secuenciaNotaCredito', 'secNC']) },
+    { label: 'Nota debito', serie: punto.serieNotasDeb || serie, secuencia: getPuntoSequenceValue(punto, ['secNotaDebito', 'secuencialNotaDebito', 'secuenciaNotaDebito', 'secND']) },
+    { label: 'Guia', serie: punto.serieGuia || serie, secuencia: getPuntoSequenceValue(punto, ['secGuia', 'secuencialGuia', 'secuenciaGuia']) },
+    { label: 'Retencion', serie: punto.serieRetencion || serie, secuencia: getPuntoSequenceValue(punto, ['secRetencion', 'secuencialRetencion', 'secuenciaRetencion']) },
+    { label: 'Liquidacion', serie: punto.serieLiquidacion || serie, secuencia: getPuntoSequenceValue(punto, ['secLiquidacion', 'secuencialLiquidacion', 'secuenciaLiquidacion']) },
+  ];
 }
 
 function getNextPuntoCode(cajas: PuntoEmision[]) {
@@ -2458,7 +2473,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     if (!catalogUserId || !authorizedViews.has('dashboard')) return;
 
     let mounted = true;
-    const views: WorkspaceView[] = ['cuentas-cobrar', 'estado-cuenta', 'comprar-documentos', 'recargas', 'reporte-documentos', 'centro-normativo'];
+    const views: WorkspaceView[] = ['cuentas-cobrar', 'estado-cuenta', 'comprar-documentos', 'recargas', 'centro-normativo'];
 
     Promise.all(
       views.map(async (view) => {
@@ -4896,7 +4911,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         'cuentas-cobrar',
         'estado-cuenta',
         'comprar-documentos',
-         'reporte-documentos',
          'recargas',
          'centro-normativo',
          'bot',
@@ -5045,7 +5059,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       disabled: !authorizedViews.has('recargas'),
       children: [menuNode('recargas', 'Mis recargas')],
     },
-    menuNode('reporte-documentos', 'Reporte documentos'),
     {
       key: 'documentos-generados',
       label: 'Documentos Generados',
@@ -5221,7 +5234,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 index={0}
               />
               {services
-                .filter((service) => normalizeText(service.codigo ?? service.nombre) !== 'e-fact')
+                .filter((service) => {
+                  const normalized = normalizeText(`${service.codigo ?? ''} ${service.nombre ?? ''}`);
+                  return normalized !== 'e-fact' && !normalized.includes('backoffice');
+                })
                 .map((service, index) => (
                   <PortalServiceCard
                     key={`${service.codigo ?? service.nombre ?? 'servicio'}-${index}`}
@@ -6369,7 +6385,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 }
 
 function getWorkspaceTitle(view: WorkspaceView) {
-  const titles: Record<WorkspaceView, string> = {
+  const titles: Partial<Record<WorkspaceView, string>> = {
     portal: 'Portal de Servicios',
     dashboard: 'Inicio',
     perfil: 'Perfil',
@@ -6413,7 +6429,6 @@ function getWorkspaceTitle(view: WorkspaceView) {
     recargas: 'Mis recargas',
     'comprar-documentos': 'Comprar documentos',
     reportes: 'Reportes',
-    'reporte-documentos': 'Reporte documentos',
     configuracion: 'Configuracion',
      soporte: 'Soporte',
      bot: 'Númi Bot',
@@ -6422,7 +6437,7 @@ function getWorkspaceTitle(view: WorkspaceView) {
     'no-autorizado': 'No autorizado',
   };
 
-  return titles[view];
+  return titles[view] ?? 'No autorizado';
 }
 
 function isAdminMobileView(view: WorkspaceView) {
@@ -6441,7 +6456,6 @@ function getOperationalModuleSlug(view: WorkspaceView): OperationalModule | unde
     recargas: 'recargas',
     'comprar-documentos': 'recargas',
     reportes: 'reportes',
-    'reporte-documentos': 'reportes',
     'centro-normativo': 'centro-normativo',
   };
 
@@ -6454,7 +6468,6 @@ function getOperationalDefaultTab(view: WorkspaceView, module: OperationalModule
     'estado-cuenta': 'Estado de cuenta',
     'comprar-documentos': 'Comprar documentos',
     recargas: 'Historial',
-    'reporte-documentos': 'Documentos',
   };
 
   return defaults[view] ?? getOperationalModuleConfig(module).tabs[0] ?? '';
@@ -6489,13 +6502,6 @@ function getOperationalScreenConfig(view: WorkspaceView, module: OperationalModu
       title: 'Mis recargas',
       description: 'Consulta únicamente tus recargas realizadas.',
       tabs: ['Historial'],
-      placeholder: base.placeholder,
-    },
-    'reporte-documentos': {
-      eyebrow: 'Reportes',
-      title: 'Reporte documentos',
-      description: 'Consulta documentos emitidos y recibidos.',
-      tabs: ['Documentos', 'Emitidos', 'Recibidos'],
       placeholder: base.placeholder,
     },
     compras: {
@@ -6816,8 +6822,13 @@ function NuevaFacturaMobileScreen({
         </View>
         <View style={styles.invoiceHeaderActions}>
           <View style={styles.invoiceHeaderBox}>
-            <Text style={styles.invoiceMiniLabel}>Serie</Text>
-            <Text style={styles.invoiceHeaderValue}>{serieLabel}</Text>
+            <DropdownField
+              label="Serie"
+              options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+              allowClear
+            />
           </View>
           <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Numero de factura</Text>
@@ -7033,15 +7044,15 @@ function InvoiceSummaryRow({ label, value, danger = false }: { label: string; va
   );
 }
 
-function InvoiceProgressSteps({ labels }: { labels: string[] }) {
+function InvoiceProgressSteps({ labels, activeIndex }: { labels: string[]; activeIndex: number }) {
   return (
     <View style={styles.invoiceSteps}>
       {labels.map((label, index) => (
         <View key={label} style={styles.invoiceStepItem}>
-          <View style={[styles.invoiceStepNumber, styles.invoiceStepNumberActive]}>
-            <Text style={[styles.invoiceStepNumberText, styles.invoiceStepNumberTextActive]}>{index + 1}</Text>
+          <View style={[styles.invoiceStepNumber, index <= activeIndex && styles.invoiceStepNumberActive]}>
+            <Text style={[styles.invoiceStepNumberText, index <= activeIndex && styles.invoiceStepNumberTextActive]}>{index + 1}</Text>
           </View>
-          <Text style={[styles.invoiceStepLabel, index === 0 && styles.invoiceStepLabelActive]}>{label}</Text>
+          <Text style={[styles.invoiceStepLabel, index === activeIndex && styles.invoiceStepLabelActive]}>{label}</Text>
         </View>
       ))}
     </View>
@@ -7110,6 +7121,11 @@ function NuevaNotaCreditoMobileScreen({
     precioUnitario: Number(factura?.total ?? 0.01),
     tarifaIva: 0,
   });
+  const [step, setStep] = useState(0);
+  const handleClear = () => {
+    onClear();
+    setStep(0);
+  };
 
   return (
     <>
@@ -7121,18 +7137,23 @@ function NuevaNotaCreditoMobileScreen({
         </View>
         <View style={styles.invoiceHeaderActions}>
           <View style={styles.invoiceHeaderBox}>
-            <Text style={styles.invoiceMiniLabel}>Serie</Text>
-            <Text style={styles.invoiceHeaderValue}>{serieLabel}</Text>
+            <DropdownField
+              label="Serie"
+              options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+              allowClear
+            />
           </View>
           <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Nota de credito</Text>
             <Text style={styles.invoiceHeaderValue}>{notaNumber}</Text>
           </View>
-          <SecondaryButton label="Historial" onPress={onClear} />
-          <SecondaryButton label="Limpiar pantalla" onPress={onClear} />
+          <SecondaryButton label="Historial" onPress={handleClear} />
+          <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
-      <InvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} />
+      <InvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -7140,6 +7161,7 @@ function NuevaNotaCreditoMobileScreen({
           <Text style={styles.mutedText}>Cargando notas de credito...</Text>
         </View>
       ) : null}
+      {step === 0 ? <>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Opciones de emision</Text>
         <Text style={styles.invoiceSectionHelp}>Tambien puedes emitir la nota de credito de estas formas</Text>
@@ -7168,6 +7190,11 @@ function NuevaNotaCreditoMobileScreen({
         </View>
         {factura ? <Text style={styles.profileValue}>Factura modificada: {factura.numeroCompleto ?? factura.numfactura}</Text> : null}
       </View>
+      <View style={styles.formActions}>
+        <PrimaryButton label="Continuar con cliente" loading={false} onPress={() => factura ? setStep(1) : Alert.alert('Factura requerida', 'Selecciona primero la factura modificada.')} />
+      </View>
+      </> : null}
+      {step === 1 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Informacion del Cliente</Text>
@@ -7203,6 +7230,12 @@ function NuevaNotaCreditoMobileScreen({
           <Field label="Observacion (max 250 caracteres)" value={form.observacion} onChangeText={(value) => onChange('observacion', value.slice(0, 250))} />
         </View>
       </View>
+      <View style={styles.formActions}>
+        <SecondaryButton label="Volver a factura" onPress={() => setStep(0)} />
+        <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} />
+      </View>
+      </> : null}
+      {step === 2 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Detalle de Nota de Credito</Text>
@@ -7251,9 +7284,11 @@ function NuevaNotaCreditoMobileScreen({
       </View>
       <View style={styles.formActions}>
         <SecondaryButton label="Previsualizar PDF" onPress={() => Alert.alert('Previsualizar PDF', 'Genera la nota de credito para consultar el PDF.')} />
-        <SecondaryButton label="Cancelar / limpiar" onPress={onClear} />
+        <SecondaryButton label="Volver al cliente" onPress={() => setStep(1)} />
+        <SecondaryButton label="Cancelar / limpiar" onPress={handleClear} />
         <PrimaryButton label="Generar Nota de Credito" loading={saving} onPress={onSave} />
       </View>
+      </> : null}
     </>
   );
 }
@@ -7474,6 +7509,11 @@ function NuevaNotaDebitoMobileScreen({
   const serieOptions = preparacion?.series ?? [];
   const serieLabel = getSerieLabel(preparacion, form.serie, '001-002');
   const notaNumber = form.numeroFactura || getNextSequence(preparacion, form.serie, 1158);
+  const [step, setStep] = useState(0);
+  const handleClear = () => {
+    onClear();
+    setStep(0);
+  };
 
   return (
     <>
@@ -7485,18 +7525,23 @@ function NuevaNotaDebitoMobileScreen({
         </View>
         <View style={styles.invoiceHeaderActions}>
           <View style={styles.invoiceHeaderBox}>
-            <Text style={styles.invoiceMiniLabel}>Serie</Text>
-            <Text style={styles.invoiceHeaderValue}>{serieLabel}</Text>
+            <DropdownField
+              label="Serie"
+              options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+              allowClear
+            />
           </View>
           <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Nota de debito</Text>
             <Text style={styles.invoiceHeaderValue}>{notaNumber}</Text>
           </View>
-          <SecondaryButton label="Historial" onPress={onClear} />
-          <SecondaryButton label="Limpiar pantalla" onPress={onClear} />
+          <SecondaryButton label="Historial" onPress={handleClear} />
+          <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
-      <InvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} />
+      <InvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -7504,6 +7549,7 @@ function NuevaNotaDebitoMobileScreen({
           <Text style={styles.mutedText}>Cargando notas de debito...</Text>
         </View>
       ) : null}
+      {step === 0 ? <>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Opciones de emision</Text>
         <Text style={styles.invoiceSectionHelp}>Tambien puedes emitir la nota de debito de estas formas</Text>
@@ -7532,6 +7578,11 @@ function NuevaNotaDebitoMobileScreen({
         </View>
         {factura ? <Text style={styles.profileValue}>Factura modificada: {factura.numeroCompleto ?? factura.numfactura}</Text> : null}
       </View>
+      <View style={styles.formActions}>
+        <PrimaryButton label="Continuar con cliente" loading={false} onPress={() => factura ? setStep(1) : Alert.alert('Factura requerida', 'Selecciona primero la factura modificada.')} />
+      </View>
+      </> : null}
+      {step === 1 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Informacion del Cliente</Text>
@@ -7553,6 +7604,12 @@ function NuevaNotaDebitoMobileScreen({
         </View>
         <SecondaryButton label="Agregar correo" onPress={() => onChange('correoAdicional', form.correoPrincipal)} />
       </View>
+      <View style={styles.formActions}>
+        <SecondaryButton label="Volver a factura" onPress={() => setStep(0)} />
+        <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} />
+      </View>
+      </> : null}
+      {step === 2 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Detalle de la Nota de Debito</Text>
@@ -7602,9 +7659,11 @@ function NuevaNotaDebitoMobileScreen({
       </View>
       <View style={styles.formActions}>
         <SecondaryButton label="Previsualizar PDF" onPress={() => Alert.alert('Previsualizar PDF', 'Genera la nota de debito para consultar el PDF.')} />
-        <SecondaryButton label="Cancelar / limpiar" onPress={onClear} />
+        <SecondaryButton label="Volver al cliente" onPress={() => setStep(1)} />
+        <SecondaryButton label="Cancelar / limpiar" onPress={handleClear} />
         <PrimaryButton label="Generar Nota de Debito" loading={saving} onPress={onSave} />
       </View>
+      </> : null}
     </>
   );
 }
@@ -7767,6 +7826,11 @@ function NuevaLiquidacionCompraMobileScreen({
   const formaPagoOptions = preparacion?.formasPago ?? [];
   const serieLabel = getSerieLabel(preparacion, form.serie, '001-002');
   const liquidacionNumber = form.numeroFactura || getNextSequence(preparacion, form.serie);
+  const [step, setStep] = useState(0);
+  const handleClear = () => {
+    onClear();
+    setStep(0);
+  };
 
   return (
     <>
@@ -7778,18 +7842,23 @@ function NuevaLiquidacionCompraMobileScreen({
         </View>
         <View style={styles.invoiceHeaderActions}>
           <View style={styles.invoiceHeaderBox}>
-            <Text style={styles.invoiceMiniLabel}>Serie</Text>
-            <Text style={styles.invoiceHeaderValue}>{serieLabel}</Text>
+            <DropdownField
+              label="Serie"
+              options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+              allowClear
+            />
           </View>
           <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Liquidacion</Text>
             <Text style={styles.invoiceHeaderValue}>{liquidacionNumber}</Text>
           </View>
-          <SecondaryButton label="Historial" onPress={onClear} />
-          <SecondaryButton label="Limpiar pantalla" onPress={onClear} />
+          <SecondaryButton label="Historial" onPress={handleClear} />
+          <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
-      <InvoiceProgressSteps labels={['Proveedor', 'Detalle', 'Revision']} />
+      <InvoiceProgressSteps labels={['Proveedor', 'Detalle', 'Revision']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -7797,6 +7866,7 @@ function NuevaLiquidacionCompraMobileScreen({
           <Text style={styles.mutedText}>Cargando liquidaciones...</Text>
         </View>
       ) : null}
+      {step === 0 ? <>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Buscador de proveedor</Text>
         <Text style={styles.invoiceSectionHelp}>Encuentra o completa el proveedor de la liquidacion</Text>
@@ -7813,6 +7883,11 @@ function NuevaLiquidacionCompraMobileScreen({
           ))}
         </View>
       </View>
+      <View style={styles.formActions}>
+        <PrimaryButton label="Continuar con datos" loading={false} onPress={() => proveedor ? setStep(1) : Alert.alert('Proveedor requerido', 'Selecciona primero un proveedor.')} />
+      </View>
+      </> : null}
+      {step === 1 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Datos del Documento</Text>
@@ -7839,6 +7914,12 @@ function NuevaLiquidacionCompraMobileScreen({
           <Field label="Dias de credito" value={form.diasCredito} onChangeText={(value) => onChange('diasCredito', value.replace(/[^\d]/g, ''))} keyboardType="number-pad" />
         </View>
       </View>
+      <View style={styles.formActions}>
+        <SecondaryButton label="Volver a proveedor" onPress={() => setStep(0)} />
+        <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} />
+      </View>
+      </> : null}
+      {step === 2 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Detalle de la Liquidacion</Text>
@@ -7897,8 +7978,10 @@ function NuevaLiquidacionCompraMobileScreen({
       <View style={styles.formActions}>
         <SecondaryButton label="Previsualizar PDF" onPress={() => Alert.alert('Previsualizar PDF', 'Genera la liquidacion para consultar el PDF.')} />
         <PrimaryButton label="Generar Liquidacion" loading={saving} onPress={onSave} />
-        <SecondaryButton label="Cancelar / limpiar" onPress={onClear} />
+        <SecondaryButton label="Volver a datos" onPress={() => setStep(1)} />
+        <SecondaryButton label="Cancelar / limpiar" onPress={handleClear} />
       </View>
+      </> : null}
     </>
   );
 }
@@ -8072,6 +8155,11 @@ function NuevaGuiaRemisionMobileScreen({
   const serieLabel = getSerieLabel(preparacion, form.serie, '001-002');
   const guiaNumber = form.numeroFactura || getNextSequence(preparacion, form.serie);
   const totalCantidad = detalles.reduce((sum, item) => sum + (Number(item.cantidad.replace(',', '.')) || 0), 0);
+  const [step, setStep] = useState(0);
+  const handleClear = () => {
+    onClear();
+    setStep(0);
+  };
 
   return (
     <>
@@ -8083,18 +8171,23 @@ function NuevaGuiaRemisionMobileScreen({
         </View>
         <View style={styles.invoiceHeaderActions}>
           <View style={styles.invoiceHeaderBox}>
-            <Text style={styles.invoiceMiniLabel}>Serie guia</Text>
-            <Text style={styles.invoiceHeaderValue}>{serieLabel}</Text>
+            <DropdownField
+              label="Serie guia"
+              options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+              allowClear
+            />
           </View>
           <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Numero de guia</Text>
             <Text style={styles.invoiceHeaderValue}>{guiaNumber}</Text>
           </View>
-          <SecondaryButton label="Historial" onPress={onClear} />
-          <SecondaryButton label="Limpiar pantalla" onPress={onClear} />
+          <SecondaryButton label="Historial" onPress={handleClear} />
+          <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
-      <InvoiceProgressSteps labels={['Transporte', 'Destino', 'Detalle']} />
+      <InvoiceProgressSteps labels={['Transporte', 'Destino', 'Detalle']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -8102,10 +8195,11 @@ function NuevaGuiaRemisionMobileScreen({
           <Text style={styles.mutedText}>Cargando guias de remision...</Text>
         </View>
       ) : null}
+      {step === 0 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Datos operativos de la guia</Text>
-          <Text style={styles.invoicePanelPill}>Completa transportista, destinatario y fechas</Text>
+          <Text style={styles.invoicePanelPill}>Selecciona transportista</Text>
         </View>
         <SearchField label="Encontrar transportista" placeholder="Identificacion o razon social" value={form.transportistaBusqueda} onChangeText={(value) => onChange('transportistaBusqueda', value)} resultCount={transportistas.length} onSubmit={onSearchTransportistas} />
         <View style={styles.formActions}>
@@ -8118,6 +8212,18 @@ function NuevaGuiaRemisionMobileScreen({
               <Text style={styles.clientMeta}>{getClienteIdentification(item) || 'Sin identificacion'}</Text>
             </Pressable>
           ))}
+        </View>
+        {transportista ? <Text style={styles.profileValue}>Transportista: {getClienteDisplayName(transportista)}</Text> : null}
+      </View>
+      <View style={styles.formActions}>
+        <PrimaryButton label="Continuar con destino" loading={false} onPress={() => transportista ? setStep(1) : Alert.alert('Transportista requerido', 'Selecciona primero un transportista.')} />
+      </View>
+      </> : null}
+      {step === 1 ? <>
+      <View style={[styles.formSectionBox, styles.invoicePanel]}>
+        <View style={styles.invoicePanelHeader}>
+          <Text style={styles.invoicePanelTitle}>Destino y traslado</Text>
+          <Text style={styles.invoicePanelPill}>Cliente, factura y fechas</Text>
         </View>
         <SearchField label="Encontrar destinatario" placeholder="Identificacion o nombre del cliente" value={form.clienteBusquedaGuia} onChangeText={(value) => onChange('clienteBusquedaGuia', value)} resultCount={clientes.length} onSubmit={onSearchClientes} />
         <SearchField label="Vincular factura (opcional)" placeholder="Numero completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} />
@@ -8136,7 +8242,13 @@ function NuevaGuiaRemisionMobileScreen({
           ))}
         </View>
         <View style={styles.invoiceGrid}>
-          <Field label="Punto de emision" value={form.serie} onChangeText={(value) => onChange('serie', value)} />
+          <DropdownField
+            label="Punto de emision"
+            options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+            value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+            onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+            allowClear
+          />
           <Field label="Placa" value={form.placa} onChangeText={(value) => onChange('placa', value)} autoCapitalize="characters" />
         </View>
         <View style={styles.invoiceBottomGrid}>
@@ -8164,6 +8276,12 @@ function NuevaGuiaRemisionMobileScreen({
           </View>
         </View>
       </View>
+      <View style={styles.formActions}>
+        <SecondaryButton label="Volver a transporte" onPress={() => setStep(0)} />
+        <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} />
+      </View>
+      </> : null}
+      {step === 2 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Detalles de traslado</Text>
@@ -8209,9 +8327,11 @@ function NuevaGuiaRemisionMobileScreen({
       </View>
       <View style={styles.formActions}>
         <SecondaryButton label="Previsualizar PDF" onPress={() => Alert.alert('Previsualizar PDF', 'Genera la guia para consultar el PDF.')} />
-        <SecondaryButton label="Cancelar / limpiar" onPress={onClear} />
+        <SecondaryButton label="Volver al destino" onPress={() => setStep(1)} />
+        <SecondaryButton label="Cancelar / limpiar" onPress={handleClear} />
         <PrimaryButton label="Generar Guia de Remision" loading={saving} onPress={onSave} />
       </View>
+      </> : null}
     </>
   );
 }
@@ -8949,7 +9069,7 @@ function PurchaseDocumentsScreen({
 }
 
 function getOperationalCapabilities(view: WorkspaceView, tab: string) {
-  const readOnlyViews: WorkspaceView[] = ['estado-cuenta', 'reporte-documentos', 'reportes', 'centro-normativo'];
+  const readOnlyViews: WorkspaceView[] = ['estado-cuenta', 'reportes', 'centro-normativo'];
   if (readOnlyViews.includes(view)) {
     return { canCreate: false, canEdit: false, canDelete: false };
   }
@@ -9434,7 +9554,7 @@ function PdfSignaturePositionPicker({
           javaScriptEnabled
           allowFileAccess
           style={styles.pdfWebView}
-          onMessage={(event) => {
+          onMessage={(event: { nativeEvent: { data: string } }) => {
             try {
               const result = JSON.parse(event.nativeEvent.data) as { type?: string; x?: number; y?: number; widthMm?: number; heightMm?: number };
               if (result.type === 'position' && typeof result.x === 'number' && typeof result.y === 'number') onPositionChange({ x: result.x, y: result.y });
@@ -9738,7 +9858,7 @@ function DashboardHomeScreen({
   const ventasTotal = facturas.reduce((sum, factura) => sum + Number(factura.total ?? 0), 0);
   const latestFacturas = facturas.slice(0, 3);
   const mainModules = modules
-    .filter((module) => ['mis-facturas', 'clientes', 'productos', 'reporte-documentos', 'emisor', 'punto-emision'].includes(module.view))
+    .filter((module) => ['mis-facturas', 'clientes', 'productos', 'emisor', 'punto-emision'].includes(module.view))
     .slice(0, 5);
   const recentFactura = facturas[0];
 
@@ -9785,7 +9905,7 @@ function DashboardHomeScreen({
         <DashboardPrimaryAction icon="robot-outline" label="Númi" text="Asistente" onPress={() => onOpenView('bot')} />
         <DashboardPrimaryAction icon="file-document-outline" label="Mis facturas" text="Consultar emitidas" onPress={() => onOpenView('mis-facturas')} />
         <DashboardPrimaryAction icon="package-variant-closed" label="Productos" text="Catalogo" onPress={() => onOpenView('productos')} />
-        <DashboardPrimaryAction icon="chart-box-outline" label="Reportes" text="Documentos" onPress={() => onOpenView('reporte-documentos')} />
+        <DashboardPrimaryAction icon="store-cog-outline" label="Series" text="Cajas" onPress={() => onOpenView('punto-emision')} />
       </View>
 
       <View style={styles.dashboardActivityPanel}>
@@ -11447,6 +11567,7 @@ function PuntoEmisionCard({
   onMakePrincipal: () => void;
 }) {
   const serie = getPuntoSerie(punto);
+  const sequences = getPuntoDocumentSequences(punto);
 
   return (
     <View style={[styles.clientCard, punto.esPrincipal && styles.puntoCardPrincipal]}>
@@ -11465,14 +11586,19 @@ function PuntoEmisionCard({
         ) : null}
       </View>
 
-      <View style={styles.clientDetailGrid}>
-        <View style={styles.clientDetailItem}>
-          <Text style={styles.clientDetailLabel}>Serie factura</Text>
-          <Text style={styles.clientDetailValue}>{punto.serieFactura || serie || 'Sin serie'}</Text>
+      <View style={styles.puntoSequencePanel}>
+        <View style={styles.puntoSequenceHeader}>
+          <Text style={styles.puntoSequenceTitle}>Secuencias por documento</Text>
+          <Text style={styles.puntoSequenceStatus}>{punto.estado === false ? 'Inactivo' : 'Activo'}</Text>
         </View>
-        <View style={styles.clientDetailItem}>
-          <Text style={styles.clientDetailLabel}>Estado</Text>
-          <Text style={styles.clientDetailValue}>{punto.estado === false ? 'Inactivo' : 'Activo'}</Text>
+        <View style={styles.clientDetailGrid}>
+          {sequences.map((item) => (
+            <View key={`${serie}-${item.label}`} style={styles.clientDetailItem}>
+              <Text style={styles.clientDetailLabel}>{item.label}</Text>
+              <Text style={styles.clientDetailValue}>{item.serie}</Text>
+              <Text style={styles.clientMeta}>Sec. {item.secuencia}</Text>
+            </View>
+          ))}
         </View>
       </View>
 
@@ -16790,6 +16916,36 @@ const styles = StyleSheet.create({
   puntoCardPrincipal: {
     borderColor: '#72B7F2',
     borderWidth: 1.5,
+  },
+  puntoSequencePanel: {
+    backgroundColor: '#F4FAFF',
+    borderColor: '#B9D8EE',
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  puntoSequenceHeader: {
+    alignItems: 'center',
+    backgroundColor: '#0072BD',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  puntoSequenceTitle: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  puntoSequenceStatus: {
+    backgroundColor: '#E7F4FC',
+    borderRadius: 999,
+    color: '#0072BD',
+    fontSize: 10,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   securityHeaderRow: {
     alignItems: 'flex-start',
