@@ -916,6 +916,14 @@ function getPortalServiceVisual(title: string, index: number) {
   return palette[index % palette.length];
 }
 
+function getNotificationTone(notification: NotificacionItem) {
+  const source = normalizeText(`${notification.type ?? ''} ${notification.title} ${notification.text}`);
+  if (source.includes('error') || source.includes('rechaz') || source.includes('anulad') || source.includes('fall') || source.includes('vencid')) return 'danger';
+  if (source.includes('advert') || source.includes('pendient') || source.includes('proces') || source.includes('revision') || source.includes('alert')) return 'warning';
+  if (source.includes('exito') || source.includes('correct') || source.includes('autoriz') || source.includes('aprob') || source.includes('emitid')) return 'success';
+  return 'info';
+}
+
 function getDisplayFirstName(user: LoginResponse, perfil?: PerfilUsuario | null) {
   const value = perfil?.nombres || user.nombres || user.email || 'Usuario';
   return value.split(' ')[0].toLocaleUpperCase('es-EC');
@@ -970,6 +978,7 @@ function getAuthorizedViews(menus: DynamicMenu[]) {
 
   if (views.size > 0) {
     views.add('dashboard');
+    views.add('bot');
   }
 
   return views;
@@ -988,11 +997,28 @@ function hasAdminMenu(menus: DynamicMenu[]) {
 }
 
 function mergeMobileBaseMenus(menus: DynamicMenu[], includeAdmin = false) {
-  const existingRoutes = new Set(menus.map((menu) => normalizeText(menu.ruta || menu.nombre)));
-  const baseMenus = includeAdmin || hasAdminMenu(menus) ? [...BASE_EFACT_MOBILE_MENUS, ...ADMIN_EFACT_MOBILE_MENUS] : BASE_EFACT_MOBILE_MENUS;
+  const visibleMenus = menus.filter((menu) => !isAdministrationMenu(menu));
+  const existingRoutes = new Set(visibleMenus.map((menu) => normalizeText(menu.ruta || menu.nombre)));
+  const baseMenus = BASE_EFACT_MOBILE_MENUS;
   const missingBaseMenus = baseMenus.filter((menu) => !existingRoutes.has(normalizeText(menu.ruta || menu.nombre)));
 
-  return [...menus, ...missingBaseMenus];
+  return [...visibleMenus, ...missingBaseMenus];
+}
+
+function isAdministrationMenu(menu: DynamicMenu) {
+  const route = normalizeText(menu.ruta);
+  const name = normalizeText(menu.nombre);
+  return route.startsWith('administracion') ||
+    route.startsWith('configuracion/seguridad') ||
+    route.startsWith('configuracion/impuestos') ||
+    route.startsWith('configuracion/usuarios') ||
+    route.startsWith('configuracion/identificaciones') ||
+    route.startsWith('configuracion/general') ||
+    route.startsWith('configuracion/retenciones') ||
+    route.startsWith('reportes/logs') ||
+    route.startsWith('reportes/auditoria-sql') ||
+    name.includes('roles') ||
+    name.includes('sql auditoria');
 }
 
 function getInitialMenus(user: LoginResponse) {
@@ -1951,6 +1977,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [search, setSearch] = useState('');
   const [clienteTipoFiltro, setClienteTipoFiltro] = useState<'todos' | 'personas' | 'empresas'>('todos');
   const [clienteProveedorFiltro, setClienteProveedorFiltro] = useState<'todos' | 'proveedores'>('todos');
+  const [productoTipoFiltro, setProductoTipoFiltro] = useState<'todos' | ProductoTipo>('todos');
+  const [productoCategoriaFiltro, setProductoCategoriaFiltro] = useState<number | null>(null);
+  const [productoSubcategoriaFiltro, setProductoSubcategoriaFiltro] = useState<number | null>(null);
   const debouncedSearch = useDebouncedValue(search, 350);
   const [reloadKey, setReloadKey] = useState(0);
   const [adminItems, setAdminItems] = useState<AdminMobileItem[]>([]);
@@ -2016,6 +2045,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [clienteFormMode, setClienteFormMode] = useState<ClienteFormMode>(null);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
   const [viewingCliente, setViewingCliente] = useState<Cliente | null>(null);
+  const [viewingProducto, setViewingProducto] = useState<Producto | null>(null);
+  const [viewingCategoria, setViewingCategoria] = useState<CategoriaCatalogo | null>(null);
+  const [viewingSubcategoria, setViewingSubcategoria] = useState<SubcategoriaCatalogo | null>(null);
+  const [viewingEmisor, setViewingEmisor] = useState<Emisor | null>(null);
+  const [viewingFirma, setViewingFirma] = useState<Emisor | null>(null);
   const [clienteForm, setClienteForm] = useState<ClienteFormState>(initialClienteForm);
   const [savingCliente, setSavingCliente] = useState(false);
   const [productoFormMode, setProductoFormMode] = useState<ProductoFormMode>(null);
@@ -2876,23 +2910,47 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }));
   }, [productoLookups, productos]);
 
+  const productoCategoriasFiltro = useMemo(() => {
+    const map = new Map<number, string>();
+    productosConCatalogos.forEach((producto) => {
+      if (producto.categoria !== null && producto.categoria !== undefined) {
+        map.set(producto.categoria, producto.categoriaDescripcion || `Categoria ${producto.categoria}`);
+      }
+    });
+    return Array.from(map, ([id, label]) => ({ id, label }));
+  }, [productosConCatalogos]);
+
+  const productoSubcategoriasFiltro = useMemo(() => {
+    const map = new Map<number, string>();
+    productosConCatalogos.forEach((producto) => {
+      if (productoCategoriaFiltro !== null && producto.categoria !== productoCategoriaFiltro) return;
+      if (producto.subcategoria !== null && producto.subcategoria !== undefined) {
+        map.set(producto.subcategoria, producto.subcategoriaDescripcion || `Subcategoria ${producto.subcategoria}`);
+      }
+    });
+    return Array.from(map, ([id, label]) => ({ id, label }));
+  }, [productoCategoriaFiltro, productosConCatalogos]);
+
   const filteredProductos = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return productosConCatalogos;
 
     return productosConCatalogos.filter((producto) =>
-      [
-        producto.nombre,
-        producto.codigo,
-        producto.tipo,
-        producto.tarifaDescripcion,
-        producto.categoriaDescripcion,
-        producto.subcategoriaDescripcion,
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(term)),
+      (productoTipoFiltro === 'todos' || producto.tipo === productoTipoFiltro) &&
+      (productoCategoriaFiltro === null || producto.categoria === productoCategoriaFiltro) &&
+      (productoSubcategoriaFiltro === null || producto.subcategoria === productoSubcategoriaFiltro) &&
+      (!term ||
+        [
+          producto.nombre,
+          producto.codigo,
+          producto.tipo,
+          producto.tarifaDescripcion,
+          producto.categoriaDescripcion,
+          producto.subcategoriaDescripcion,
+        ]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(term))),
     );
-  }, [productosConCatalogos, search]);
+  }, [productoCategoriaFiltro, productoSubcategoriaFiltro, productoTipoFiltro, productosConCatalogos, search]);
 
   const filteredCategorias = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -3720,6 +3778,37 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       claveCertificado: '',
       eliminarClaveCertificado: true,
     }));
+  };
+
+  const confirmDeleteFirma = (emisor: Emisor) => {
+    const title = emisor.nomComercial || emisor.razonSocial || 'este emisor';
+    Alert.alert('Eliminar firma', `Deseas quitar la firma configurada de ${title}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          if (!catalogUserId) return;
+          try {
+            const form = {
+              ...emisorToForm(emisor),
+              pathCertificado: '',
+              firmaArchivoUri: '',
+              firmaArchivoNombre: '',
+              firmaArchivoMimeType: '',
+              claveCertificado: '',
+              eliminarClaveCertificado: true,
+            };
+            await updateEmisor(catalogUserId, emisor.codigo, emisorFormToPayload(form, emisor));
+            setDirectoryMessage({ type: 'success', text: 'Firma eliminada correctamente.' });
+            setReloadKey((value) => value + 1);
+          } catch (error) {
+            const text = error instanceof ApiError ? error.message : 'No se pudo eliminar la firma.';
+            setDirectoryMessage({ type: 'error', text });
+          }
+        },
+      },
+    ]);
   };
 
   const selectFirmaArchivo = async () => {
@@ -4767,15 +4856,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
          'recargas',
          'centro-normativo',
          'bot',
-         'admin-cajas-secuencias',
-        'admin-roles-permisos',
-        'admin-impuestos',
-        'admin-usuarios',
-        'admin-identificaciones',
-        'admin-formas-pago',
-        'admin-logs-inicio',
-        'admin-retenciones',
-        'admin-sql-auditoria',
       ].includes(module.view),
     };
   });
@@ -4800,6 +4880,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
 
     if (view === 'nuevo-producto' && authorizedViews.has('productos')) {
+      setActiveView(view);
+      return;
+    }
+
+    if (view === 'bot' && canUseEfact) {
       setActiveView(view);
       return;
     }
@@ -4912,21 +4997,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       children: [menuNode('recargas', 'Mis recargas')],
     },
     menuNode('reporte-documentos', 'Reporte documentos'),
-    {
-      key: 'administracion',
-      label: 'Administracion',
-      children: [
-        menuNode('admin-cajas-secuencias', 'Cajas y secuencias'),
-        menuNode('admin-roles-permisos', 'Roles y Permisos'),
-        menuNode('admin-impuestos', 'Impuestos'),
-        menuNode('admin-usuarios', 'Usuarios'),
-        menuNode('admin-identificaciones', 'Identificaciones'),
-        menuNode('admin-formas-pago', 'Formas de Pago'),
-        menuNode('admin-logs-inicio', 'Logs de Inicio'),
-        menuNode('admin-retenciones', 'Retenciones'),
-        menuNode('admin-sql-auditoria', 'SQL Auditoria'),
-      ],
-    },
     {
       key: 'documentos-generados',
       label: 'Documentos Generados',
@@ -5041,9 +5111,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <Pressable style={styles.menuButton} onPress={() => setMenuOpen(true)}>
                 <Text style={styles.menuButtonIcon}>☰</Text>
               </Pressable>
-              <Pressable style={styles.logoutButton} onPress={onLogout}>
-                <Text style={styles.logoutText}>Salir</Text>
-              </Pressable>
             </View>
           </View>
         )}
@@ -5064,7 +5131,19 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <View style={styles.portalHeroCopy}>
                 <Text style={styles.dashboardPanelLabel}>Resumen principal</Text>
                 <Text style={styles.portalHeroTitle}>Servicios autorizados</Text>
-                <Text style={styles.portalHeroText}>Elige el espacio de trabajo disponible para esta sesión móvil.</Text>
+                <Text style={styles.portalHeroText}>Tus herramientas tributarias disponibles en un solo portal móvil.</Text>
+              </View>
+              <View style={styles.portalHeroDevice}>
+                <View style={styles.portalPhone}>
+                  <View style={styles.portalPhoneNotch} />
+                  <View style={styles.portalAppGrid}>
+                    <View style={[styles.portalAppTile, styles.portalAppTileBlue]} />
+                    <View style={[styles.portalAppTile, styles.portalAppTileGreen]} />
+                    <View style={[styles.portalAppTile, styles.portalAppTileOrange]} />
+                    <View style={[styles.portalAppTile, styles.portalAppTilePurple]} />
+                  </View>
+                </View>
+                <View style={styles.portalDeviceBase} />
               </View>
               <View style={styles.portalHeroBadge}>
                 <Text style={styles.portalHeroBadgeText}>{Math.max(services.length, 1)}</Text>
@@ -5127,7 +5206,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   index={services.length + 1}
                 />
               ) : null}
-              <PortalUpcomingCard />
             </View>
           </View>
         ) : null}
@@ -5170,62 +5248,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
         {!loadingMenus && activeView !== 'portal' && activeView !== 'dashboard' && activeView !== 'e-rubrica' && activeView !== 'no-autorizado' ? (
            <View style={[styles.directoryCard, activeView === 'clientes' && styles.clientDirectoryCard]}>
-              {activeView !== 'clientes' && activeView !== 'comprar-documentos' ? <View style={styles.viewToolbar}>
+              {!['clientes', 'comprar-documentos', 'bot', 'productos', 'categorias', 'emisor', 'firma', 'nuevo-cliente', 'nuevo-producto'].includes(activeView) ? <View style={styles.viewToolbar}>
                  <Pressable style={styles.backButton} onPress={() => openView(activeView === 'nuevo-cliente' ? 'clientes' : activeView === 'nuevo-producto' ? 'productos' : canUsePortal ? 'portal' : 'dashboard')}>
                   <Text style={styles.backButtonText}>{activeView === 'nuevo-cliente' || activeView === 'nuevo-producto' ? activeView === 'nuevo-producto' ? 'Productos' : 'Clientes' : 'Inicio'}</Text>
                </Pressable>
               </View> : null}
-
-              {activeView !== 'clientes' && activeView !== 'nuevo-cliente' && activeView !== 'nuevo-producto' && activeView !== 'comprar-documentos' && activeView !== 'firma' ? <View style={styles.directoryStats}>
-              <View>
-                <Text style={styles.statValue}>
-                   {activeView === 'productos'
-                       ? productos.length
-                    : activeView === 'categorias'
-                      ? categoriaTab === 'categorias'
-                        ? categorias.length
-                        : subcategorias.length
-                      : activeView === 'emisor'
-                        ? emisores.length
-                      : activeView === 'perfil'
-                            ? perfilData?.perfil ? 1 : 0
-                            : activeView === 'punto-emision'
-                              ? puntosData?.cajas.length ?? 0
-                        : 0}
-                </Text>
-                <Text style={styles.statLabel}>
-                   {activeView === 'productos'
-                       ? 'productos'
-                      : activeView === 'categorias'
-                        ? 'registros'
-                        : activeView === 'emisor'
-                          ? 'emisores'
-                          : activeView === 'perfil'
-                              ? 'perfil'
-                              : activeView === 'punto-emision'
-                                ? 'puntos'
-                        : 'registros'}
-                </Text>
-              </View>
-              <Pressable
-                style={styles.refreshButton}
-                onPress={() => {
-                  if (
-                     (activeView === 'productos' && authorizedViews.has('productos')) ||
-                    (activeView === 'categorias' && authorizedViews.has('categorias')) ||
-                    (activeView === 'emisor' && authorizedViews.has('emisor')) ||
-                    (activeView === 'perfil' && authorizedViews.has('perfil')) ||
-                    (activeView === 'punto-emision' && authorizedViews.has('punto-emision'))
-                  ) {
-                    setReloadKey((value) => value + 1);
-                  }
-                }}
-              >
-                <Text style={styles.refreshButtonText}>Actualizar</Text>
-              </Pressable>
-             </View>
-
-              : null}
 
              {activeView === 'nuevo-cliente' ? (
                <ClienteForm
@@ -5245,39 +5272,19 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                <EfactBotScreen userName={portalFirstName} />
              ) : activeView === 'clientes' ? (
                <>
-                 <View style={styles.clientBankSummary}>
-                   <View style={styles.clientBankSummaryHeader}>
-                     <View style={styles.clientHeroTitleBlock}>
-                       <View style={styles.clientHeroIcon}>
-                         <MaterialCommunityIcons name="account-group-outline" size={26} color="#FFFFFF" />
-                       </View>
-                       <View>
-                         <Text style={styles.clientBankEyebrow}>TU CARTERA COMERCIAL</Text>
-                         <Text style={styles.clientBankTitle}>Clientes</Text>
-                         <Text style={styles.clientHeroSubtitle}>Personas y empresas en un solo lugar</Text>
-                       </View>
-                   </View>
-                   <Pressable style={styles.clientHeroAddButton} onPress={openNewCliente} accessibilityLabel="Nuevo cliente">
-                     <Text style={styles.clientHeroAddGlyph}>+</Text>
-                   </Pressable>
-                   </View>
-                   <View style={styles.clientBankMetrics}>
-                     <View style={styles.clientBankMetric}>
-                       <Text style={styles.clientBankMetricValue}>{clientes.length}</Text>
-                       <Text style={styles.clientBankMetricLabel}>Clientes</Text>
-                     </View>
-                     <View style={styles.clientBankMetricDivider} />
-                     <View style={styles.clientBankMetric}>
-                       <Text style={styles.clientBankMetricValue}>{clientesActivos}</Text>
-                       <Text style={styles.clientBankMetricLabel}>Activos</Text>
-                     </View>
-                     <View style={styles.clientBankMetricDivider} />
-                     <View style={styles.clientBankMetric}>
-                       <Text style={styles.clientBankMetricValue}>{clientesProveedores}</Text>
-                       <Text style={styles.clientBankMetricLabel}>Proveedores</Text>
-                     </View>
-                   </View>
-                 </View>
+                 <DirectoryHero
+                   eyebrow="TU CARTERA COMERCIAL"
+                   title="Clientes"
+                   subtitle="Personas y empresas en un solo lugar"
+                   icon="account-group-outline"
+                   metrics={[
+                     { value: clientes.length, label: 'Clientes' },
+                     { value: clientesActivos, label: 'Activos' },
+                     { value: clientesProveedores, label: 'Proveedores' },
+                   ]}
+                   onCreate={openNewCliente}
+                   createLabel="Nuevo cliente"
+                 />
                  <View style={styles.clientToolsPanel}>
                    <View style={styles.clientToolsHeader}>
                      <View>
@@ -5380,10 +5387,107 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                />
              ) : activeView === 'productos' ? (
               <>
-                <View style={styles.actionRow}>
-                  <PrimaryButton label="Nuevo producto" loading={false} onPress={openNewProducto} />
+                <DirectoryHero
+                  eyebrow="CATALOGO COMERCIAL"
+                  title="Productos"
+                  subtitle="Productos y servicios listos para facturar"
+                  icon="package-variant-closed"
+                  metrics={[
+                    { value: productos.length, label: 'Registros' },
+                    { value: productos.filter((producto) => producto.tipo === 'PRODUCTO').length, label: 'Productos' },
+                    { value: productos.filter((producto) => producto.tipo === 'SERVICIO').length, label: 'Servicios' },
+                  ]}
+                  onCreate={openNewProducto}
+                  createLabel="Nuevo producto"
+                />
+                <View style={styles.clientToolsPanel}>
+                  <View style={styles.clientToolsHeader}>
+                    <View>
+                      <Text style={styles.clientToolsEyebrow}>Filtros</Text>
+                      <Text style={styles.clientToolsTitle}>Productos registrados</Text>
+                    </View>
+                    <Pressable
+                      style={styles.clientFilterResetButton}
+                      onPress={() => {
+                        setSearch('');
+                        setProductoTipoFiltro('todos');
+                        setProductoCategoriaFiltro(null);
+                        setProductoSubcategoriaFiltro(null);
+                      }}
+                    >
+                      <MaterialCommunityIcons name="filter-remove-outline" size={17} color="#00649D" />
+                      <Text style={styles.clientFilterClear}>Limpiar</Text>
+                    </Pressable>
+                  </View>
+                  <View style={styles.clientSearchBar}>
+                    <MaterialCommunityIcons name="magnify" size={21} color="#0072BD" />
+                    <TextInput
+                      accessibilityLabel="Buscar productos"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      placeholder="Nombre, codigo, categoria..."
+                      placeholderTextColor="#8191A2"
+                      style={styles.clientSearchInput}
+                      value={search}
+                      onChangeText={setSearch}
+                    />
+                    {search ? (
+                      <Pressable accessibilityLabel="Limpiar busqueda" hitSlop={8} onPress={() => setSearch('')}>
+                        <MaterialCommunityIcons name="close-circle" size={19} color="#8AA0B2" />
+                      </Pressable>
+                    ) : null}
+                    <View style={styles.clientSearchCount}>
+                      <Text style={styles.clientSearchCountText}>{filteredProductos.length}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.clientFilterPanel}>
+                    <View style={styles.clientFilterLine}>
+                      <Text style={styles.clientFilterLabel}>Tipo</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientFilterRow}>
+                        {([['todos', 'Todos'], ['PRODUCTO', 'Productos'], ['SERVICIO', 'Servicios']] as const).map(([value, label]) => {
+                          const active = productoTipoFiltro === value;
+                          return (
+                            <Pressable key={value} style={[styles.clientFilterChip, active && styles.clientFilterChipActive]} onPress={() => setProductoTipoFiltro(value as 'todos' | ProductoTipo)}>
+                              <Text style={[styles.clientFilterChipText, active && styles.clientFilterChipTextActive]}>{label}</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                    <View style={styles.clientFilterLine}>
+                      <Text style={styles.clientFilterLabel}>Categoria</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientFilterRow}>
+                        <Pressable style={[styles.clientFilterChip, productoCategoriaFiltro === null && styles.clientFilterChipActive]} onPress={() => { setProductoCategoriaFiltro(null); setProductoSubcategoriaFiltro(null); }}>
+                          <Text style={[styles.clientFilterChipText, productoCategoriaFiltro === null && styles.clientFilterChipTextActive]}>Todas</Text>
+                        </Pressable>
+                        {productoCategoriasFiltro.map((categoria) => {
+                          const active = productoCategoriaFiltro === categoria.id;
+                          return (
+                            <Pressable key={`producto-categoria-${categoria.id}`} style={[styles.clientFilterChip, active && styles.clientFilterChipActive]} onPress={() => { setProductoCategoriaFiltro(categoria.id); setProductoSubcategoriaFiltro(null); }}>
+                              <Text style={[styles.clientFilterChipText, active && styles.clientFilterChipTextActive]} numberOfLines={1}>{categoria.label}</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                    <View style={styles.clientFilterLine}>
+                      <Text style={styles.clientFilterLabel}>Subcategoria</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientFilterRow}>
+                        <Pressable style={[styles.clientFilterChip, productoSubcategoriaFiltro === null && styles.clientFilterChipActive]} onPress={() => setProductoSubcategoriaFiltro(null)}>
+                          <Text style={[styles.clientFilterChipText, productoSubcategoriaFiltro === null && styles.clientFilterChipTextActive]}>Todas</Text>
+                        </Pressable>
+                        {productoSubcategoriasFiltro.map((subcategoria) => {
+                          const active = productoSubcategoriaFiltro === subcategoria.id;
+                          return (
+                            <Pressable key={`producto-subcategoria-${subcategoria.id}`} style={[styles.clientFilterChip, active && styles.clientFilterChipActive]} onPress={() => setProductoSubcategoriaFiltro(subcategoria.id)}>
+                              <Text style={[styles.clientFilterChipText, active && styles.clientFilterChipTextActive]} numberOfLines={1}>{subcategoria.label}</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  </View>
                 </View>
-                <SearchField label="Buscar productos" placeholder="Codigo, nombre, categoria o descripcion" value={search} onChangeText={setSearch} resultCount={filteredProductos.length} totalCount={productos.length} />
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingProductos ? (
                   <View style={styles.directoryLoading}>
@@ -5394,29 +5498,66 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 {!loadingProductos && filteredProductos.length === 0 ? (
                   <EmptyState title={search ? 'Sin coincidencias' : 'Sin productos para mostrar'} text={search ? 'Prueba con otro codigo, nombre o categoria.' : 'Cuando existan registros, apareceran aqui.'} />
                 ) : null}
-                <ResultCollection
-                  items={filteredProductos}
-                  resetKey={search}
-                  keyExtractor={(producto, index) => `producto-${producto.codproducto}-${producto.codigo ?? producto.nombre}-${index}`}
-                  renderItem={(producto) => (
-                    <ProductoCard
-                      producto={producto}
-                      onEdit={() => openEditProducto(producto)}
-                      onDelete={() => confirmDeleteProducto(producto)}
-                    />
-                  )}
-                />
+                <View style={styles.clientListPanel}>
+                  <View style={styles.clientListHeader}>
+                    <View>
+                      <Text style={styles.clientListEyebrow}>Listado</Text>
+                      <Text style={styles.clientListTitle}>Productos y servicios</Text>
+                    </View>
+                    <Text style={styles.clientListCount}>{filteredProductos.length}</Text>
+                  </View>
+                  <ResultCollection
+                    items={filteredProductos}
+                    variant="plain"
+                    resetKey={`${search}-${productoTipoFiltro}-${productoCategoriaFiltro ?? 'todas'}-${productoSubcategoriaFiltro ?? 'todas'}`}
+                    keyExtractor={(producto, index) => `producto-${producto.codproducto}-${producto.codigo ?? producto.nombre}-${index}`}
+                    renderItem={(producto) => (
+                      <ProductoCard
+                        producto={producto}
+                        onView={() => setViewingProducto(producto)}
+                        onEdit={() => openEditProducto(producto)}
+                        onDelete={() => confirmDeleteProducto(producto)}
+                      />
+                    )}
+                  />
+                </View>
               </>
             ) : null}
 
             {activeView === 'categorias' ? (
               <>
-                <View style={styles.directoryTabs}>
-                  <DirectoryTabButton active={categoriaTab === 'categorias'} label="Categorias" onPress={() => setCategoriaTab('categorias')} />
-                  <DirectoryTabButton active={categoriaTab === 'subcategorias'} label="Subcategorias" onPress={() => setCategoriaTab('subcategorias')} />
-                </View>
-                <View style={styles.actionRow}>
-                  <PrimaryButton label={categoriaTab === 'categorias' ? 'Nueva categoria' : 'Nueva subcategoria'} loading={false} onPress={categoriaTab === 'categorias' ? openNewCategoria : openNewSubcategoria} />
+                <DirectoryHero
+                  eyebrow="CLASIFICACION"
+                  title={categoriaTab === 'categorias' ? 'Categorias' : 'Subcategorias'}
+                  subtitle="Ordena tu catalogo para facturar mas rapido"
+                  icon="shape-outline"
+                  metrics={[
+                    { value: categorias.length, label: 'Categorias' },
+                    { value: subcategorias.length, label: 'Subcategorias' },
+                    { value: categoriaTab === 'categorias' ? filteredCategorias.length : filteredSubcategorias.length, label: 'Filtrados' },
+                  ]}
+                  onCreate={categoriaTab === 'categorias' ? openNewCategoria : openNewSubcategoria}
+                  createLabel={categoriaTab === 'categorias' ? 'Nueva categoria' : 'Nueva subcategoria'}
+                />
+                <View style={styles.clientToolsPanel}>
+                  <View style={styles.clientToolsHeader}>
+                    <View>
+                      <Text style={styles.clientToolsEyebrow}>Catalogo</Text>
+                      <Text style={styles.clientToolsTitle}>Categorias y subcategorias</Text>
+                    </View>
+                  </View>
+                  <View style={styles.directoryTabs}>
+                    <DirectoryTabButton active={categoriaTab === 'categorias'} label="Categorias" onPress={() => setCategoriaTab('categorias')} />
+                    <DirectoryTabButton active={categoriaTab === 'subcategorias'} label="Subcategorias" onPress={() => setCategoriaTab('subcategorias')} />
+                  </View>
+                  <SearchField
+                    label={categoriaTab === 'categorias' ? 'Buscar categorias' : 'Buscar subcategorias'}
+                    placeholder="Escribe una descripcion"
+                    value={search}
+                    onChangeText={setSearch}
+                    resultCount={categoriaTab === 'categorias' ? filteredCategorias.length : filteredSubcategorias.length}
+                    totalCount={categoriaTab === 'categorias' ? categorias.length : subcategorias.length}
+                  />
                 </View>
                 {categoriaTab === 'categorias' && categoriaFormMode ? (
                   <CategoriaForm
@@ -5441,14 +5582,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     onSave={saveSubcategoria}
                   />
                 ) : null}
-                <SearchField
-                  label={categoriaTab === 'categorias' ? 'Buscar categorias' : 'Buscar subcategorias'}
-                  placeholder="Escribe una descripcion"
-                  value={search}
-                  onChangeText={setSearch}
-                  resultCount={categoriaTab === 'categorias' ? filteredCategorias.length : filteredSubcategorias.length}
-                  totalCount={categoriaTab === 'categorias' ? categorias.length : subcategorias.length}
-                />
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingCategorias ? (
                   <View style={styles.directoryLoading}>
@@ -5463,46 +5596,85 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   <EmptyState title="Sin subcategorias para mostrar" text="No es obligatorio crear subcategorias." />
                 ) : null}
                 {categoriaTab === 'categorias' ? (
-                  <ResultCollection
-                    items={filteredCategorias}
-                    resetKey={`${categoriaTab}-${search}`}
-                    keyExtractor={(categoria, index) => `categoria-${categoria.idCategoria}-${categoria.descripcion}-${index}`}
-                    renderItem={(categoria) => (
-                        <CategoriaCard
+                  <View style={styles.clientListPanel}>
+                    <View style={styles.clientListHeader}>
+                      <View>
+                        <Text style={styles.clientListEyebrow}>Listado</Text>
+                        <Text style={styles.clientListTitle}>Categorias</Text>
+                      </View>
+                      <Text style={styles.clientListCount}>{filteredCategorias.length}</Text>
+                    </View>
+                    <ResultCollection
+                      items={filteredCategorias}
+                      variant="plain"
+                      resetKey={`${categoriaTab}-${search}`}
+                      keyExtractor={(categoria, index) => `categoria-${categoria.idCategoria}-${categoria.descripcion}-${index}`}
+                      renderItem={(categoria) => (
+                          <CategoriaCard
                           categoria={categoria}
+                          onView={() => setViewingCategoria(categoria)}
                           onEdit={() => openEditCategoria(categoria)}
                           onDelete={() => confirmDeleteCategoria(categoria)}
                         />
-                    )}
-                  />
+                      )}
+                    />
+                  </View>
                 ) : (
-                  <ResultCollection
-                    items={filteredSubcategorias}
-                    resetKey={`${categoriaTab}-${search}`}
-                    keyExtractor={(subcategoria, index) => `subcategoria-${subcategoria.idSubcategoria}-${subcategoria.descripcion}-${index}`}
-                    renderItem={(subcategoria) => (
-                        <SubcategoriaCard
-                          subcategoria={subcategoria}
-                          categoriaDescripcion={
-                            subcategoria.categoriaDescripcion ??
-                            categorias.find((categoria) => categoria.idCategoria === subcategoria.idCategoria)?.descripcion
-                          }
-                          onEdit={() => openEditSubcategoria(subcategoria)}
-                          onDelete={() => confirmDeleteSubcategoria(subcategoria)}
-                        />
-                    )}
-                  />
+                  <View style={styles.clientListPanel}>
+                    <View style={styles.clientListHeader}>
+                      <View>
+                        <Text style={styles.clientListEyebrow}>Listado</Text>
+                        <Text style={styles.clientListTitle}>Subcategorias</Text>
+                      </View>
+                      <Text style={styles.clientListCount}>{filteredSubcategorias.length}</Text>
+                    </View>
+                    <ResultCollection
+                      items={filteredSubcategorias}
+                      variant="plain"
+                      resetKey={`${categoriaTab}-${search}`}
+                      keyExtractor={(subcategoria, index) => `subcategoria-${subcategoria.idSubcategoria}-${subcategoria.descripcion}-${index}`}
+                      renderItem={(subcategoria) => (
+                          <SubcategoriaCard
+                            subcategoria={subcategoria}
+                            categoriaDescripcion={
+                              subcategoria.categoriaDescripcion ??
+                              categorias.find((categoria) => categoria.idCategoria === subcategoria.idCategoria)?.descripcion
+                            }
+                            onView={() => setViewingSubcategoria(subcategoria)}
+                            onEdit={() => openEditSubcategoria(subcategoria)}
+                            onDelete={() => confirmDeleteSubcategoria(subcategoria)}
+                          />
+                      )}
+                    />
+                  </View>
                 )}
               </>
             ) : null}
 
             {activeView === 'emisor' ? (
               <>
-                {!hasActiveEmisor ? (
-                  <View style={styles.actionRow}>
-                    <PrimaryButton label="Nuevo emisor" loading={false} onPress={openNewEmisor} />
+                <DirectoryHero
+                  eyebrow="DATOS TRIBUTARIOS"
+                  title="Emisor"
+                  subtitle="Identidad fiscal para emitir comprobantes"
+                  icon="domain"
+                  metrics={[
+                    { value: emisores.length, label: 'Emisores' },
+                    { value: emisores.filter((emisor) => emisor.estado !== false).length, label: 'Activos' },
+                    { value: emisores.filter(hasFirmaConfigured).length, label: 'Con firma' },
+                  ]}
+                  onCreate={!hasActiveEmisor ? openNewEmisor : undefined}
+                  createLabel="Nuevo emisor"
+                />
+                <View style={styles.clientToolsPanel}>
+                  <View style={styles.clientToolsHeader}>
+                    <View>
+                      <Text style={styles.clientToolsEyebrow}>Configuracion</Text>
+                      <Text style={styles.clientToolsTitle}>Emisores registrados</Text>
+                    </View>
                   </View>
-                ) : null}
+                  <SearchField label="Buscar emisores" placeholder="Razon social, RUC, nombre comercial o correo" value={search} onChangeText={setSearch} resultCount={filteredEmisores.length} totalCount={emisores.length} />
+                </View>
                 {emisorFormMode ? (
                   <EmisorForm
                     form={emisorForm}
@@ -5515,7 +5687,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     onSave={saveEmisor}
                   />
                 ) : null}
-                <SearchField label="Buscar emisores" placeholder="Razon social, RUC, nombre comercial o correo" value={search} onChangeText={setSearch} resultCount={filteredEmisores.length} totalCount={emisores.length} />
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingEmisores ? (
                   <View style={styles.directoryLoading}>
@@ -5526,39 +5697,56 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 {!loadingEmisores && filteredEmisores.length === 0 ? (
                   <EmptyState title="Sin emisores para mostrar" text="Cuando existan registros, apareceran aqui." />
                 ) : null}
-                <ResultCollection
-                  items={filteredEmisores}
-                  resetKey={search}
-                  keyExtractor={(emisor, index) => `emisor-${emisor.codigo}-${emisor.ruc ?? index}`}
-                  renderItem={(emisor) => (
-                    <EmisorCard
-                      emisor={emisor}
-                      onEdit={() => openEditEmisor(emisor)}
-                      onDelete={() => confirmDeleteEmisor(emisor)}
-                    />
-                  )}
-                />
+                <View style={styles.clientListPanel}>
+                  <View style={styles.clientListHeader}>
+                    <View>
+                      <Text style={styles.clientListEyebrow}>Listado</Text>
+                      <Text style={styles.clientListTitle}>Emisores</Text>
+                    </View>
+                    <Text style={styles.clientListCount}>{filteredEmisores.length}</Text>
+                  </View>
+                  <ResultCollection
+                    items={filteredEmisores}
+                    variant="plain"
+                    resetKey={search}
+                    keyExtractor={(emisor, index) => `emisor-${emisor.codigo}-${emisor.ruc ?? index}`}
+                    renderItem={(emisor) => (
+                      <EmisorCard
+                        emisor={emisor}
+                        onView={() => setViewingEmisor(emisor)}
+                        onEdit={() => openEditEmisor(emisor)}
+                        onDelete={() => confirmDeleteEmisor(emisor)}
+                      />
+                    )}
+                  />
+                </View>
               </>
             ) : null}
 
             {activeView === 'firma' ? (
               <>
-                <View style={styles.firmaHero}>
-                  <View style={styles.firmaHeroCopy}>
-                    <Text style={styles.firmaHeroEyebrow}>Seguridad tributaria</Text>
-                    <Text style={styles.firmaHeroTitle}>Mi firma electrónica</Text>
-                    <Text style={styles.firmaHeroText}>Administra tu certificado, valida su vigencia y reemplázalo cuando necesites usar otra firma.</Text>
+                <DirectoryHero
+                  eyebrow="SEGURIDAD TRIBUTARIA"
+                  title="Firma electronica"
+                  subtitle="Certificados, vigencia y clave para comprobantes"
+                  icon="file-certificate-outline"
+                  metrics={[
+                    { value: filteredEmisores.length, label: 'Emisores' },
+                    { value: emisores.filter(hasFirmaConfigured).length, label: 'Firmas' },
+                    { value: Object.values(firmaEstados).filter((estado) => estado.esValida).length, label: 'Vigentes' },
+                  ]}
+                  onCreate={!hasConfiguredFirma ? openAddFirma : undefined}
+                  createLabel="Agregar firma"
+                />
+                <View style={styles.clientToolsPanel}>
+                  <View style={styles.clientToolsHeader}>
+                    <View>
+                      <Text style={styles.clientToolsEyebrow}>Firmas</Text>
+                      <Text style={styles.clientToolsTitle}>Certificados registrados</Text>
+                    </View>
                   </View>
-                  <Pressable style={styles.firmaRefreshButton} onPress={() => setReloadKey((value) => value + 1)}>
-                    <MaterialCommunityIcons name="refresh" size={18} color="#0072BD" />
-                    <Text style={styles.firmaRefreshText}>Actualizar estados</Text>
-                  </Pressable>
+                  <SearchField label="Buscar firmas" placeholder="Razon social o RUC del emisor" value={search} onChangeText={setSearch} resultCount={filteredEmisores.length} totalCount={emisores.length} />
                 </View>
-                {!hasConfiguredFirma ? (
-                  <View style={styles.actionRow}>
-                    <PrimaryButton label="Agregar firma" loading={false} onPress={openAddFirma} />
-                  </View>
-                ) : null}
                 {emisorFormMode && selectedEmisor ? (
                   <FirmaForm
                     emisor={selectedEmisor}
@@ -5572,7 +5760,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     onSave={saveEmisor}
                   />
                 ) : null}
-                <SearchField label="Buscar firmas" placeholder="Razon social o RUC del emisor" value={search} onChangeText={setSearch} resultCount={filteredEmisores.length} totalCount={emisores.length} />
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingEmisores || loadingFirma ? (
                   <View style={styles.directoryLoading}>
@@ -5583,15 +5770,29 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 {!loadingEmisores && filteredEmisores.length === 0 ? (
                   <EmptyState title="Sin emisores para firma" text="Primero registra los datos del emisor." />
                 ) : null}
-                <View style={styles.listStack}>
-                  {filteredEmisores.map((emisor, index) => (
-                    <FirmaCard
-                      key={`firma-${emisor.codigo}-${emisor.ruc ?? index}`}
-                      emisor={emisor}
-                      estado={firmaEstados[emisor.codigo]}
-                      onEdit={() => openFirmaForm(emisor)}
-                    />
-                  ))}
+                <View style={styles.clientListPanel}>
+                  <View style={styles.clientListHeader}>
+                    <View>
+                      <Text style={styles.clientListEyebrow}>Listado</Text>
+                      <Text style={styles.clientListTitle}>Firmas</Text>
+                    </View>
+                    <Text style={styles.clientListCount}>{filteredEmisores.length}</Text>
+                  </View>
+                  <ResultCollection
+                    items={filteredEmisores}
+                    variant="plain"
+                    resetKey={search}
+                    keyExtractor={(emisor, index) => `firma-${emisor.codigo}-${emisor.ruc ?? index}`}
+                    renderItem={(emisor) => (
+                      <FirmaCard
+                        emisor={emisor}
+                        estado={firmaEstados[emisor.codigo]}
+                        onView={() => setViewingFirma(emisor)}
+                        onEdit={() => openFirmaForm(emisor)}
+                        onDelete={() => confirmDeleteFirma(emisor)}
+                      />
+                    )}
+                  />
                 </View>
               </>
             ) : null}
@@ -5962,9 +6163,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               )
             ) : null}
 
-            {activeView !== 'clientes' && activeView !== 'productos' && activeView !== 'categorias' && activeView !== 'emisor' && activeView !== 'firma' && activeView !== 'perfil' && activeView !== 'punto-emision' && activeView !== 'nueva-factura' && activeView !== 'mis-facturas' && activeView !== 'nueva-nota-credito' && activeView !== 'mis-notas-credito' && activeView !== 'nueva-nota-debito' && activeView !== 'mis-notas-debito' && activeView !== 'nueva-liquidacion-compra' && activeView !== 'mis-liquidaciones-compra' && activeView !== 'nueva-guia-remision' && activeView !== 'mis-guias-remision' && activeView !== 'retenciones' && activeView !== 'bot' && !isAdminMobileView(activeView) && !isOperationalMobileView(activeView) ? (
-              <EmptyState title="Modulo autorizado" text="Esta seccion queda preparada para conectar la operacion e-fact correspondiente desde backend." />
-            ) : null}
           </View>
         ) : null}
         </ScreenTransition>
@@ -5984,6 +6182,39 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         title={viewingCliente ? getClienteDisplayName(viewingCliente) : 'Cliente'}
         values={viewingCliente ? getClienteDetailValues(viewingCliente, getTipoClienteLabel(viewingCliente.tipoCliente, clienteLookups), facturasList) : []}
         onClose={() => setViewingCliente(null)}
+      />
+      <ItemDetailModal
+        visible={Boolean(viewingProducto)}
+        title={viewingProducto?.nombre || 'Producto'}
+        values={viewingProducto ? getProductoDetailValues(viewingProducto) : []}
+        onClose={() => setViewingProducto(null)}
+      />
+      <ItemDetailModal
+        visible={Boolean(viewingCategoria)}
+        title={viewingCategoria?.descripcion || 'Categoria'}
+        values={viewingCategoria ? [`Estado: ${viewingCategoria.estado === false ? 'Inactiva' : 'Activa'}`] : []}
+        onClose={() => setViewingCategoria(null)}
+      />
+      <ItemDetailModal
+        visible={Boolean(viewingSubcategoria)}
+        title={viewingSubcategoria?.descripcion || 'Subcategoria'}
+        values={viewingSubcategoria ? [
+          `Categoria: ${viewingSubcategoria.categoriaDescripcion ?? categorias.find((categoria) => categoria.idCategoria === viewingSubcategoria.idCategoria)?.descripcion ?? 'Sin categoria asociada'}`,
+          `Estado: ${viewingSubcategoria.estado === false ? 'Inactiva' : 'Activa'}`,
+        ] : []}
+        onClose={() => setViewingSubcategoria(null)}
+      />
+      <ItemDetailModal
+        visible={Boolean(viewingEmisor)}
+        title={viewingEmisor?.razonSocial || viewingEmisor?.nomComercial || 'Emisor'}
+        values={viewingEmisor ? getEmisorDetailValues(viewingEmisor) : []}
+        onClose={() => setViewingEmisor(null)}
+      />
+      <ItemDetailModal
+        visible={Boolean(viewingFirma)}
+        title={viewingFirma?.razonSocial || viewingFirma?.nomComercial || 'Firma'}
+        values={viewingFirma ? getFirmaDetailValues(viewingFirma, firmaEstados[viewingFirma.codigo]) : []}
+        onClose={() => setViewingFirma(null)}
       />
       <Modal visible={notificationsOpen} animationType="fade" transparent statusBarTranslucent onRequestClose={() => setNotificationsOpen(false)}>
         <View style={styles.notificationsOverlay}>
@@ -6012,16 +6243,33 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   <Text style={styles.notificationText}>No hay actividad pendiente para mostrar.</Text>
                 </View>
               ) : null}
-              {!loadingNotifications ? notifications.map((notification) => (
-                <View key={notification.id} style={[styles.notificationItem, notification.read && styles.notificationItemRead]}>
-                  <View style={styles.notificationBullet} />
+              {!loadingNotifications ? notifications.map((notification) => {
+                const tone = getNotificationTone(notification);
+                const itemToneStyle = tone === 'danger'
+                  ? styles.notificationItemDanger
+                  : tone === 'warning'
+                    ? styles.notificationItemWarning
+                    : tone === 'success'
+                      ? styles.notificationItemSuccess
+                      : styles.notificationItemInfo;
+                const bulletToneStyle = tone === 'danger'
+                  ? styles.notificationBulletDanger
+                  : tone === 'warning'
+                    ? styles.notificationBulletWarning
+                    : tone === 'success'
+                      ? styles.notificationBulletSuccess
+                      : styles.notificationBulletInfo;
+                return (
+                <View key={notification.id} style={[styles.notificationItem, itemToneStyle, notification.read && styles.notificationItemRead]}>
+                  <View style={[styles.notificationBullet, bulletToneStyle]} />
                   <View style={styles.notificationCopy}>
                     <Text style={styles.notificationTitle}>{notification.title}</Text>
                     <Text style={styles.notificationText}>{notification.text}</Text>
                     {notification.date ? <Text style={styles.notificationMeta}>{notification.date}</Text> : null}
                   </View>
                 </View>
-              )) : null}
+              );
+              }) : null}
             </ScrollView>
           </View>
         </View>
@@ -6326,6 +6574,46 @@ function numberValue(value: unknown) {
 function getClienteKey(cliente: Cliente, index: number) {
   const row = cliente as Cliente & Record<string, unknown>;
   return String(cliente.codcliente || row.Codcliente || row.CodCliente || getClienteIdentification(cliente) || `${getClienteDisplayName(cliente)}-${index}`);
+}
+
+function getProductoDetailValues(producto: Producto) {
+  return [
+    `Tipo: ${producto.tipo === 'SERVICIO' ? 'Servicio' : 'Producto'}`,
+    `Codigo: ${producto.codigo || 'Sin codigo'}`,
+    `Precio base: ${formatMoney(producto.precioBase)}`,
+    `IVA: ${producto.iva ? 'Si' : 'No'}`,
+    `Tarifa: ${producto.tarifaDescripcion ?? producto.tarifa ?? 'Sin tarifa'}`,
+    `Categoria: ${producto.categoriaDescripcion || 'Sin categoria'}`,
+    `Subcategoria: ${producto.subcategoriaDescripcion || 'Sin subcategoria'}`,
+    `Estado: ${producto.estado === false ? 'Inactivo' : 'Activo'}`,
+  ];
+}
+
+function getEmisorDetailValues(emisor: Emisor) {
+  return [
+    `RUC: ${emisor.ruc || 'Sin RUC'}`,
+    `Nombre comercial: ${emisor.nomComercial || 'Sin nombre comercial'}`,
+    `Correo: ${emisor.email || 'Sin correo'}`,
+    `Telefono: ${emisor.telefono || 'Sin telefono'}`,
+    `Direccion establecimiento: ${emisor.dirEstablecimiento || 'Sin direccion'}`,
+    `Direccion matriz: ${emisor.direccionMatriz || 'Sin direccion'}`,
+    `Lleva contabilidad: ${emisor.llevaContabilidad || 'NO'}`,
+    `Retenciones: ${emisor.retenciones || 'NO'}`,
+    `Estado: ${emisor.estado === false ? 'Inactivo' : 'Activo'}`,
+  ];
+}
+
+function getFirmaDetailValues(emisor: Emisor, estado?: FirmaEstado) {
+  return [
+    `Emisor: ${emisor.razonSocial || emisor.nomComercial || 'Sin emisor'}`,
+    `RUC: ${emisor.ruc || 'Sin RUC'}`,
+    `Archivo: ${getFirmaFileName(emisor.pathCertificado) || 'Sin archivo'}`,
+    `Estado: ${estado?.esValida ? 'Vigente' : estado ? 'No valida' : hasFirmaConfigured(emisor) ? 'Configurada' : 'Pendiente'}`,
+    estado?.diasRestantes !== null && estado?.diasRestantes !== undefined ? `Dias restantes: ${estado.diasRestantes}` : '',
+    estado?.fechaExpiracion ? `Expira: ${formatDocumentDate(estado.fechaExpiracion)}` : '',
+    estado?.nombreTitular ? `Titular: ${estado.nombreTitular}` : '',
+    estado?.identificacion ? `Identificacion: ${estado.identificacion}` : '',
+  ].filter(Boolean);
 }
 
 function formatMoney(value?: number | null) {
@@ -8721,11 +9009,72 @@ function PortalUpcomingCard() {
   );
 }
 
+function DirectoryHero({
+  eyebrow,
+  title,
+  subtitle,
+  icon,
+  metrics,
+  onCreate,
+  createLabel,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  metrics: { value: string | number; label: string }[];
+  onCreate?: () => void;
+  createLabel?: string;
+}) {
+  return (
+    <View style={styles.clientBankSummary}>
+      <View style={styles.clientBankSummaryHeader}>
+        <View style={styles.clientHeroTitleBlock}>
+          <View style={styles.clientHeroIcon}>
+            <MaterialCommunityIcons name={icon} size={26} color="#FFFFFF" />
+          </View>
+          <View style={styles.clientHeroCopy}>
+            <Text style={styles.clientBankEyebrow}>{eyebrow}</Text>
+            <Text style={styles.clientBankTitle}>{title}</Text>
+            <Text style={styles.clientHeroSubtitle}>{subtitle}</Text>
+          </View>
+        </View>
+        {onCreate ? (
+          <Pressable style={styles.clientHeroAddButton} onPress={onCreate} accessibilityLabel={createLabel ?? 'Nuevo registro'}>
+            <Text style={styles.clientHeroAddGlyph}>+</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <View style={styles.clientBankMetrics}>
+        {metrics.map((metric, index) => (
+          <View key={`${metric.label}-${index}`} style={styles.clientBankMetricSlot}>
+            {index > 0 ? <View style={styles.clientBankMetricDivider} /> : null}
+            <View style={styles.clientBankMetric}>
+              <Text style={styles.clientBankMetricValue}>{metric.value}</Text>
+              <Text style={styles.clientBankMetricLabel}>{metric.label}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 type BotMessage = { id: string; role: 'user' | 'assistant'; text: string };
+
+function TypingDots() {
+  return (
+    <View style={styles.typingDots}>
+      <Text style={styles.typingDotText}>.</Text>
+      <Text style={styles.typingDotText}>.</Text>
+      <Text style={styles.typingDotText}>.</Text>
+    </View>
+  );
+}
 
 function EfactBotScreen({ userName }: { userName: string }) {
   const [messages, setMessages] = useState<BotMessage[]>([
-    { id: 'welcome', role: 'assistant', text: `Hola ${userName || '👋'} Soy Númi. También puedo ayudarte con e-rúbrica: solicitudes de firma, firma de documentos y validación de firmas. ¿Qué necesitas hacer?` },
+    { id: 'welcome', role: 'assistant', text: `Hola ${userName || ''}. Soy Númi, tu asistente de E-FACT. ¿En qué te ayudo hoy?` },
   ]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -8784,36 +9133,45 @@ function EfactBotScreen({ userName }: { userName: string }) {
 
   return (
     <KeyboardAvoidingView style={styles.botScreen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.botHero}>
-        <Image source={require('./assets/numi-robot.png')} style={styles.botAvatar} />
-        <View style={styles.botHeroCopy}>
-          <Text style={styles.botHeroTitle}>Númi Bot</Text>
-          <Text style={styles.botHeroText}>Tu asistente para e-fact y e-rúbrica</Text>
-          <Text style={styles.botHeroStatus}>● Disponible para ayudarte</Text>
-        </View>
-        <View style={styles.botOnlineDot} />
-      </View>
       <ScrollView style={styles.botMessages} contentContainerStyle={styles.botMessagesContent} keyboardShouldPersistTaps="handled">
-        <Text style={styles.botHint}>Pregúntame cómo llenar una solicitud de firma, firmar un documento o validar una firma en e-rúbrica.</Text>
         {messages.map((message) => (
-          <View key={message.id} style={[styles.botBubble, message.role === 'user' ? styles.botUserBubble : styles.botAssistantBubble]}>
-            <View style={styles.botMessageRow}>
-              <Text style={[styles.botBubbleText, message.role === 'user' && styles.botUserBubbleText]}>{message.text}</Text>
-              {message.role === 'assistant' ? <Pressable onPress={() => Speech.speak(message.text, { language: 'es-EC', rate: 0.96 })} hitSlop={8}><MaterialCommunityIcons name="volume-high" size={17} color="#0878C9" /></Pressable> : null}
+          <View key={message.id} style={message.role === 'user' ? styles.botUserRow : styles.botAssistantRow}>
+            {message.role === 'assistant' ? <Image source={require('./assets/numi-robot.png')} style={styles.botMessageAvatar} /> : null}
+            <View style={[styles.botBubble, message.role === 'user' ? styles.botUserBubble : styles.botAssistantBubble]}>
+              <View style={styles.botMessageRow}>
+                <Text style={[styles.botBubbleText, message.role === 'user' && styles.botUserBubbleText]}>{message.text}</Text>
+                {message.role === 'assistant' ? <Pressable style={styles.botAudioButton} onPress={() => Speech.speak(message.text, { language: 'es-EC', rate: 0.96 })} hitSlop={8}><MaterialCommunityIcons name="volume-high" size={16} color="#0878C9" /></Pressable> : null}
+              </View>
+              {message.role === 'assistant' ? (
+                <View style={styles.botBubbleFeedback}>
+                  <Pressable accessibilityLabel="Respuesta util" hitSlop={6} style={styles.botFeedbackButton}>
+                    <MaterialCommunityIcons name="thumb-up-outline" size={15} color="#6E94B4" />
+                  </Pressable>
+                  <Pressable accessibilityLabel="Respuesta no util" hitSlop={6} style={styles.botFeedbackButton}>
+                    <MaterialCommunityIcons name="thumb-down-outline" size={15} color="#6E94B4" />
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
           </View>
         ))}
-        {sending ? <View style={[styles.botBubble, styles.botAssistantBubble]}><ActivityIndicator color="#0878C9" /></View> : null}
-      </ScrollView>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.botSuggestions}>
-        {['¿Cómo lleno una solicitud de firma?', '¿Cómo firmo un documento?', '¿Cómo valido una firma?', '¿Qué documentos puedo firmar?'].map((item) => (
-          <Pressable key={item} style={styles.botSuggestion} onPress={() => send(item)} disabled={sending}>
-            <Text style={styles.botSuggestionText}>{item}</Text>
-          </Pressable>
-        ))}
+        {sending ? (
+          <View style={styles.botAssistantRow}>
+            <Image source={require('./assets/numi-robot.png')} style={styles.botMessageAvatar} />
+            <View style={[styles.botBubble, styles.botAssistantBubble, styles.botTypingBubble]}>
+              <TypingDots />
+            </View>
+          </View>
+        ) : null}
       </ScrollView>
       {error ? <Text style={styles.botError}>{error}</Text> : null}
       <View style={styles.botComposer}>
+        <Pressable style={styles.botToolButton} disabled={sending}>
+          <MaterialCommunityIcons name="paperclip" size={19} color="#6E94B4" />
+        </Pressable>
+        <Pressable style={styles.botToolButton} disabled={sending}>
+          <MaterialCommunityIcons name="emoticon-outline" size={19} color="#6E94B4" />
+        </Pressable>
         <Pressable style={[styles.botVoiceButton, listening && styles.botVoiceButtonActive]} onPress={toggleVoiceInput} disabled={sending}>
           <MaterialCommunityIcons name={listening ? 'microphone' : 'microphone-outline'} size={21} color={listening ? '#FFFFFF' : '#0878C9'} />
         </Pressable>
@@ -9138,6 +9496,8 @@ function DashboardHomeScreen({
           <DashboardMetric value={productosCount} label="Productos" />
         </View>
       </View>
+
+      <DashboardChartCard facturas={facturas} />
 
       <View style={styles.dashboardSectionHeader}>
         <Text style={styles.dashboardSectionTitle}>Acciones principales</Text>
@@ -9564,6 +9924,21 @@ function ToggleRow({
   );
 }
 
+function FormTopBar({ onBack, onDiscard }: { onBack: () => void; onDiscard: () => void }) {
+  return (
+    <View style={styles.clientFormTopBar}>
+      <Pressable accessibilityLabel="Volver" style={styles.clientFormBackButton} onPress={onBack}>
+        <MaterialCommunityIcons name="arrow-left" size={19} color="#00649D" />
+        <Text style={styles.clientFormBackText}>Volver</Text>
+      </Pressable>
+      <Pressable accessibilityLabel="Descartar cambios" style={styles.clientFormDiscardButton} onPress={onDiscard}>
+        <MaterialCommunityIcons name="close" size={17} color="#6B7D8C" />
+        <Text style={styles.clientFormDiscardText}>Descartar</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function ClienteForm({
   form,
   mode,
@@ -9602,21 +9977,20 @@ function ClienteForm({
     { ideSec: 2, ideCodigo: '05', ideDescripcion: 'Cedula' },
     { ideSec: 1, ideCodigo: '04', ideDescripcion: 'RUC' },
     { ideSec: 3, ideCodigo: '06', ideDescripcion: 'Pasaporte' },
+    { ideSec: 4, ideCodigo: '08', ideDescripcion: 'Identificacion del exterior' },
   ];
+  const identificacionesPorTipoCliente = identificaciones.filter((item) => {
+    const label = normalizeText(`${item.ideCodigo} ${item.ideDescripcion}`);
+    if (!isEmpresa) return label.includes('ruc') || label.includes('cedula') || label.includes('pasaporte') || label.includes('exterior');
+    return label.includes('ruc') || label.includes('pasaporte') || label.includes('exterior');
+  });
   const paises = lookups?.paises ?? [];
+  const diasCreditoRapidos = ['0', '15', '30', '45'];
+  const diasCreditoPersonalizado = form.diasCredito.trim() !== '' && !diasCreditoRapidos.includes(form.diasCredito.trim());
 
   return (
     <View style={styles.clientFormCard}>
-      <View style={styles.clientFormTopBar}>
-        <Pressable accessibilityLabel="Volver a clientes" style={styles.clientFormBackButton} onPress={onCancel}>
-          <MaterialCommunityIcons name="arrow-left" size={19} color="#00649D" />
-          <Text style={styles.clientFormBackText}>Volver</Text>
-        </Pressable>
-        <Pressable accessibilityLabel="Descartar cambios" style={styles.clientFormDiscardButton} onPress={onReset}>
-          <MaterialCommunityIcons name="close" size={17} color="#6B7D8C" />
-          <Text style={styles.clientFormDiscardText}>Descartar</Text>
-        </Pressable>
-      </View>
+      <FormTopBar onBack={onCancel} onDiscard={onReset} />
       <Text style={styles.clientFormTitle}>{mode === 'edit' ? 'Editar cliente / proveedor' : 'Nuevo cliente / proveedor'}</Text>
       {loadingLookups ? <Text style={styles.mutedText}>Cargando catalogos...</Text> : null}
 
@@ -9632,13 +10006,18 @@ function ClienteForm({
               allowClear
               onChange={(value) => {
                 onChange('tipoCliente', value ?? 0);
+                if (value === 2) {
+                  const currentIdentification = identificaciones.find((item) => item.ideSec === form.tipoidentificacion);
+                  const currentLabel = normalizeText(`${currentIdentification?.ideCodigo ?? ''} ${currentIdentification?.ideDescripcion ?? ''}`);
+                  if (currentLabel.includes('cedula')) onChange('tipoidentificacion', 0);
+                }
               }}
             />
           </View>
           <View style={styles.compactFieldGrow}>
             <DropdownField
               label="Tipo identificacion *"
-              options={identificaciones.map((item) => ({ label: item.ideDescripcion, value: item.ideSec }))}
+              options={identificacionesPorTipoCliente.map((item) => ({ label: item.ideDescripcion, value: item.ideSec }))}
               value={form.tipoidentificacion}
               onChange={(value) => {
                 if (value !== null) onChange('tipoidentificacion', value);
@@ -9685,18 +10064,7 @@ function ClienteForm({
 
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Contacto</Text>
-        <View style={styles.compactFieldRow}>
-          <View style={styles.compactFieldGrow}>
-            <Field label="Correo principal *" value={form.correo} onChangeText={(value) => onChange('correo', value)} autoCapitalize="none" keyboardType="email-address" />
-          </View>
-          <View style={styles.compactFieldGrow}>
-            {form.tipoContactoTelefonico === 'CONVENCIONAL' ? (
-              <Field label="Telefono convencional" value={form.telefonoconvencional} onChangeText={(value) => onChange('telefonoconvencional', value)} keyboardType="phone-pad" />
-            ) : (
-              <Field label="Celular" value={form.celular} onChangeText={(value) => onChange('celular', value)} keyboardType="phone-pad" />
-            )}
-          </View>
-        </View>
+        <Field label="Correo principal *" value={form.correo} onChangeText={(value) => onChange('correo', value)} autoCapitalize="none" keyboardType="email-address" />
         {form.correosAdicionales.map((correo, index) => (
           <View key={`correo-${index}`} style={styles.inlineFieldRow}>
             <View style={styles.inlineFieldGrow}>
@@ -9731,6 +10099,11 @@ function ClienteForm({
           <SegmentButton active={form.tipoContactoTelefonico === 'CELULAR'} label="Celular" onPress={() => onChange('tipoContactoTelefonico', 'CELULAR')} />
           <SegmentButton active={form.tipoContactoTelefonico === 'CONVENCIONAL'} label="Convencional" onPress={() => onChange('tipoContactoTelefonico', 'CONVENCIONAL')} />
         </View>
+        {form.tipoContactoTelefonico === 'CONVENCIONAL' ? (
+          <Field label="Telefono convencional" value={form.telefonoconvencional} onChangeText={(value) => onChange('telefonoconvencional', value)} keyboardType="phone-pad" />
+        ) : (
+          <Field label="Celular" value={form.celular} onChangeText={(value) => onChange('celular', value)} keyboardType="phone-pad" />
+        )}
       </View>
 
       <View style={styles.formSectionBox}>
@@ -9773,11 +10146,14 @@ function ClienteForm({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Informacion adicional</Text>
         <View style={styles.segment}>
-          {[0, 15, 30, 45].map((dias) => (
-            <SegmentButton key={dias} active={form.diasCredito === String(dias)} label={`${dias} dias`} onPress={() => onChange('diasCredito', String(dias))} />
+          {diasCreditoRapidos.map((dias) => (
+            <SegmentButton key={dias} active={form.diasCredito === dias} label={`${dias} dias`} onPress={() => onChange('diasCredito', dias)} />
           ))}
+          <SegmentButton active={diasCreditoPersonalizado} label="Otro" onPress={() => onChange('diasCredito', diasCreditoPersonalizado ? '0' : '')} />
         </View>
-        <Field label="Dias de credito" value={form.diasCredito} onChangeText={(value) => onChange('diasCredito', value.replace(/[^\d]/g, ''))} keyboardType="number-pad" />
+        {diasCreditoPersonalizado || form.diasCredito.trim() === '' ? (
+          <Field label="Dias de credito" value={form.diasCredito} onChangeText={(value) => onChange('diasCredito', value.replace(/[^\d]/g, ''))} keyboardType="number-pad" />
+        ) : null}
         <Field label="Observaciones" value={form.observaciones} onChangeText={(value) => onChange('observaciones', value)} />
       </View>
 
@@ -9911,6 +10287,7 @@ function ProductoForm({
 
   return (
     <View style={styles.clientFormCard}>
+      <FormTopBar onBack={onCancel} onDiscard={onReset} />
       <Text style={styles.clientFormTitle}>{mode === 'edit' ? 'Editar producto o servicio' : 'Registrar producto o servicio'}</Text>
       {loadingLookups ? <Text style={styles.mutedText}>Cargando catalogos...</Text> : null}
 
@@ -9997,14 +10374,13 @@ function ProductoForm({
 
       <View style={styles.formActions}>
         <SecondaryButton label="Limpiar formulario" onPress={onReset} />
-        <SecondaryButton label="Cancelar" onPress={onCancel} />
         <PrimaryButton label={mode === 'edit' ? 'Guardar' : 'Crear registro'} loading={saving} onPress={onSave} />
       </View>
     </View>
   );
 }
 
-function ProductoCard({ producto, onEdit, onDelete }: { producto: Producto; onEdit: () => void; onDelete: () => void }) {
+function ProductoCard({ producto, onView, onEdit, onDelete }: { producto: Producto; onView: () => void; onEdit: () => void; onDelete: () => void }) {
   const precioBase = Number.isFinite(producto.precioBase) ? producto.precioBase : 0;
   const tarifa = producto.tarifaDescripcion ?? (producto.tarifa !== null && producto.tarifa !== undefined ? `${producto.tarifa}%` : null);
   const ivaTarifa = tarifa ? `Con IVA - ${tarifa}` : producto.iva ? 'Con IVA' : 'Sin IVA';
@@ -10049,10 +10425,16 @@ function ProductoCard({ producto, onEdit, onDelete }: { producto: Producto; onEd
       </View>
 
       <View style={styles.clientActions}>
+        <Pressable style={styles.smallActionButton} onPress={onView}>
+          <MaterialCommunityIcons name="eye-outline" size={16} color="#00649D" />
+          <Text style={styles.smallActionText}>Ver</Text>
+        </Pressable>
         <Pressable style={styles.smallActionButton} onPress={onEdit}>
+          <MaterialCommunityIcons name="pencil-outline" size={16} color="#00649D" />
           <Text style={styles.smallActionText}>Editar</Text>
         </Pressable>
         <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={onDelete}>
+          <MaterialCommunityIcons name="trash-can-outline" size={16} color="#B4232D" />
           <Text style={[styles.smallActionText, styles.smallDangerText]}>Eliminar</Text>
         </Pressable>
       </View>
@@ -10079,6 +10461,7 @@ function CategoriaForm({
 }) {
   return (
     <View style={styles.clientFormCard}>
+      <FormTopBar onBack={onCancel} onDiscard={onReset} />
       <Text style={styles.clientFormTitle}>{mode === 'edit' ? 'Editar categoria' : 'Nueva categoria'}</Text>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Operacion</Text>
@@ -10086,7 +10469,6 @@ function CategoriaForm({
       </View>
       <View style={styles.formActions}>
         <SecondaryButton label="Limpiar formulario" onPress={onReset} />
-        <SecondaryButton label="Cancelar" onPress={onCancel} />
         <PrimaryButton label="Guardar" loading={saving} onPress={onSave} />
       </View>
     </View>
@@ -10114,6 +10496,7 @@ function SubcategoriaForm({
 }) {
   return (
     <View style={styles.clientFormCard}>
+      <FormTopBar onBack={onCancel} onDiscard={onReset} />
       <Text style={styles.clientFormTitle}>{mode === 'edit' ? 'Editar subcategoria' : 'Nueva subcategoria'}</Text>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Operacion</Text>
@@ -10129,19 +10512,19 @@ function SubcategoriaForm({
       </View>
       <View style={styles.formActions}>
         <SecondaryButton label="Limpiar formulario" onPress={onReset} />
-        <SecondaryButton label="Cancelar" onPress={onCancel} />
         <PrimaryButton label="Guardar" loading={saving} onPress={onSave} />
       </View>
     </View>
   );
 }
 
-function CategoriaCard({ categoria, onEdit, onDelete }: { categoria: CategoriaCatalogo; onEdit: () => void; onDelete: () => void }) {
+function CategoriaCard({ categoria, onView, onEdit, onDelete }: { categoria: CategoriaCatalogo; onView: () => void; onEdit: () => void; onDelete: () => void }) {
   return (
     <CatalogCard
       initials="C"
       title={categoria.descripcion || 'Categoria sin descripcion'}
       subtitle="Categoria"
+      onView={onView}
       onEdit={onEdit}
       onDelete={onDelete}
     />
@@ -10151,11 +10534,13 @@ function CategoriaCard({ categoria, onEdit, onDelete }: { categoria: CategoriaCa
 function SubcategoriaCard({
   subcategoria,
   categoriaDescripcion,
+  onView,
   onEdit,
   onDelete,
 }: {
   subcategoria: SubcategoriaCatalogo;
   categoriaDescripcion?: string | null;
+  onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -10164,6 +10549,7 @@ function SubcategoriaCard({
       initials="S"
       title={subcategoria.descripcion || 'Subcategoria sin descripcion'}
       subtitle={categoriaDescripcion || 'Sin categoria asociada'}
+      onView={onView}
       onEdit={onEdit}
       onDelete={onDelete}
     />
@@ -10174,12 +10560,14 @@ function CatalogCard({
   initials,
   title,
   subtitle,
+  onView,
   onEdit,
   onDelete,
 }: {
   initials: string;
   title: string;
   subtitle: string;
+  onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -10195,10 +10583,16 @@ function CatalogCard({
         </View>
       </View>
       <View style={styles.clientActions}>
+        <Pressable style={styles.smallActionButton} onPress={onView}>
+          <MaterialCommunityIcons name="eye-outline" size={16} color="#00649D" />
+          <Text style={styles.smallActionText}>Ver</Text>
+        </Pressable>
         <Pressable style={styles.smallActionButton} onPress={onEdit}>
+          <MaterialCommunityIcons name="pencil-outline" size={16} color="#00649D" />
           <Text style={styles.smallActionText}>Editar</Text>
         </Pressable>
         <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={onDelete}>
+          <MaterialCommunityIcons name="trash-can-outline" size={16} color="#B4232D" />
           <Text style={[styles.smallActionText, styles.smallDangerText]}>Eliminar</Text>
         </Pressable>
       </View>
@@ -10227,6 +10621,7 @@ function EmisorForm({
 }) {
   return (
     <View style={styles.clientFormCard}>
+      <FormTopBar onBack={onCancel} onDiscard={onReset} />
       <Text style={styles.clientFormTitle}>{mode === 'edit' ? 'Editar emisor' : 'Registrar emisor'}</Text>
 
       <View style={styles.formSectionBox}>
@@ -10265,14 +10660,13 @@ function EmisorForm({
 
       <View style={styles.formActions}>
         <SecondaryButton label="Limpiar formulario" onPress={onReset} />
-        <SecondaryButton label="Cancelar" onPress={onCancel} />
         <PrimaryButton label={mode === 'edit' ? 'Guardar cambios' : 'Crear emisor'} loading={saving} onPress={onSave} />
       </View>
     </View>
   );
 }
 
-function EmisorCard({ emisor, onEdit, onDelete }: { emisor: Emisor; onEdit: () => void; onDelete: () => void }) {
+function EmisorCard({ emisor, onView, onEdit, onDelete }: { emisor: Emisor; onView: () => void; onEdit: () => void; onDelete: () => void }) {
   const title = emisor.razonSocial || emisor.nomComercial || 'Emisor sin nombre';
   const contact = [emisor.email, emisor.telefono].filter(Boolean).join(' - ') || 'Sin contacto';
 
@@ -10300,10 +10694,16 @@ function EmisorCard({ emisor, onEdit, onDelete }: { emisor: Emisor; onEdit: () =
       </View>
 
       <View style={styles.clientActions}>
+        <Pressable style={styles.smallActionButton} onPress={onView}>
+          <MaterialCommunityIcons name="eye-outline" size={16} color="#00649D" />
+          <Text style={styles.smallActionText}>Ver</Text>
+        </Pressable>
         <Pressable style={styles.smallActionButton} onPress={onEdit}>
+          <MaterialCommunityIcons name="pencil-outline" size={16} color="#00649D" />
           <Text style={styles.smallActionText}>Editar</Text>
         </Pressable>
         <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={onDelete}>
+          <MaterialCommunityIcons name="trash-can-outline" size={16} color="#B4232D" />
           <Text style={[styles.smallActionText, styles.smallDangerText]}>Eliminar</Text>
         </Pressable>
       </View>
@@ -10337,6 +10737,7 @@ function FirmaForm({
 
   return (
     <View style={styles.clientFormCard}>
+      <FormTopBar onBack={onCancel} onDiscard={onClear} />
       <Text style={styles.clientFormTitle}>{emisor.nomComercial || emisor.razonSocial || 'Firma electronica'}</Text>
       <Text style={styles.clientMeta}>{emisor.ruc ? `RUC ${emisor.ruc}` : 'RUC no disponible'}</Text>
 
@@ -10363,14 +10764,13 @@ function FirmaForm({
 
       <View style={styles.formActions}>
         {configured ? <SecondaryButton label="Quitar firma" onPress={onClear} /> : null}
-        <SecondaryButton label="Cancelar" onPress={onCancel} />
         <PrimaryButton label={configured ? 'Guardar firma' : 'Agregar firma'} loading={saving} onPress={onSave} />
       </View>
     </View>
   );
 }
 
-function FirmaCard({ emisor, estado, onEdit }: { emisor: Emisor; estado?: FirmaEstado; onEdit: () => void }) {
+function FirmaCard({ emisor, estado, onView, onEdit, onDelete }: { emisor: Emisor; estado?: FirmaEstado; onView: () => void; onEdit: () => void; onDelete: () => void }) {
   const configured = hasFirmaConfigured(emisor) || estado?.tieneCertificado === true;
   const title = emisor.razonSocial || emisor.nomComercial || 'Emisor sin nombre';
   const status = !configured
@@ -10382,7 +10782,7 @@ function FirmaCard({ emisor, estado, onEdit }: { emisor: Emisor; estado?: FirmaE
         : 'Configurada';
 
   return (
-    <View style={styles.firmaCard}>
+    <View style={styles.clientCard}>
       <View style={styles.clientCardHeader}>
         <View style={[styles.clientAvatar, configured && styles.clientAvatarSystem]}>
           <Text style={styles.clientAvatarText}>F</Text>
@@ -10444,8 +10844,17 @@ function FirmaCard({ emisor, estado, onEdit }: { emisor: Emisor; estado?: FirmaE
       ) : null}
 
       <View style={styles.clientActions}>
+        <Pressable style={styles.smallActionButton} onPress={onView}>
+          <MaterialCommunityIcons name="eye-outline" size={16} color="#00649D" />
+          <Text style={styles.smallActionText}>Ver</Text>
+        </Pressable>
         <Pressable style={styles.smallActionButton} onPress={onEdit}>
+          <MaterialCommunityIcons name="pencil-outline" size={16} color="#00649D" />
           <Text style={styles.smallActionText}>{configured ? 'Cambiar firma' : 'Agregar firma'}</Text>
+        </Pressable>
+        <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={onDelete}>
+          <MaterialCommunityIcons name="trash-can-outline" size={16} color="#B4232D" />
+          <Text style={[styles.smallActionText, styles.smallDangerText]}>Eliminar</Text>
         </Pressable>
       </View>
     </View>
@@ -14006,6 +14415,22 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 12,
   },
+  notificationItemDanger: {
+    backgroundColor: '#3A1117',
+    borderColor: '#B4232D',
+  },
+  notificationItemWarning: {
+    backgroundColor: '#3A2A07',
+    borderColor: '#F0B429',
+  },
+  notificationItemSuccess: {
+    backgroundColor: '#07351F',
+    borderColor: '#21BF73',
+  },
+  notificationItemInfo: {
+    backgroundColor: '#0A1F49',
+    borderColor: '#1B6FB8',
+  },
   notificationItemRead: {
     opacity: 0.72,
   },
@@ -14015,6 +14440,18 @@ const styles = StyleSheet.create({
     height: 9,
     marginTop: 4,
     width: 9,
+  },
+  notificationBulletDanger: {
+    backgroundColor: '#FF6B73',
+  },
+  notificationBulletWarning: {
+    backgroundColor: '#FFD166',
+  },
+  notificationBulletSuccess: {
+    backgroundColor: '#42D392',
+  },
+  notificationBulletInfo: {
+    backgroundColor: '#2DE2FF',
   },
   notificationCopy: {
     flex: 1,
@@ -15185,6 +15622,10 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 10,
   },
+  clientHeroCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
   clientHeroIcon: {
     alignItems: 'center',
     backgroundColor: '#123E78',
@@ -15253,6 +15694,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingVertical: 11,
+  },
+  clientBankMetricSlot: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
   },
   clientBankMetric: {
     alignItems: 'center',
@@ -16020,28 +16466,40 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
   },
-  botScreen: { backgroundColor: '#F6FAFD', borderRadius: 18, flex: 1, minHeight: 520, overflow: 'hidden' },
-  botHero: { alignItems: 'center', backgroundColor: '#0878C9', flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
-  botAvatar: { backgroundColor: '#FFFFFF', borderColor: '#42D392', borderRadius: 28, borderWidth: 2, height: 56, width: 56 },
+  botScreen: { backgroundColor: '#F7FAFD', borderColor: '#DCE8F1', borderRadius: 18, borderWidth: 1, flex: 1, minHeight: 560, overflow: 'hidden' },
+  botHero: { alignItems: 'center', backgroundColor: '#06295A', flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 16 },
+  botAvatar: { backgroundColor: '#FFFFFF', borderColor: '#68D9F6', borderRadius: 28, borderWidth: 2, height: 56, width: 56 },
   botHeroCopy: { flex: 1 },
   botHeroTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
-  botHeroText: { color: '#D8F1FF', fontSize: 12, marginTop: 2 },
-  botHeroStatus: { color: '#8AF0BE', fontSize: 10, fontWeight: '800', marginTop: 4 },
+  botHeroText: { color: '#C8E4F7', fontSize: 12, fontWeight: '700', marginTop: 2 },
+  botStatusPill: { alignItems: 'center', alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 999, flexDirection: 'row', gap: 5, marginTop: 7, paddingHorizontal: 9, paddingVertical: 5 },
+  botStatusDot: { backgroundColor: '#42D392', borderRadius: 5, height: 9, width: 9 },
+  botHeroStatus: { color: '#FFFFFF', fontSize: 10, fontWeight: '900' },
   botOnlineDot: { backgroundColor: '#42D392', borderColor: '#FFFFFF', borderRadius: 8, borderWidth: 2, height: 14, width: 14 },
   botMessages: { flex: 1 },
-  botMessagesContent: { gap: 10, padding: 16 },
+  botMessagesContent: { flexGrow: 1, gap: 12, justifyContent: 'flex-start', padding: 16, paddingBottom: 18 },
   botHint: { color: '#73879A', fontSize: 12, lineHeight: 17, marginBottom: 4 },
-  botBubble: { borderRadius: 16, maxWidth: '88%', padding: 12 },
-  botAssistantBubble: { alignSelf: 'flex-start', backgroundColor: '#FFFFFF', borderBottomLeftRadius: 4, borderColor: '#E0ECF4', borderWidth: 1 },
-  botUserBubble: { alignSelf: 'flex-end', backgroundColor: '#0878C9', borderBottomRightRadius: 4 },
-  botBubbleText: { color: '#263A4F', fontSize: 14, lineHeight: 20 },
+  botAssistantRow: { alignItems: 'flex-end', alignSelf: 'stretch', flexDirection: 'row', gap: 8 },
+  botUserRow: { alignItems: 'flex-end', alignSelf: 'stretch', flexDirection: 'row', justifyContent: 'flex-end' },
+  botMessageAvatar: { backgroundColor: '#FFFFFF', borderColor: '#68D9F6', borderRadius: 18, borderWidth: 1, height: 36, width: 36 },
+  botBubble: { borderRadius: 16, flexShrink: 1, maxWidth: '82%', paddingHorizontal: 13, paddingVertical: 11 },
+  botAssistantBubble: { alignSelf: 'flex-start', backgroundColor: '#FFFFFF', borderColor: '#DCE8F1', borderWidth: 1 },
+  botUserBubble: { alignSelf: 'flex-end', backgroundColor: '#0072BD' },
+  botBubbleText: { color: '#263A4F', flexShrink: 1, fontSize: 14, fontWeight: '600', lineHeight: 20 },
   botMessageRow: { alignItems: 'flex-end', flexDirection: 'row', gap: 8 },
   botUserBubbleText: { color: '#FFFFFF' },
+  botAudioButton: { alignItems: 'center', backgroundColor: '#EAF5FC', borderRadius: 999, height: 28, justifyContent: 'center', width: 28 },
+  botBubbleFeedback: { alignItems: 'center', alignSelf: 'flex-end', borderTopColor: '#EDF4F9', borderTopWidth: 1, flexDirection: 'row', gap: 6, marginTop: 8, paddingTop: 6 },
+  botFeedbackButton: { alignItems: 'center', backgroundColor: '#F4F8FC', borderRadius: 999, height: 26, justifyContent: 'center', width: 26 },
+  botTypingBubble: { minWidth: 58, paddingVertical: 8 },
+  typingDots: { alignItems: 'center', flexDirection: 'row', gap: 3, justifyContent: 'center' },
+  typingDotText: { color: '#0878C9', fontSize: 24, fontWeight: '900', lineHeight: 24 },
   botSuggestions: { gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
   botSuggestion: { backgroundColor: '#E7F4FC', borderColor: '#B9E0F5', borderRadius: 999, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
   botSuggestionText: { color: '#0867A9', fontSize: 12, fontWeight: '800' },
   botError: { color: '#B42318', fontSize: 12, paddingHorizontal: 16, paddingBottom: 6 },
-  botComposer: { alignItems: 'flex-end', backgroundColor: '#FFFFFF', borderTopColor: '#DCEAF3', borderTopWidth: 1, flexDirection: 'row', gap: 8, padding: 10 },
+  botComposer: { alignItems: 'flex-end', backgroundColor: '#FFFFFF', borderTopColor: '#DCEAF3', borderTopWidth: 1, flexDirection: 'row', gap: 6, padding: 10 },
+  botToolButton: { alignItems: 'center', height: 40, justifyContent: 'center', width: 26 },
   botVoiceButton: { alignItems: 'center', backgroundColor: '#E7F4FC', borderColor: '#B9E0F5', borderRadius: 14, borderWidth: 1, height: 44, justifyContent: 'center', width: 44 },
   botVoiceButtonActive: { backgroundColor: '#F15A29', borderColor: '#F15A29' },
   botInput: { backgroundColor: '#F3F7FA', borderColor: '#DCEAF3', borderRadius: 14, borderWidth: 1, color: '#263A4F', flex: 1, maxHeight: 90, minHeight: 44, paddingHorizontal: 12, paddingVertical: 10 },
