@@ -6,6 +6,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import * as Speech from 'expo-speech';
 import * as Sharing from 'expo-sharing';
+import type { Dispatch, SetStateAction } from 'react';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ActivityIndicator,
@@ -905,7 +906,7 @@ function isERubricaService(service: Pick<ServiceAccess, 'codigo' | 'nombre' | 'r
 
 function getPortalServiceVisual(title: string, index: number) {
   const normalized = normalizeText(title);
-  if (normalized.includes('fact')) return { kind: 'document', accent: EFACT_THEME.colors.primary, surface: EFACT_THEME.colors.primary };
+  if (normalized.includes('fact')) return { kind: 'efact', accent: EFACT_THEME.colors.primary, surface: '#EAF7FF' };
   if (normalized.includes('cont')) return { kind: 'calculator', accent: EFACT_THEME.colors.secondary, surface: EFACT_THEME.colors.secondary };
   if (normalized.includes('declara')) return { kind: 'document', accent: EFACT_THEME.colors.info, surface: EFACT_THEME.colors.info };
   if (normalized.includes('rubrica') || normalized.includes('sign')) return { kind: 'pencil', accent: ERUBRICA_COLORS.primary, surface: ERUBRICA_COLORS.primary };
@@ -2120,6 +2121,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [selectedPunto, setSelectedPunto] = useState<PuntoEmision | null>(null);
   const [puntoForm, setPuntoForm] = useState<PuntoFormState>(initialPuntoForm);
   const [savingPunto, setSavingPunto] = useState(false);
+  const [botMessages, setBotMessages] = useState<BotMessage[]>([]);
+  const [botDraft, setBotDraft] = useState('');
+  const [botFeedbackByMessage, setBotFeedbackByMessage] = useState<BotFeedbackState>({});
 
   const userId = getClaimNumber(currentUser, 'idUsuario') ?? 0;
   const catalogUserId = getClaimNumber(currentUser, 'idJefe') ?? userId;
@@ -2141,6 +2145,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
     return () => subscription.remove();
   }, []);
+
+  useEffect(() => {
+    if (activeView !== 'bot') {
+      void Speech.stop();
+    }
+  }, [activeView]);
 
   useEffect(() => {
     if (!userId) return;
@@ -2265,7 +2275,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getFacturaPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setFacturaPreparacion(data);
-          const serie = data.series?.[0]?.serieRaw ?? data.series?.[0]?.serieVisual ?? data.caja?.serieFactura ?? '';
+          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
           const formaPago = data.formasPago?.[0]?.codigo ?? '';
           setFacturaForm((current) => ({ ...current, serie, formaPago }));
         })
@@ -2323,7 +2333,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getGuiaRemisionPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setGuiaPreparacion(data);
-          const serie = data.series?.[0]?.serieRaw ?? data.series?.[0]?.serieVisual ?? data.caja?.serieFactura ?? '';
+          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
           setGuiaForm((current) => ({ ...current, serie }));
         })
       : getGuiasRemision(catalogUserId, 0).then((data) => {
@@ -2356,7 +2366,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getLiquidacionCompraPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setLiquidacionPreparacion(data);
-          const serie = data.series?.[0]?.serieRaw ?? data.series?.[0]?.serieVisual ?? data.caja?.serieFactura ?? '';
+          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
           const formaPago = data.formasPago?.[0]?.codigo ?? '';
           setLiquidacionForm((current) => ({ ...current, serie, formaPago }));
         })
@@ -2390,7 +2400,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getNotaDebitoPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setNotaDebitoPreparacion(data);
-          const serie = data.series?.[0]?.serieRaw ?? data.series?.[0]?.serieVisual ?? data.caja?.serieFactura ?? '';
+          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
           setNotaDebitoForm((current) => ({ ...current, serie }));
         })
       : getNotasDebito(catalogUserId, 0).then((data) => {
@@ -2423,7 +2433,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getNotaCreditoPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setNotaCreditoPreparacion(data);
-          const serie = data.series?.[0]?.serieRaw ?? data.series?.[0]?.serieVisual ?? data.caja?.serieFactura ?? '';
+          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
           setNotaCreditoForm((current) => ({ ...current, serie }));
         })
       : getNotasCredito(catalogUserId, 0).then((data) => {
@@ -4183,7 +4193,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         idUsuario: catalogUserId,
         cliente: facturaCliente,
         serie: facturaForm.serie,
-        codemisor: facturaPreparacion?.series?.[0]?.codemisor ?? facturaPreparacion?.caja?.codemisor,
+        codemisor: getSerieCodemisor(facturaPreparacion, facturaForm.serie),
         formaPago: facturaForm.formaPago,
         referencia: facturaForm.referencia,
         correos: facturaForm.correoAdicional ? [facturaForm.correoAdicional] : [],
@@ -4380,7 +4390,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         cliente: notaCreditoCliente,
         facturaModificada: notaCreditoFactura,
         serie: notaCreditoForm.serie,
-        codemisor: notaCreditoPreparacion?.series?.[0]?.codemisor ?? notaCreditoPreparacion?.caja?.codemisor,
+        codemisor: getSerieCodemisor(notaCreditoPreparacion, notaCreditoForm.serie),
         motivo: notaCreditoForm.motivo,
         observacion: notaCreditoForm.observacion,
         correos: notaCreditoForm.correoAdicional ? [notaCreditoForm.correoAdicional] : [],
@@ -4490,7 +4500,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         cliente: notaDebitoCliente,
         facturaModificada: notaDebitoFactura,
         serie: notaDebitoForm.serie,
-        codemisor: notaDebitoPreparacion?.series?.[0]?.codemisor ?? notaDebitoPreparacion?.caja?.codemisor,
+        codemisor: getSerieCodemisor(notaDebitoPreparacion, notaDebitoForm.serie),
         correos: notaDebitoForm.correoAdicional ? [notaDebitoForm.correoAdicional] : [],
         detalles: notaDebitoLineas.map((linea) => ({
           descripcion: linea.descripcion,
@@ -4612,7 +4622,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         idUsuario: catalogUserId,
         proveedor: liquidacionProveedor,
         serie: liquidacionForm.serie,
-        codemisor: liquidacionPreparacion?.series?.[0]?.codemisor ?? liquidacionPreparacion?.caja?.codemisor,
+        codemisor: getSerieCodemisor(liquidacionPreparacion, liquidacionForm.serie),
         formaPago: liquidacionForm.formaPago,
         diasCredito: Number(liquidacionForm.diasCredito) || 0,
         correos: liquidacionForm.correoAdicional ? [liquidacionForm.correoAdicional] : [],
@@ -4773,7 +4783,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         destinatario: guiaCliente,
         factura: guiaFactura,
         serie: guiaForm.serie,
-        codemisor: guiaPreparacion?.series?.[0]?.codemisor ?? guiaPreparacion?.caja?.codemisor,
+        codemisor: getSerieCodemisor(guiaPreparacion, guiaForm.serie),
         placa: guiaForm.placa,
         contribuyenteEspecial: guiaForm.contribuyenteEspecial,
         obligadoContabilidad: guiaForm.transportistaObligadoContabilidad,
@@ -5185,11 +5195,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           <View style={styles.portalStack}>
             <View style={styles.portalShowcase}>
               <View style={styles.portalShowcaseIcon}>
-                <MaterialCommunityIcons name="view-dashboard-outline" size={26} color="#FFFFFF" />
+                <Image source={require('./assets/logo-numerica.png')} style={styles.portalShowcaseLogo} />
               </View>
               <View style={styles.portalShowcaseCopy}>
                 <Text style={styles.portalShowcaseTitle}>Servicios Numerica</Text>
-                <Text style={styles.portalShowcaseText}>Accede a tus herramientas operativas desde un panel limpio y directo.</Text>
+                <Text style={styles.portalShowcaseText}>Elige tu herramienta y continua tu operacion sin cambiar de entorno.</Text>
+                <View style={styles.portalShowcaseBadges}>
+                  <Text style={styles.portalShowcaseBadge}>Facturacion</Text>
+                  <Text style={styles.portalShowcaseBadge}>Firma electronica</Text>
+                </View>
               </View>
             </View>
             <View style={styles.portalSectionHeader}>
@@ -5285,7 +5299,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                  onSave={saveCliente}
                />
              ) : activeView === 'bot' ? (
-               <EfactBotScreen userName={portalFirstName} />
+               <EfactBotScreen
+                 userName={portalFirstName}
+                 messages={botMessages}
+                 setMessages={setBotMessages}
+                 draft={botDraft}
+                 setDraft={setBotDraft}
+                 feedbackByMessage={botFeedbackByMessage}
+                 setFeedbackByMessage={setBotFeedbackByMessage}
+               />
              ) : activeView === 'clientes' ? (
                <>
                  <DirectoryHero
@@ -6599,6 +6621,46 @@ function numberValue(value: unknown) {
   return 0;
 }
 
+type FacturaSerieOption = NonNullable<FacturaPreparacion['series']>[number];
+
+function getSerieValue(item?: FacturaSerieOption) {
+  return item?.serieRaw ?? item?.serieVisual ?? '';
+}
+
+function getSelectedSerie(preparacion: FacturaPreparacion | null, serie: string) {
+  const options = preparacion?.series ?? [];
+  return options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
+}
+
+function getSerieLabel(preparacion: FacturaPreparacion | null, serie: string, fallback = '001-001') {
+  const selected = getSelectedSerie(preparacion, serie);
+  return selected?.serieVisual || selected?.serieRaw || serie || preparacion?.caja?.serieFactura || fallback;
+}
+
+function getNextSequence(preparacion: FacturaPreparacion | null, serie: string, fallbackStart = 0) {
+  const selected = getSelectedSerie(preparacion, serie);
+  const row = selected as Record<string, unknown> | undefined;
+  const caja = preparacion?.caja as Record<string, unknown> | null | undefined;
+  const candidate = numberValue(
+    row?.siguiente ??
+      row?.proximo ??
+      row?.secuencial ??
+      row?.numeroSecuencia ??
+      row?.sec ??
+      caja?.siguiente ??
+      caja?.proximo ??
+      caja?.secuencial ??
+      caja?.numeroSecuencia ??
+      caja?.sec,
+  );
+  const next = candidate > 0 ? candidate + (row?.siguiente || row?.proximo || caja?.siguiente || caja?.proximo ? 0 : 1) : fallbackStart + 1;
+  return String(next).padStart(9, '0');
+}
+
+function getSerieCodemisor(preparacion: FacturaPreparacion | null, serie: string) {
+  return getSelectedSerie(preparacion, serie)?.codemisor ?? preparacion?.caja?.codemisor;
+}
+
 function getClienteKey(cliente: Cliente, index: number) {
   const row = cliente as Cliente & Record<string, unknown>;
   return String(cliente.codcliente || row.Codcliente || row.CodCliente || getClienteIdentification(cliente) || `${getClienteDisplayName(cliente)}-${index}`);
@@ -6728,9 +6790,8 @@ function NuevaFacturaMobileScreen({
   const serieOptions = preparacion?.series ?? [];
   const formaPagoOptions = preparacion?.formasPago ?? [];
   const ivaOptions = preparacion?.porcentajesIva ?? [];
-  const selectedSerie = serieOptions.find((item) => item.serieRaw === form.serie || item.serieVisual === form.serie);
-  const serieLabel = selectedSerie?.serieVisual || selectedSerie?.serieRaw || form.serie || preparacion?.caja?.serieFactura || '001-001';
-  const invoiceNumber = form.numeroFactura || String((preparacion?.caja?.sec ?? 1) + 1).padStart(9, '0');
+  const serieLabel = getSerieLabel(preparacion, form.serie, '001-001');
+  const invoiceNumber = form.numeroFactura || getNextSequence(preparacion, form.serie, 1);
   const referenciaWords = form.referencia.trim().split(/\s+/).filter(Boolean).length;
   const displayProductos = productos.length > 0 ? productos.slice(0, 2) : lineas.map((item) => item.producto).slice(0, 2);
   const [step, setStep] = useState(0);
@@ -6972,6 +7033,21 @@ function InvoiceSummaryRow({ label, value, danger = false }: { label: string; va
   );
 }
 
+function InvoiceProgressSteps({ labels }: { labels: string[] }) {
+  return (
+    <View style={styles.invoiceSteps}>
+      {labels.map((label, index) => (
+        <View key={label} style={styles.invoiceStepItem}>
+          <View style={[styles.invoiceStepNumber, styles.invoiceStepNumberActive]}>
+            <Text style={[styles.invoiceStepNumberText, styles.invoiceStepNumberTextActive]}>{index + 1}</Text>
+          </View>
+          <Text style={[styles.invoiceStepLabel, index === 0 && styles.invoiceStepLabelActive]}>{label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function NuevaNotaCreditoMobileScreen({
   form,
   preparacion,
@@ -7025,9 +7101,8 @@ function NuevaNotaCreditoMobileScreen({
     { subtotal: 0, descuento: 0, iva: 0, ivaZero: 0, total: 0 },
   );
   const serieOptions = preparacion?.series ?? [];
-  const selectedSerie = serieOptions.find((item) => item.serieRaw === form.serie || item.serieVisual === form.serie);
-  const serieLabel = selectedSerie?.serieVisual || selectedSerie?.serieRaw || form.serie || '001-002';
-  const notaNumber = form.numeroFactura || String((preparacion?.caja?.sec ?? 0) + 1).padStart(9, '0');
+  const serieLabel = getSerieLabel(preparacion, form.serie, '001-002');
+  const notaNumber = form.numeroFactura || getNextSequence(preparacion, form.serie);
   const addDefaultLine = () => onAddLinea({
     codproducto: 0,
     codprincipal: 'NC',
@@ -7057,6 +7132,7 @@ function NuevaNotaCreditoMobileScreen({
           <SecondaryButton label="Limpiar pantalla" onPress={onClear} />
         </View>
       </View>
+      <InvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -7396,9 +7472,8 @@ function NuevaNotaDebitoMobileScreen({
     { subtotal: 0, ice: 0, iva: 0, ivaZero: 0, total: 0 },
   );
   const serieOptions = preparacion?.series ?? [];
-  const selectedSerie = serieOptions.find((item) => item.serieRaw === form.serie || item.serieVisual === form.serie);
-  const serieLabel = selectedSerie?.serieVisual || selectedSerie?.serieRaw || form.serie || '001-002';
-  const notaNumber = form.numeroFactura || String((preparacion?.caja?.sec ?? 1158) + 1).padStart(9, '0');
+  const serieLabel = getSerieLabel(preparacion, form.serie, '001-002');
+  const notaNumber = form.numeroFactura || getNextSequence(preparacion, form.serie, 1158);
 
   return (
     <>
@@ -7421,6 +7496,7 @@ function NuevaNotaDebitoMobileScreen({
           <SecondaryButton label="Limpiar pantalla" onPress={onClear} />
         </View>
       </View>
+      <InvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -7689,8 +7765,8 @@ function NuevaLiquidacionCompraMobileScreen({
   );
   const serieOptions = preparacion?.series ?? [];
   const formaPagoOptions = preparacion?.formasPago ?? [];
-  const selectedSerie = serieOptions.find((item) => item.serieRaw === form.serie || item.serieVisual === form.serie);
-  const serieLabel = selectedSerie?.serieVisual || selectedSerie?.serieRaw || form.serie || '001-002';
+  const serieLabel = getSerieLabel(preparacion, form.serie, '001-002');
+  const liquidacionNumber = form.numeroFactura || getNextSequence(preparacion, form.serie);
 
   return (
     <>
@@ -7707,12 +7783,13 @@ function NuevaLiquidacionCompraMobileScreen({
           </View>
           <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Liquidacion</Text>
-            <Text style={styles.invoiceHeaderValue}>{form.numeroFactura || '-'}</Text>
+            <Text style={styles.invoiceHeaderValue}>{liquidacionNumber}</Text>
           </View>
           <SecondaryButton label="Historial" onPress={onClear} />
           <SecondaryButton label="Limpiar pantalla" onPress={onClear} />
         </View>
       </View>
+      <InvoiceProgressSteps labels={['Proveedor', 'Detalle', 'Revision']} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -7992,8 +8069,8 @@ function NuevaGuiaRemisionMobileScreen({
   onSave: () => void;
 }) {
   const serieOptions = preparacion?.series ?? [];
-  const selectedSerie = serieOptions.find((item) => item.serieRaw === form.serie || item.serieVisual === form.serie);
-  const serieLabel = selectedSerie?.serieVisual || selectedSerie?.serieRaw || form.serie || '001-002';
+  const serieLabel = getSerieLabel(preparacion, form.serie, '001-002');
+  const guiaNumber = form.numeroFactura || getNextSequence(preparacion, form.serie);
   const totalCantidad = detalles.reduce((sum, item) => sum + (Number(item.cantidad.replace(',', '.')) || 0), 0);
 
   return (
@@ -8011,12 +8088,13 @@ function NuevaGuiaRemisionMobileScreen({
           </View>
           <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Numero de guia</Text>
-            <Text style={styles.invoiceHeaderValue}>{form.numeroFactura || '-'}</Text>
+            <Text style={styles.invoiceHeaderValue}>{guiaNumber}</Text>
           </View>
           <SecondaryButton label="Historial" onPress={onClear} />
           <SecondaryButton label="Limpiar pantalla" onPress={onClear} />
         </View>
       </View>
+      <InvoiceProgressSteps labels={['Transporte', 'Destino', 'Detalle']} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -9013,7 +9091,7 @@ function PortalServiceCard({
       onPress={onPress}
     >
       <View style={[styles.portalServiceIcon, { backgroundColor: visual.surface, borderColor: visual.accent }]}>
-        <PortalServiceGlyph kind={visual.kind} />
+        {visual.kind === 'efact' ? <Image source={require('./assets/logo-numerica.png')} style={styles.portalServiceLogo} /> : <PortalServiceGlyph kind={visual.kind} />}
       </View>
       <View style={styles.portalServiceCopy}>
         <Text style={styles.portalServiceTitle}>{title}</Text>
@@ -9128,6 +9206,7 @@ function DirectoryHero({
 }
 
 type BotMessage = { id: string; role: 'user' | 'assistant'; text: string };
+type BotFeedbackState = Record<string, 'like' | 'dislike'>;
 
 function TypingDots() {
   return (
@@ -9139,17 +9218,34 @@ function TypingDots() {
   );
 }
 
-function EfactBotScreen({ userName }: { userName: string }) {
-  const [messages, setMessages] = useState<BotMessage[]>([
-    { id: 'welcome', role: 'assistant', text: `Hola ${userName || ''}. Soy Númi, tu asistente de E-FACT. ¿En qué te ayudo hoy?` },
-  ]);
-  const [draft, setDraft] = useState('');
+function EfactBotScreen({
+  userName,
+  messages,
+  setMessages,
+  draft,
+  setDraft,
+  feedbackByMessage,
+  setFeedbackByMessage,
+}: {
+  userName: string;
+  messages: BotMessage[];
+  setMessages: Dispatch<SetStateAction<BotMessage[]>>;
+  draft: string;
+  setDraft: Dispatch<SetStateAction<string>>;
+  feedbackByMessage: BotFeedbackState;
+  setFeedbackByMessage: Dispatch<SetStateAction<BotFeedbackState>>;
+}) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [listening, setListening] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
-  const [feedbackByMessage, setFeedbackByMessage] = useState<Record<string, 'like' | 'dislike'>>({});
   const voiceRecognition = useRef<any>(null);
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      setMessages([{ id: 'welcome', role: 'assistant', text: `Hola ${userName || ''}. Soy Númi, tu asistente de E-FACT. ¿En qué te ayudo hoy?` }]);
+    }
+  }, [messages.length, setMessages, userName]);
 
   const send = async (preset?: string) => {
     const text = (preset ?? draft).trim();
@@ -9202,6 +9298,18 @@ function EfactBotScreen({ userName }: { userName: string }) {
 
   return (
     <KeyboardAvoidingView style={styles.botScreen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.botWidgetHeader}>
+        <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botWidgetAvatar} />
+        <View style={styles.botWidgetCopy}>
+          <Text style={styles.botWidgetKicker}>Chat con</Text>
+          <Text style={styles.botWidgetTitle}>Númi</Text>
+          <Text style={styles.botWidgetStatus}>Estamos en línea</Text>
+        </View>
+        <View style={styles.botWidgetHeaderActions}>
+          <MaterialCommunityIcons name="dots-vertical" size={18} color="#FFFFFF" />
+          <MaterialCommunityIcons name="chevron-down" size={19} color="#FFFFFF" />
+        </View>
+      </View>
       <ScrollView style={styles.botMessages} contentContainerStyle={styles.botMessagesContent} keyboardShouldPersistTaps="handled">
         {messages.map((message) => (
           <View key={message.id} style={message.role === 'user' ? styles.botUserRow : styles.botAssistantRow}>
@@ -9219,7 +9327,7 @@ function EfactBotScreen({ userName }: { userName: string }) {
                     else next[message.id] = 'like';
                     return next;
                   })}>
-                    <MaterialCommunityIcons name="thumb-up-outline" size={15} color={feedbackByMessage[message.id] === 'like' ? '#FFFFFF' : '#6E94B4'} />
+                    <MaterialCommunityIcons name={feedbackByMessage[message.id] === 'like' ? 'thumb-up' : 'thumb-up-outline'} size={15} color={feedbackByMessage[message.id] === 'like' ? '#FFFFFF' : '#6E94B4'} />
                   </Pressable>
                   <Pressable accessibilityLabel="Respuesta no util" hitSlop={6} style={[styles.botFeedbackButton, feedbackByMessage[message.id] === 'dislike' && styles.botFeedbackButtonActive]} onPress={() => setFeedbackByMessage((current) => {
                     const next = { ...current };
@@ -9227,7 +9335,7 @@ function EfactBotScreen({ userName }: { userName: string }) {
                     else next[message.id] = 'dislike';
                     return next;
                   })}>
-                    <MaterialCommunityIcons name="thumb-down-outline" size={15} color={feedbackByMessage[message.id] === 'dislike' ? '#FFFFFF' : '#6E94B4'} />
+                    <MaterialCommunityIcons name={feedbackByMessage[message.id] === 'dislike' ? 'thumb-down' : 'thumb-down-outline'} size={15} color={feedbackByMessage[message.id] === 'dislike' ? '#FFFFFF' : '#6E94B4'} />
                   </Pressable>
                 </View>
               ) : null}
@@ -9787,20 +9895,29 @@ function DashboardStatCard({ accent, compact, kind, value, label, trend }: { acc
 function DashboardChartCard({ facturas }: { facturas: FacturaListItem[] }) {
   const values = [500, 1200, 720, 1350, 1680, 1640, 2450].map((fallback, index) => Number(facturas[index]?.total ?? fallback));
   const max = Math.max(...values, 1);
+  const days = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
+  const [selectedIndex, setSelectedIndex] = useState(values.length - 1);
+  const selectedValue = values[selectedIndex] ?? 0;
 
   return (
     <View style={styles.dashboardChartCard}>
-      <Text style={styles.dashboardPanelTitle} numberOfLines={1} adjustsFontSizeToFit>Ventas de los últimos 7 días</Text>
+      <View style={styles.dashboardChartHeader}>
+        <Text style={styles.dashboardPanelTitle} numberOfLines={1} adjustsFontSizeToFit>Ventas de los ultimos 7 dias</Text>
+        <View style={styles.dashboardChartValuePill}>
+          <Text style={styles.dashboardChartValueDay}>{days[selectedIndex]}</Text>
+          <Text style={styles.dashboardChartValueText}>{formatMoney(selectedValue)}</Text>
+        </View>
+      </View>
       <View style={styles.dashboardChartArea}>
         {values.map((value, index) => (
-          <View key={`chart-${index}`} style={styles.dashboardChartColumn}>
-            <View style={[styles.dashboardChartBar, { height: `${Math.max(12, (value / max) * 86)}%` }]} />
-            <View style={[styles.dashboardChartPoint, { bottom: `${Math.max(8, (value / max) * 78)}%` }]} />
-          </View>
+          <Pressable key={`chart-${index}`} style={styles.dashboardChartColumn} onPress={() => setSelectedIndex(index)}>
+            <View style={[styles.dashboardChartBar, index === selectedIndex && styles.dashboardChartBarActive, { height: `${Math.max(12, (value / max) * 86)}%` }]} />
+            <View style={[styles.dashboardChartPoint, index === selectedIndex && styles.dashboardChartPointActive, { bottom: `${Math.max(8, (value / max) * 78)}%` }]} />
+          </Pressable>
         ))}
       </View>
       <View style={styles.dashboardChartLabels}>
-        {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((day) => <Text key={day} style={styles.dashboardChartLabel}>{day}</Text>)}
+        {days.map((day, index) => <Text key={day} style={[styles.dashboardChartLabel, index === selectedIndex && styles.dashboardChartLabelActive]}>{day}</Text>)}
       </View>
     </View>
   );
@@ -13659,6 +13776,31 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 7,
   },
+  dashboardChartHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  dashboardChartValuePill: {
+    alignItems: 'center',
+    backgroundColor: '#E7F4FC',
+    borderColor: '#B9E0F5',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  dashboardChartValueDay: {
+    color: '#5D7184',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  dashboardChartValueText: {
+    color: '#0072BD',
+    fontSize: 12,
+    fontWeight: '900',
+  },
   dashboardPanelTitle: {
     color: EFACT_THEME.colors.textPrimary,
     fontSize: 14,
@@ -13689,6 +13831,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 12,
   },
+  dashboardChartPointActive: {
+    backgroundColor: '#F15A29',
+    height: 16,
+    width: 16,
+  },
   dashboardChartBar: {
     alignSelf: 'center',
     backgroundColor: '#BFE6FA',
@@ -13696,6 +13843,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     position: 'absolute',
     width: 10,
+  },
+  dashboardChartBarActive: {
+    backgroundColor: '#0878C9',
+    width: 14,
   },
   dashboardChartLabels: {
     flexDirection: 'row',
@@ -13706,6 +13857,10 @@ const styles = StyleSheet.create({
     color: '#52658F',
     fontSize: 11,
     fontWeight: '800',
+  },
+  dashboardChartLabelActive: {
+    color: '#0072BD',
+    fontWeight: '900',
   },
   dashboardQuickCard: {
     backgroundColor: '#FFFFFF',
@@ -13939,11 +14094,18 @@ const styles = StyleSheet.create({
   },
   portalShowcaseIcon: {
     alignItems: 'center',
-    backgroundColor: EFACT_THEME.colors.primaryDark,
+    backgroundColor: '#EAF7FF',
+    borderColor: '#B9E0F5',
+    borderWidth: 1,
     borderRadius: 14,
     height: 52,
     justifyContent: 'center',
     width: 52,
+  },
+  portalShowcaseLogo: {
+    borderRadius: 12,
+    height: 42,
+    width: 42,
   },
   portalShowcaseCopy: {
     flex: 1,
@@ -13960,6 +14122,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 17,
+  },
+  portalShowcaseBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 5,
+  },
+  portalShowcaseBadge: {
+    backgroundColor: '#EAF5FC',
+    borderRadius: 999,
+    color: '#0072BD',
+    fontSize: 9,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   portalHeroPanel: {
     backgroundColor: EFACT_THEME.colors.primaryDark,
@@ -14213,6 +14391,11 @@ const styles = StyleSheet.create({
     height: 44,
     justifyContent: 'center',
     width: 44,
+  },
+  portalServiceLogo: {
+    borderRadius: 10,
+    height: 36,
+    width: 36,
   },
   portalServiceCopy: {
     flex: 1,
@@ -16189,8 +16372,8 @@ const styles = StyleSheet.create({
   },
   documentActionWrap: {
     alignItems: 'flex-end',
-    position: 'relative',
-    zIndex: 10,
+    alignSelf: 'stretch',
+    zIndex: 2,
   },
   documentActionTrigger: {
     alignItems: 'center',
@@ -16211,9 +16394,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     minWidth: 210,
     padding: 8,
-    position: 'absolute',
-    right: 0,
-    top: 42,
+    alignSelf: 'flex-end',
     shadowColor: '#123B58',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
@@ -16676,7 +16857,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
   },
-  botScreen: { backgroundColor: '#F7FAFD', borderColor: '#B9D8EE', borderRadius: 18, borderWidth: 2, flex: 1, minHeight: 560, overflow: 'hidden' },
+  botScreen: { backgroundColor: '#F7FAFD', borderColor: '#B9D8EE', borderRadius: 18, borderWidth: 2, flex: 1, maxHeight: 660, minHeight: 560, overflow: 'hidden' },
+  botWidgetHeader: { alignItems: 'center', backgroundColor: '#0878C9', flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
+  botWidgetAvatar: { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF', borderRadius: 18, borderWidth: 2, height: 36, width: 36 },
+  botWidgetCopy: { flex: 1, minWidth: 0 },
+  botWidgetKicker: { color: '#DDF0FA', fontSize: 9, fontWeight: '800' },
+  botWidgetTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '900', lineHeight: 18 },
+  botWidgetStatus: { color: '#DDF0FA', fontSize: 10, fontWeight: '800', marginTop: 2 },
+  botWidgetHeaderActions: { alignItems: 'center', flexDirection: 'row', gap: 6 },
   botHero: { alignItems: 'center', backgroundColor: '#06295A', flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 16 },
   botAvatar: { backgroundColor: '#FFFFFF', borderColor: '#68D9F6', borderRadius: 28, borderWidth: 2, height: 56, width: 56 },
   botHeroCopy: { flex: 1 },

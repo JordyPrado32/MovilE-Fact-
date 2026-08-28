@@ -36,8 +36,27 @@ export type FacturaPreparacion = {
   porcentajesIva?: { codigo?: string | number | null; descripcion?: string | null; valor?: number | null; valorCalculo?: number | null }[];
   tiposCliente?: unknown[];
   paises?: unknown[];
-  caja?: { serieFactura?: string | null; numCaja?: number | null; sec?: number | null; codemisor?: number | null } | null;
-  series?: { serieRaw?: string | null; serieVisual?: string | null; codemisor?: number | null }[];
+  caja?: {
+    serieFactura?: string | null;
+    numCaja?: number | null;
+    sec?: number | null;
+    secuencial?: number | null;
+    siguiente?: string | number | null;
+    proximo?: string | number | null;
+    numeroSecuencia?: string | number | null;
+    codemisor?: number | null;
+  } | null;
+  series?: {
+    serieRaw?: string | null;
+    serieVisual?: string | null;
+    codemisor?: number | null;
+    numCaja?: number | null;
+    sec?: number | null;
+    secuencial?: number | null;
+    siguiente?: string | number | null;
+    proximo?: string | number | null;
+    numeroSecuencia?: string | number | null;
+  }[];
   formasPago?: { id?: number; codigo?: string | null; descripcion?: string | null; descripcionSri?: string | null }[];
 };
 
