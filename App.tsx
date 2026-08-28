@@ -818,8 +818,8 @@ const VIEW_ROUTE_ALIASES: Record<Exclude<WorkspaceView, 'portal' | 'dashboard' |
   compras: ['compras', 'compra', 'liquidacion'],
   'nueva-liquidacion-compra': ['compras/nueva-liquidacion', 'nueva-liquidacion', 'liquidacion-compra', 'liquidacion-de-compra'],
   'mis-liquidaciones-compra': ['compras/liquidaciones-generadas', 'liquidaciones-generadas', 'mis-liquidaciones', 'liquidaciones-compra'],
-  'cuentas-cobrar': ['cuentas-cobrar', 'cxc', 'abonos', 'registro-abonos'],
-  'estado-cuenta': ['estado-cuenta', 'cuentas-por-cobrar/estado-cuenta'],
+  'cuentas-cobrar': ['cuentas-cobrar', 'cuentas-por-cobrar', 'cobrar', 'cxc', 'abonos', 'registro-abonos'],
+  'estado-cuenta': ['estado-cuenta', 'cuentas-por-cobrar/estado-cuenta', 'cuenta-cliente'],
   'comprar-documentos': ['compra-documentos', 'comprar-documentos', 'documentos-compra'],
   'reporte-documentos': ['reporte-documentos', 'reportes-documentos', 'reportes/documentos'],
   recargas: ['recargas', 'historial-recargas'],
@@ -937,6 +937,33 @@ function formatDashboardMoney(value?: number | null) {
   return `$${Math.round(Number(value ?? 0)).toLocaleString('es-EC')}`;
 }
 
+function escapeCsvCell(value: unknown) {
+  const text = value === null || value === undefined ? '' : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+async function exportRowsToCsv(filename: string, rows: Record<string, unknown>[]) {
+  if (!rows.length) {
+    Alert.alert('Exportar Excel', 'No hay registros para exportar.');
+    return;
+  }
+
+  const headers = Object.keys(rows[0]);
+  const csv = [
+    headers.map(escapeCsvCell).join(','),
+    ...rows.map((row) => headers.map((header) => escapeCsvCell(row[header])).join(',')),
+  ].join('\n');
+  const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}${filename.replace(/[^a-z0-9._-]/gi, '-')}.csv`;
+  await FileSystem.writeAsStringAsync(uri, csv);
+
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(uri, { dialogTitle: 'Exportar Excel', mimeType: 'text/csv', UTI: 'public.comma-separated-values-text' });
+    return;
+  }
+
+  Alert.alert('Exportar Excel', `Archivo generado: ${uri}`);
+}
+
 function menuMatchesView(menu: DynamicMenu, view: Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto'>) {
   const normalizedRoute = normalizeText(menu.ruta);
   if (ADMIN_ROUTE_VIEW_MAP[normalizedRoute] === view) return true;
@@ -979,6 +1006,8 @@ function getAuthorizedViews(menus: DynamicMenu[]) {
   if (views.size > 0) {
     views.add('dashboard');
     views.add('bot');
+    views.add('cuentas-cobrar');
+    views.add('estado-cuenta');
   }
 
   return views;
@@ -2932,25 +2961,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   }, [productoCategoriaFiltro, productosConCatalogos]);
 
   const filteredProductos = useMemo(() => {
-    const term = search.trim().toLowerCase();
-
     return productosConCatalogos.filter((producto) =>
       (productoTipoFiltro === 'todos' || producto.tipo === productoTipoFiltro) &&
       (productoCategoriaFiltro === null || producto.categoria === productoCategoriaFiltro) &&
-      (productoSubcategoriaFiltro === null || producto.subcategoria === productoSubcategoriaFiltro) &&
-      (!term ||
-        [
-          producto.nombre,
-          producto.codigo,
-          producto.tipo,
-          producto.tarifaDescripcion,
-          producto.categoriaDescripcion,
-          producto.subcategoriaDescripcion,
-        ]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(term))),
+      (productoSubcategoriaFiltro === null || producto.subcategoria === productoSubcategoriaFiltro),
     );
-  }, [productoCategoriaFiltro, productoSubcategoriaFiltro, productoTipoFiltro, productosConCatalogos, search]);
+  }, [productoCategoriaFiltro, productoSubcategoriaFiltro, productoTipoFiltro, productosConCatalogos]);
 
   const filteredCategorias = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -5127,54 +5143,19 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
         {!loadingMenus && activeView === 'portal' ? (
           <View style={styles.portalStack}>
-            <View style={styles.portalHeroPanel}>
-              <View style={styles.portalHeroCopy}>
-                <Text style={styles.dashboardPanelLabel}>Resumen principal</Text>
-                <Text style={styles.portalHeroTitle}>Servicios autorizados</Text>
-                <Text style={styles.portalHeroText}>Tus herramientas tributarias disponibles en un solo portal móvil.</Text>
+            <View style={styles.portalShowcase}>
+              <View style={styles.portalShowcaseIcon}>
+                <MaterialCommunityIcons name="view-dashboard-outline" size={26} color="#FFFFFF" />
               </View>
-              <View style={styles.portalHeroDevice}>
-                <View style={styles.portalPhone}>
-                  <View style={styles.portalPhoneNotch} />
-                  <View style={styles.portalAppGrid}>
-                    <View style={[styles.portalAppTile, styles.portalAppTileBlue]} />
-                    <View style={[styles.portalAppTile, styles.portalAppTileGreen]} />
-                    <View style={[styles.portalAppTile, styles.portalAppTileOrange]} />
-                    <View style={[styles.portalAppTile, styles.portalAppTilePurple]} />
-                  </View>
-                </View>
-                <View style={styles.portalDeviceBase} />
-              </View>
-              <View style={styles.portalHeroBadge}>
-                <Text style={styles.portalHeroBadgeText}>{Math.max(services.length, 1)}</Text>
-                <Text style={styles.portalHeroBadgeLabel}>servicios</Text>
+              <View style={styles.portalShowcaseCopy}>
+                <Text style={styles.portalShowcaseTitle}>Servicios Numerica</Text>
+                <Text style={styles.portalShowcaseText}>Accede a tus herramientas operativas desde un panel limpio y directo.</Text>
               </View>
             </View>
-
-            <View style={styles.portalMetrics}>
-              <View style={styles.portalMetricItem}>
-                <Text style={styles.portalMetricValue}>{Math.max(services.length, 1)}</Text>
-                <Text style={styles.portalMetricLabel}>SERVICIOS</Text>
-              </View>
-              <View style={styles.portalMetricDivider} />
-              <View style={styles.portalMetricItem}>
-                <Text style={styles.portalMetricValue}>{canUseEfact ? '1' : '0'}</Text>
-                <Text style={styles.portalMetricLabel}>ACTIVO</Text>
-              </View>
-              <View style={styles.portalMetricDivider} />
-              <View style={styles.portalMetricItem}>
-                <Text style={styles.portalMetricValue}>24/7</Text>
-                <Text style={styles.portalMetricLabel}>ACCESO</Text>
-              </View>
-            </View>
-
             <View style={styles.portalSectionHeader}>
               <View style={styles.portalSectionTitleWrap}>
                 <Text style={styles.portalSectionTitle}>Mis servicios</Text>
               </View>
-              <Pressable style={styles.portalSectionAction} onPress={() => setMenuOpen(true)}>
-                <MaterialCommunityIcons name="menu" size={22} color={EFACT_THEME.colors.primary} />
-              </Pressable>
             </View>
 
             <View style={styles.portalServiceList}>
@@ -5248,12 +5229,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
         {!loadingMenus && activeView !== 'portal' && activeView !== 'dashboard' && activeView !== 'e-rubrica' && activeView !== 'no-autorizado' ? (
            <View style={[styles.directoryCard, activeView === 'clientes' && styles.clientDirectoryCard]}>
-              {!['clientes', 'comprar-documentos', 'bot', 'productos', 'categorias', 'emisor', 'firma', 'nuevo-cliente', 'nuevo-producto'].includes(activeView) ? <View style={styles.viewToolbar}>
-                 <Pressable style={styles.backButton} onPress={() => openView(activeView === 'nuevo-cliente' ? 'clientes' : activeView === 'nuevo-producto' ? 'productos' : canUsePortal ? 'portal' : 'dashboard')}>
-                  <Text style={styles.backButtonText}>{activeView === 'nuevo-cliente' || activeView === 'nuevo-producto' ? activeView === 'nuevo-producto' ? 'Productos' : 'Clientes' : 'Inicio'}</Text>
-               </Pressable>
-              </View> : null}
-
              {activeView === 'nuevo-cliente' ? (
                <ClienteForm
                  form={clienteForm}
@@ -5349,7 +5324,24 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                       <Text style={styles.clientListEyebrow}>Listado</Text>
                       <Text style={styles.clientListTitle}>Clientes registrados</Text>
                     </View>
-                    <Text style={styles.clientListCount}>{filteredClientes.length}</Text>
+                    <View style={styles.clientListActions}>
+                      <Pressable
+                        style={[styles.clientFilterResetButton, styles.clientExportButton]}
+                        onPress={() => exportRowsToCsv('clientes.csv', filteredClientes.map((cliente) => ({
+                          Identificacion: cliente.numeroidentificacion,
+                          Nombre: getClienteDisplayName(cliente),
+                          Tipo: getTipoClienteLabel(cliente.tipoCliente, clienteLookups),
+                          Correo: getClienteEmail(cliente),
+                          Telefono: cliente.celular || cliente.telefonoconvencional || '',
+                          Proveedor: cliente.esProveedor ? 'Si' : 'No',
+                          Estado: cliente.estado === false ? 'Inactivo' : 'Activo',
+                        })))}
+                      >
+                        <MaterialCommunityIcons name="file-excel-outline" size={17} color="#128A46" />
+                        <Text style={[styles.clientFilterClear, styles.clientExportText]}>Exportar listado</Text>
+                      </Pressable>
+                      <Text style={styles.clientListCount}>{filteredClientes.length}</Text>
+                    </View>
                   </View>
                   <ResultCollection
                     items={filteredClientes}
@@ -5409,7 +5401,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     <Pressable
                       style={styles.clientFilterResetButton}
                       onPress={() => {
-                        setSearch('');
                         setProductoTipoFiltro('todos');
                         setProductoCategoriaFiltro(null);
                         setProductoSubcategoriaFiltro(null);
@@ -5418,27 +5409,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                       <MaterialCommunityIcons name="filter-remove-outline" size={17} color="#00649D" />
                       <Text style={styles.clientFilterClear}>Limpiar</Text>
                     </Pressable>
-                  </View>
-                  <View style={styles.clientSearchBar}>
-                    <MaterialCommunityIcons name="magnify" size={21} color="#0072BD" />
-                    <TextInput
-                      accessibilityLabel="Buscar productos"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      placeholder="Nombre, codigo, categoria..."
-                      placeholderTextColor="#8191A2"
-                      style={styles.clientSearchInput}
-                      value={search}
-                      onChangeText={setSearch}
-                    />
-                    {search ? (
-                      <Pressable accessibilityLabel="Limpiar busqueda" hitSlop={8} onPress={() => setSearch('')}>
-                        <MaterialCommunityIcons name="close-circle" size={19} color="#8AA0B2" />
-                      </Pressable>
-                    ) : null}
-                    <View style={styles.clientSearchCount}>
-                      <Text style={styles.clientSearchCountText}>{filteredProductos.length}</Text>
-                    </View>
                   </View>
                   <View style={styles.clientFilterPanel}>
                     <View style={styles.clientFilterLine}>
@@ -5496,7 +5466,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   </View>
                 ) : null}
                 {!loadingProductos && filteredProductos.length === 0 ? (
-                  <EmptyState title={search ? 'Sin coincidencias' : 'Sin productos para mostrar'} text={search ? 'Prueba con otro codigo, nombre o categoria.' : 'Cuando existan registros, apareceran aqui.'} />
+                  <EmptyState title="Sin productos para mostrar" text="Prueba con otra categoria, subcategoria o tipo." />
                 ) : null}
                 <View style={styles.clientListPanel}>
                   <View style={styles.clientListHeader}>
@@ -5504,12 +5474,29 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                       <Text style={styles.clientListEyebrow}>Listado</Text>
                       <Text style={styles.clientListTitle}>Productos y servicios</Text>
                     </View>
-                    <Text style={styles.clientListCount}>{filteredProductos.length}</Text>
+                    <View style={styles.clientListActions}>
+                      <Pressable
+                        style={[styles.clientFilterResetButton, styles.clientExportButton]}
+                        onPress={() => exportRowsToCsv('productos.csv', filteredProductos.map((producto) => ({
+                          Codigo: producto.codigo || producto.codproducto,
+                          Nombre: producto.nombre,
+                          Tipo: producto.tipo,
+                          Categoria: producto.categoriaDescripcion,
+                          Subcategoria: producto.subcategoriaDescripcion,
+                          Tarifa: producto.tarifaDescripcion,
+                          Precio: producto.precioBase,
+                        })))}
+                      >
+                        <MaterialCommunityIcons name="file-excel-outline" size={17} color="#128A46" />
+                        <Text style={[styles.clientFilterClear, styles.clientExportText]}>Exportar listado</Text>
+                      </Pressable>
+                      <Text style={styles.clientListCount}>{filteredProductos.length}</Text>
+                    </View>
                   </View>
                   <ResultCollection
                     items={filteredProductos}
                     variant="plain"
-                    resetKey={`${search}-${productoTipoFiltro}-${productoCategoriaFiltro ?? 'todas'}-${productoSubcategoriaFiltro ?? 'todas'}`}
+                    resetKey={`${productoTipoFiltro}-${productoCategoriaFiltro ?? 'todas'}-${productoSubcategoriaFiltro ?? 'todas'}`}
                     keyExtractor={(producto, index) => `producto-${producto.codproducto}-${producto.codigo ?? producto.nombre}-${index}`}
                     renderItem={(producto) => (
                       <ProductoCard
@@ -6337,8 +6324,8 @@ function getWorkspaceTitle(view: WorkspaceView) {
     'admin-retenciones': 'Retenciones',
     'admin-sql-auditoria': 'SQL Auditoria',
     clientes: 'Clientes',
-    'nuevo-cliente': 'Nuevo cliente',
-    'nuevo-producto': 'Nuevo producto',
+    'nuevo-cliente': 'Clientes',
+    'nuevo-producto': 'Productos',
     proveedores: 'Proveedores',
     productos: 'Productos',
     categorias: 'Categorias',
@@ -7154,6 +7141,54 @@ function NuevaNotaCreditoMobileScreen({
   );
 }
 
+type DocumentAction = {
+  label: string;
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  tone: 'primary' | 'success' | 'danger' | 'warning' | 'purple';
+  onPress: () => void;
+};
+
+function DocumentActionsMenu({ actions }: { actions: DocumentAction[] }) {
+  const [open, setOpen] = useState(false);
+  const toneColor = (tone: DocumentAction['tone']) => {
+    if (tone === 'success') return '#0F6B32';
+    if (tone === 'danger') return '#8A1B1B';
+    if (tone === 'warning') return '#8A4B12';
+    if (tone === 'purple') return '#5630A8';
+    return '#004F88';
+  };
+
+  return (
+    <View style={styles.documentActionWrap}>
+      <Pressable style={styles.documentActionTrigger} onPress={() => setOpen((value) => !value)} accessibilityLabel="Ver acciones">
+        <MaterialCommunityIcons name="dots-horizontal" size={21} color="#294D69" />
+      </Pressable>
+      {open ? (
+        <View style={styles.documentActionMenu}>
+          {actions.map((action) => {
+            const color = toneColor(action.tone);
+            return (
+              <Pressable
+                key={action.label}
+                style={styles.documentActionItem}
+                onPress={() => {
+                  setOpen(false);
+                  action.onPress();
+                }}
+              >
+                <View style={styles.documentActionIcon}>
+                  <MaterialCommunityIcons name={action.icon} size={16} color={color} />
+                </View>
+                <Text style={[styles.documentActionText, { color }]}>{action.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function MisNotasCreditoMobileScreen({
   notas,
   loading,
@@ -7252,11 +7287,12 @@ function MisNotasCreditoMobileScreen({
                   <Text style={styles.clientDetailValue}>{formatMoney(nota.total)}</Text>
                 </View>
               </View>
-              <View style={styles.clientActions}>
-                <Pressable style={styles.smallActionButton} onPress={() => onPdf(nota)}><Text style={styles.smallActionText}>PDF</Text></Pressable>
-                <Pressable style={styles.smallActionButton} onPress={() => onXml(nota)}><Text style={styles.smallActionText}>XML</Text></Pressable>
-                <Pressable style={styles.smallActionButton} onPress={() => onEmail(nota)}><Text style={styles.smallActionText}>Correo</Text></Pressable>
-              </View>
+              <DocumentActionsMenu actions={[
+                { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(nota) },
+                { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(nota) },
+                { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(nota) },
+                { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(nota) },
+              ]} />
             </View>
           );
         })}
@@ -7548,11 +7584,12 @@ function MisNotasDebitoMobileScreen({
                   <Text style={styles.clientDetailValue}>{formatMoney(nota.total)}</Text>
                 </View>
               </View>
-              <View style={styles.clientActions}>
-                <Pressable style={styles.smallActionButton} onPress={() => onPdf(nota)}><Text style={styles.smallActionText}>PDF</Text></Pressable>
-                <Pressable style={styles.smallActionButton} onPress={() => onXml(nota)}><Text style={styles.smallActionText}>XML</Text></Pressable>
-                <Pressable style={styles.smallActionButton} onPress={() => onEmail(nota)}><Text style={styles.smallActionText}>Correo</Text></Pressable>
-              </View>
+              <DocumentActionsMenu actions={[
+                { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(nota) },
+                { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(nota) },
+                { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(nota) },
+                { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(nota) },
+              ]} />
             </View>
           );
         })}
@@ -7844,11 +7881,12 @@ function MisLiquidacionesCompraMobileScreen({
                   <Text style={styles.clientDetailValue}>{formatMoney(liquidacion.total)}</Text>
                 </View>
               </View>
-              <View style={styles.clientActions}>
-                <Pressable style={styles.smallActionButton} onPress={() => onPdf(liquidacion)}><Text style={styles.smallActionText}>PDF</Text></Pressable>
-                <Pressable style={styles.smallActionButton} onPress={() => onXml(liquidacion)}><Text style={styles.smallActionText}>XML</Text></Pressable>
-                <Pressable style={styles.smallActionButton} onPress={() => onEmail(liquidacion)}><Text style={styles.smallActionText}>Correo</Text></Pressable>
-              </View>
+              <DocumentActionsMenu actions={[
+                { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(liquidacion) },
+                { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(liquidacion) },
+                { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(liquidacion) },
+                { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(liquidacion) },
+              ]} />
             </View>
           );
         })}
@@ -8150,11 +8188,12 @@ function MisGuiasRemisionMobileScreen({
                   <Text style={styles.clientDetailValue}>{formatDocumentDate(guia.fechaTraslado)}</Text>
                 </View>
               </View>
-              <View style={styles.clientActions}>
-                <Pressable style={styles.smallActionButton} onPress={() => onPdf(guia)}><Text style={styles.smallActionText}>PDF</Text></Pressable>
-                <Pressable style={styles.smallActionButton} onPress={() => onXml(guia)}><Text style={styles.smallActionText}>XML</Text></Pressable>
-                <Pressable style={styles.smallActionButton} onPress={() => onEmail(guia)}><Text style={styles.smallActionText}>Correo</Text></Pressable>
-              </View>
+              <DocumentActionsMenu actions={[
+                { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(guia) },
+                { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(guia) },
+                { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(guia) },
+                { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(guia) },
+              ]} />
             </View>
           );
         })}
@@ -8255,11 +8294,12 @@ function MisRetencionesMobileScreen({
                   <Text style={styles.clientDetailValue}>{formatMoney(retencion.retenido)}</Text>
                 </View>
               </View>
-              <View style={styles.clientActions}>
-                <Pressable style={styles.smallActionButton} onPress={() => onPdf(retencion)}><Text style={styles.smallActionText}>PDF</Text></Pressable>
-                <Pressable style={styles.smallActionButton} onPress={() => onXml(retencion)}><Text style={styles.smallActionText}>XML</Text></Pressable>
-                <Pressable style={styles.smallActionButton} onPress={() => onEmail(retencion)}><Text style={styles.smallActionText}>Correo</Text></Pressable>
-              </View>
+              <DocumentActionsMenu actions={[
+                { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(retencion) },
+                { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(retencion) },
+                { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(retencion) },
+                { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(retencion) },
+              ]} />
             </View>
           );
         })}
@@ -8365,12 +8405,13 @@ function MisFacturasMobileScreen({
                 <Text style={styles.clientDetailValue}>{formatMoney(factura.total)}</Text>
               </View>
             </View>
-            <View style={styles.clientActions}>
-              <Pressable style={styles.smallActionButton} onPress={() => onPdf(factura)}><Text style={styles.smallActionText}>PDF</Text></Pressable>
-              <Pressable style={styles.smallActionButton} onPress={() => onXml(factura)}><Text style={styles.smallActionText}>XML</Text></Pressable>
-              <Pressable style={styles.smallActionButton} onPress={() => onEmail(factura)}><Text style={styles.smallActionText}>Correo</Text></Pressable>
-              <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={() => onAnular(factura)}><Text style={[styles.smallActionText, styles.smallDangerText]}>Anular</Text></Pressable>
-            </View>
+            <DocumentActionsMenu actions={[
+              { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(factura) },
+              { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(factura) },
+              { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(factura) },
+              { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(factura) },
+              { label: 'Anular factura', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(factura) },
+            ]} />
           </View>
           );
         })}
@@ -8994,21 +9035,6 @@ function PortalServiceGlyph({ kind }: { kind: string }) {
   );
 }
 
-function PortalUpcomingCard() {
-  return (
-    <View style={styles.portalUpcomingCard}>
-      <View style={styles.portalUpcomingDot} />
-      <View style={styles.portalUpcomingIcon}>
-        <Text style={styles.portalUpcomingShield}>✓</Text>
-      </View>
-      <View style={styles.portalUpcomingCopy}>
-        <Text style={styles.portalUpcomingTitle}>PRÓXIMOS SERVICIOS</Text>
-        <Text style={styles.portalUpcomingText}>Estamos trabajando para brindarte más herramientas.</Text>
-      </View>
-    </View>
-  );
-}
-
 function DirectoryHero({
   eyebrow,
   title,
@@ -9080,6 +9106,8 @@ function EfactBotScreen({ userName }: { userName: string }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [listening, setListening] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [feedbackByMessage, setFeedbackByMessage] = useState<Record<string, 'like' | 'dislike'>>({});
   const voiceRecognition = useRef<any>(null);
 
   const send = async (preset?: string) => {
@@ -9136,7 +9164,7 @@ function EfactBotScreen({ userName }: { userName: string }) {
       <ScrollView style={styles.botMessages} contentContainerStyle={styles.botMessagesContent} keyboardShouldPersistTaps="handled">
         {messages.map((message) => (
           <View key={message.id} style={message.role === 'user' ? styles.botUserRow : styles.botAssistantRow}>
-            {message.role === 'assistant' ? <Image source={require('./assets/numi-robot.png')} style={styles.botMessageAvatar} /> : null}
+            {message.role === 'assistant' ? <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} /> : null}
             <View style={[styles.botBubble, message.role === 'user' ? styles.botUserBubble : styles.botAssistantBubble]}>
               <View style={styles.botMessageRow}>
                 <Text style={[styles.botBubbleText, message.role === 'user' && styles.botUserBubbleText]}>{message.text}</Text>
@@ -9144,11 +9172,21 @@ function EfactBotScreen({ userName }: { userName: string }) {
               </View>
               {message.role === 'assistant' ? (
                 <View style={styles.botBubbleFeedback}>
-                  <Pressable accessibilityLabel="Respuesta util" hitSlop={6} style={styles.botFeedbackButton}>
-                    <MaterialCommunityIcons name="thumb-up-outline" size={15} color="#6E94B4" />
+                  <Pressable accessibilityLabel="Respuesta util" hitSlop={6} style={[styles.botFeedbackButton, feedbackByMessage[message.id] === 'like' && styles.botFeedbackButtonActive]} onPress={() => setFeedbackByMessage((current) => {
+                    const next = { ...current };
+                    if (next[message.id] === 'like') delete next[message.id];
+                    else next[message.id] = 'like';
+                    return next;
+                  })}>
+                    <MaterialCommunityIcons name="thumb-up-outline" size={15} color={feedbackByMessage[message.id] === 'like' ? '#FFFFFF' : '#6E94B4'} />
                   </Pressable>
-                  <Pressable accessibilityLabel="Respuesta no util" hitSlop={6} style={styles.botFeedbackButton}>
-                    <MaterialCommunityIcons name="thumb-down-outline" size={15} color="#6E94B4" />
+                  <Pressable accessibilityLabel="Respuesta no util" hitSlop={6} style={[styles.botFeedbackButton, feedbackByMessage[message.id] === 'dislike' && styles.botFeedbackButtonActive]} onPress={() => setFeedbackByMessage((current) => {
+                    const next = { ...current };
+                    if (next[message.id] === 'dislike') delete next[message.id];
+                    else next[message.id] = 'dislike';
+                    return next;
+                  })}>
+                    <MaterialCommunityIcons name="thumb-down-outline" size={15} color={feedbackByMessage[message.id] === 'dislike' ? '#FFFFFF' : '#6E94B4'} />
                   </Pressable>
                 </View>
               ) : null}
@@ -9157,7 +9195,7 @@ function EfactBotScreen({ userName }: { userName: string }) {
         ))}
         {sending ? (
           <View style={styles.botAssistantRow}>
-            <Image source={require('./assets/numi-robot.png')} style={styles.botMessageAvatar} />
+            <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} />
             <View style={[styles.botBubble, styles.botAssistantBubble, styles.botTypingBubble]}>
               <TypingDots />
             </View>
@@ -9165,12 +9203,18 @@ function EfactBotScreen({ userName }: { userName: string }) {
         ) : null}
       </ScrollView>
       {error ? <Text style={styles.botError}>{error}</Text> : null}
+      {emojiOpen ? (
+        <View style={styles.botEmojiTray}>
+          {['👍', 'Gracias', 'Factura', 'Firma', 'Ayuda'].map((emoji) => (
+            <Pressable key={emoji} style={styles.botEmojiChip} onPress={() => setDraft((current) => `${current}${current ? ' ' : ''}${emoji}`)}>
+              <Text style={styles.botEmojiText}>{emoji}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
       <View style={styles.botComposer}>
-        <Pressable style={styles.botToolButton} disabled={sending}>
-          <MaterialCommunityIcons name="paperclip" size={19} color="#6E94B4" />
-        </Pressable>
-        <Pressable style={styles.botToolButton} disabled={sending}>
-          <MaterialCommunityIcons name="emoticon-outline" size={19} color="#6E94B4" />
+        <Pressable style={[styles.botToolButton, emojiOpen && styles.botToolButtonActive]} disabled={sending} onPress={() => setEmojiOpen((value) => !value)}>
+          <MaterialCommunityIcons name="emoticon-outline" size={19} color={emojiOpen ? '#FFFFFF' : '#6E94B4'} />
         </Pressable>
         <Pressable style={[styles.botVoiceButton, listening && styles.botVoiceButtonActive]} onPress={toggleVoiceInput} disabled={sending}>
           <MaterialCommunityIcons name={listening ? 'microphone' : 'microphone-outline'} size={21} color={listening ? '#FFFFFF' : '#0878C9'} />
@@ -9625,6 +9669,7 @@ function DashboardChartCard({ facturas }: { facturas: FacturaListItem[] }) {
       <View style={styles.dashboardChartArea}>
         {values.map((value, index) => (
           <View key={`chart-${index}`} style={styles.dashboardChartColumn}>
+            <View style={[styles.dashboardChartBar, { height: `${Math.max(12, (value / max) * 86)}%` }]} />
             <View style={[styles.dashboardChartPoint, { bottom: `${Math.max(8, (value / max) * 78)}%` }]} />
           </View>
         ))}
@@ -10793,64 +10838,32 @@ function FirmaCard({ emisor, estado, onView, onEdit, onDelete }: { emisor: Emiso
         </View>
       </View>
 
-      <View style={styles.clientDetailGrid}>
+      <View style={[styles.clientDetailGrid, styles.firmaCompactGrid]}>
         <View style={styles.clientDetailItem}>
           <Text style={styles.clientDetailLabel}>Firma</Text>
           <Text style={styles.clientDetailValue}>{status}</Text>
         </View>
         <View style={styles.clientDetailItem}>
-          <Text style={styles.clientDetailLabel}>Archivo</Text>
-          <Text style={styles.clientDetailValue} numberOfLines={1}>{getFirmaFileName(emisor.pathCertificado) || 'Sin archivo'}</Text>
+          <Text style={styles.clientDetailLabel}>Vigencia</Text>
+          <Text style={[styles.clientDetailValue, estado?.diasRestantes !== null && estado?.diasRestantes !== undefined && { color: estado.diasRestantes <= 30 ? EFACT_THEME.colors.warning : EFACT_THEME.colors.success }]}>
+            {estado?.diasRestantes !== null && estado?.diasRestantes !== undefined ? `${estado.diasRestantes} dias` : 'No disponible'}
+          </Text>
         </View>
       </View>
-
-      {estado ? (
-        <View style={[styles.clientDetailGrid, styles.firmaDetailGrid]}>
-          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
-            <Text style={styles.clientDetailLabel}>Certificado / clave</Text>
-            <Text style={styles.clientDetailValue}>{estado.tieneCertificado ? 'Cargado' : 'No disponible'}{estado.tieneClave === true ? ' · Clave lista' : ''}</Text>
-          </View>
-          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
-            <Text style={styles.clientDetailLabel}>Días de vigencia</Text>
-            <Text style={[styles.clientDetailValue, { color: estado.diasRestantes !== null && estado.diasRestantes !== undefined && estado.diasRestantes <= 30 ? EFACT_THEME.colors.warning : EFACT_THEME.colors.success }]}>
-              {estado.diasRestantes !== null && estado.diasRestantes !== undefined ? `${estado.diasRestantes} días` : 'No disponible'}
-            </Text>
-          </View>
-          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
-            <Text style={styles.clientDetailLabel}>Expira</Text>
-            <Text style={styles.clientDetailValue}>{formatDocumentDate(estado.fechaExpiracion)}</Text>
-          </View>
-          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
-            <Text style={styles.clientDetailLabel}>Titular</Text>
-            <Text style={styles.clientDetailValue}>{estado.nombreTitular || 'No disponible'}</Text>
-          </View>
-          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
-            <Text style={styles.clientDetailLabel}>Identificacion</Text>
-            <Text style={styles.clientDetailValue}>{estado.identificacion || emisor.ruc || 'No disponible'}</Text>
-          </View>
-          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
-            <Text style={styles.clientDetailLabel}>Emision</Text>
-            <Text style={styles.clientDetailValue}>{formatDocumentDate(estado.fechaEmision)}</Text>
-          </View>
-          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
-            <Text style={styles.clientDetailLabel}>Numero de serie</Text>
-            <Text style={styles.clientDetailValue} numberOfLines={1}>{estado.numeroSerie || 'No disponible'}</Text>
-          </View>
-          <View style={[styles.clientDetailItem, styles.firmaDetailItem]}>
-            <Text style={styles.clientDetailLabel}>Huella digital</Text>
-            <Text style={styles.clientDetailValue} numberOfLines={1}>{estado.huellaDigital || 'No disponible'}</Text>
-          </View>
-        </View>
-      ) : null}
+      <View style={styles.systemNoticeCompact}>
+        <Text style={styles.systemNoticeText} numberOfLines={2}>
+          {configured ? `Archivo: ${getFirmaFileName(emisor.pathCertificado) || 'certificado configurado'}` : 'Carga el archivo .p12 y su clave para habilitar la firma.'}
+        </Text>
+      </View>
 
       <View style={styles.clientActions}>
         <Pressable style={styles.smallActionButton} onPress={onView}>
           <MaterialCommunityIcons name="eye-outline" size={16} color="#00649D" />
           <Text style={styles.smallActionText}>Ver</Text>
         </Pressable>
-        <Pressable style={styles.smallActionButton} onPress={onEdit}>
-          <MaterialCommunityIcons name="pencil-outline" size={16} color="#00649D" />
-          <Text style={styles.smallActionText}>{configured ? 'Cambiar firma' : 'Agregar firma'}</Text>
+        <Pressable style={[styles.smallActionButton, styles.smallSuccessButton]} onPress={onEdit}>
+          <MaterialCommunityIcons name="pencil-outline" size={16} color="#128A46" />
+          <Text style={[styles.smallActionText, styles.smallSuccessText]}>{configured ? 'Cambiar firma' : 'Agregar firma'}</Text>
         </Pressable>
         <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={onDelete}>
           <MaterialCommunityIcons name="trash-can-outline" size={16} color="#B4232D" />
@@ -13549,6 +13562,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 12,
   },
+  dashboardChartBar: {
+    alignSelf: 'center',
+    backgroundColor: '#BFE6FA',
+    borderRadius: 999,
+    bottom: 0,
+    position: 'absolute',
+    width: 10,
+  },
   dashboardChartLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -13778,6 +13799,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 18,
     paddingBottom: 10,
+  },
+  portalShowcase: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: EFACT_THEME.colors.border,
+    borderRadius: EFACT_THEME.radius.card,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 14,
+  },
+  portalShowcaseIcon: {
+    alignItems: 'center',
+    backgroundColor: EFACT_THEME.colors.primaryDark,
+    borderRadius: 14,
+    height: 52,
+    justifyContent: 'center',
+    width: 52,
+  },
+  portalShowcaseCopy: {
+    flex: 1,
+    gap: 3,
+    minWidth: 0,
+  },
+  portalShowcaseTitle: {
+    color: EFACT_THEME.colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  portalShowcaseText: {
+    color: EFACT_THEME.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
   },
   portalHeroPanel: {
     backgroundColor: EFACT_THEME.colors.primaryDark,
@@ -14176,58 +14231,6 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     height: 27,
     width: 38,
-  },
-  portalUpcomingCard: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#EEF3FF',
-    borderRadius: 18,
-    borderWidth: 1,
-    gap: 12,
-    minHeight: 170,
-    overflow: 'hidden',
-    padding: 14,
-    shadowColor: '#B8C7E6',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.18,
-    shadowRadius: 22,
-    width: '48%',
-    elevation: 7,
-  },
-  portalUpcomingDot: {
-    backgroundColor: '#DCE5FF',
-    borderRadius: 999,
-    height: 10,
-    width: 10,
-  },
-  portalUpcomingIcon: {
-    alignItems: 'center',
-    backgroundColor: '#F7FAFF',
-    borderColor: '#EDF3FF',
-    borderRadius: 16,
-    borderWidth: 1,
-    height: 52,
-    justifyContent: 'center',
-    width: 52,
-  },
-  portalUpcomingShield: {
-    color: '#176DFF',
-    fontSize: 30,
-    fontWeight: '900',
-  },
-  portalUpcomingCopy: {
-    gap: 8,
-  },
-  portalUpcomingTitle: {
-    color: '#0A69FF',
-    fontSize: 13,
-    fontWeight: '900',
-    lineHeight: 17,
-  },
-  portalUpcomingText: {
-    color: '#52658F',
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 17,
   },
   portalBottomNav: {
     alignItems: 'center',
@@ -14999,7 +15002,8 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   invoiceHeroCard: {
-    gap: 14,
+    gap: 10,
+    padding: 12,
   },
   invoiceHeroText: {
     gap: 2,
@@ -15013,7 +15017,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     gap: 3,
-    padding: 12,
+    padding: 10,
   },
   invoiceMiniLabel: {
     color: '#315A7A',
@@ -15039,7 +15043,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-around',
-    paddingVertical: 11,
+    paddingVertical: 8,
   },
   invoiceStepItem: {
     alignItems: 'center',
@@ -15074,16 +15078,16 @@ const styles = StyleSheet.create({
     color: '#0072BD',
   },
   invoicePanel: {
-    padding: 12,
+    padding: 10,
     overflow: 'hidden',
   },
   invoicePanelHeader: {
     backgroundColor: '#0072BD',
     gap: 8,
-    marginHorizontal: -12,
-    marginTop: -12,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
+    marginHorizontal: -10,
+    marginTop: -10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
   },
   invoicePanelTitle: {
     color: '#FFFFFF',
@@ -15102,7 +15106,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   invoiceGrid: {
-    gap: 12,
+    gap: 9,
   },
   invoiceChargeBox: {
     backgroundColor: '#F8FBFE',
@@ -15731,6 +15735,7 @@ const styles = StyleSheet.create({
   clientToolsHeader: {
     alignItems: 'center',
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     gap: 12,
   },
@@ -15787,6 +15792,14 @@ const styles = StyleSheet.create({
     gap: 5,
     minHeight: 34,
     paddingHorizontal: 11,
+  },
+  clientExportButton: {
+    backgroundColor: '#EAF8F0',
+    borderColor: '#BEE8CF',
+    borderWidth: 1,
+  },
+  clientExportText: {
+    color: '#128A46',
   },
   clientFilterPanel: {
     gap: 9,
@@ -15851,7 +15864,16 @@ const styles = StyleSheet.create({
   clientListHeader: {
     alignItems: 'center',
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
+    gap: 10,
+  },
+  clientListActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'flex-end',
   },
   clientListEyebrow: {
     color: '#0072BD',
@@ -16023,6 +16045,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FDEBEC',
     borderColor: '#F7D4D8',
   },
+  smallSuccessButton: {
+    backgroundColor: '#EAF8F0',
+    borderColor: '#BEE8CF',
+  },
   smallActionText: {
     color: '#00649D',
     fontSize: 12,
@@ -16030,6 +16056,63 @@ const styles = StyleSheet.create({
   },
   smallDangerText: {
     color: '#B4232D',
+  },
+  smallSuccessText: {
+    color: '#128A46',
+  },
+  documentActionWrap: {
+    alignItems: 'flex-end',
+    position: 'relative',
+    zIndex: 10,
+  },
+  documentActionTrigger: {
+    alignItems: 'center',
+    backgroundColor: '#F1F6FA',
+    borderColor: '#DCE8F1',
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  documentActionMenu: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#DCE8F1',
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 4,
+    marginTop: 8,
+    minWidth: 210,
+    padding: 8,
+    position: 'absolute',
+    right: 0,
+    top: 42,
+    shadowColor: '#123B58',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  documentActionItem: {
+    alignItems: 'center',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 10,
+    minHeight: 40,
+    paddingHorizontal: 10,
+  },
+  documentActionIcon: {
+    alignItems: 'center',
+    backgroundColor: '#F2F7FB',
+    borderRadius: 999,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  documentActionText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '900',
   },
   emptyState: {
     alignItems: 'center',
@@ -16466,7 +16549,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
   },
-  botScreen: { backgroundColor: '#F7FAFD', borderColor: '#DCE8F1', borderRadius: 18, borderWidth: 1, flex: 1, minHeight: 560, overflow: 'hidden' },
+  botScreen: { backgroundColor: '#F7FAFD', borderColor: '#B9D8EE', borderRadius: 18, borderWidth: 2, flex: 1, minHeight: 560, overflow: 'hidden' },
   botHero: { alignItems: 'center', backgroundColor: '#06295A', flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 16 },
   botAvatar: { backgroundColor: '#FFFFFF', borderColor: '#68D9F6', borderRadius: 28, borderWidth: 2, height: 56, width: 56 },
   botHeroCopy: { flex: 1 },
@@ -16491,6 +16574,7 @@ const styles = StyleSheet.create({
   botAudioButton: { alignItems: 'center', backgroundColor: '#EAF5FC', borderRadius: 999, height: 28, justifyContent: 'center', width: 28 },
   botBubbleFeedback: { alignItems: 'center', alignSelf: 'flex-end', borderTopColor: '#EDF4F9', borderTopWidth: 1, flexDirection: 'row', gap: 6, marginTop: 8, paddingTop: 6 },
   botFeedbackButton: { alignItems: 'center', backgroundColor: '#F4F8FC', borderRadius: 999, height: 26, justifyContent: 'center', width: 26 },
+  botFeedbackButtonActive: { backgroundColor: '#0878C9' },
   botTypingBubble: { minWidth: 58, paddingVertical: 8 },
   typingDots: { alignItems: 'center', flexDirection: 'row', gap: 3, justifyContent: 'center' },
   typingDotText: { color: '#0878C9', fontSize: 24, fontWeight: '900', lineHeight: 24 },
@@ -16499,7 +16583,11 @@ const styles = StyleSheet.create({
   botSuggestionText: { color: '#0867A9', fontSize: 12, fontWeight: '800' },
   botError: { color: '#B42318', fontSize: 12, paddingHorizontal: 16, paddingBottom: 6 },
   botComposer: { alignItems: 'flex-end', backgroundColor: '#FFFFFF', borderTopColor: '#DCEAF3', borderTopWidth: 1, flexDirection: 'row', gap: 6, padding: 10 },
-  botToolButton: { alignItems: 'center', height: 40, justifyContent: 'center', width: 26 },
+  botEmojiTray: { backgroundColor: '#FFFFFF', borderTopColor: '#DCEAF3', borderTopWidth: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 7, paddingHorizontal: 10, paddingVertical: 8 },
+  botEmojiChip: { backgroundColor: '#EAF5FC', borderColor: '#B9E0F5', borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6 },
+  botEmojiText: { color: '#0867A9', fontSize: 12, fontWeight: '900' },
+  botToolButton: { alignItems: 'center', borderColor: '#DCEAF3', borderRadius: 12, borderWidth: 1, height: 40, justifyContent: 'center', width: 40 },
+  botToolButtonActive: { backgroundColor: '#0878C9', borderColor: '#0878C9' },
   botVoiceButton: { alignItems: 'center', backgroundColor: '#E7F4FC', borderColor: '#B9E0F5', borderRadius: 14, borderWidth: 1, height: 44, justifyContent: 'center', width: 44 },
   botVoiceButtonActive: { backgroundColor: '#F15A29', borderColor: '#F15A29' },
   botInput: { backgroundColor: '#F3F7FA', borderColor: '#DCEAF3', borderRadius: 14, borderWidth: 1, color: '#263A4F', flex: 1, maxHeight: 90, minHeight: 44, paddingHorizontal: 12, paddingVertical: 10 },
@@ -16514,6 +16602,7 @@ const styles = StyleSheet.create({
   firmaRefreshButton: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#B8D8EA', borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 6, paddingHorizontal: 11, paddingVertical: 9 },
   firmaRefreshText: { color: '#0072BD', fontSize: 11, fontWeight: '900' },
   firmaCard: { backgroundColor: '#FFFFFF', borderColor: '#D8EAF4', borderLeftColor: '#0072BD', borderLeftWidth: 5, borderRadius: 20, borderWidth: 1, gap: 16, padding: 18, shadowColor: '#123B58', shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.1, shadowRadius: 15, elevation: 3 },
+  firmaCompactGrid: { flexWrap: 'wrap' },
   firmaDetailGrid: { flexWrap: 'wrap', gap: 10 },
   firmaDetailItem: { flexBasis: '46%', flexGrow: 1, minWidth: 130 },
 });
