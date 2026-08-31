@@ -902,15 +902,15 @@ function isERubricaService(service: Pick<ServiceAccess, 'codigo' | 'nombre' | 'r
 function getPortalServiceVisual(title: string, index: number) {
   const normalized = normalizeText(title);
   if (normalized.includes('fact')) return { kind: 'efact', accent: EFACT_THEME.colors.primary, surface: '#EAF7FF' };
-  if (normalized.includes('cont')) return { kind: 'calculator', accent: EFACT_THEME.colors.secondary, surface: EFACT_THEME.colors.secondary };
-  if (normalized.includes('declara')) return { kind: 'document', accent: EFACT_THEME.colors.info, surface: EFACT_THEME.colors.info };
-  if (normalized.includes('rubrica') || normalized.includes('sign')) return { kind: 'pencil', accent: ERUBRICA_COLORS.primary, surface: ERUBRICA_COLORS.primary };
-  if (normalized.includes('back')) return { kind: 'briefcase', accent: EFACT_THEME.colors.primaryDark, surface: EFACT_THEME.colors.primaryDark };
+  if (normalized.includes('cont')) return { kind: 'orange', accent: '#F97316', surface: '#FFF3E8' };
+  if (normalized.includes('declara')) return { kind: 'green', accent: '#08A889', surface: '#E8FBF7' };
+  if (normalized.includes('rubrica') || normalized.includes('sign')) return { kind: 'rubrica', accent: ERUBRICA_COLORS.primary, surface: '#EAFBF4' };
+  if (normalized.includes('back')) return { kind: 'purple', accent: '#6847FF', surface: '#F0EDFF' };
 
   const palette = [
-    { kind: 'document', accent: EFACT_THEME.colors.primary, surface: EFACT_THEME.colors.primary },
-    { kind: 'calculator', accent: EFACT_THEME.colors.secondary, surface: EFACT_THEME.colors.secondary },
-    { kind: 'briefcase', accent: EFACT_THEME.colors.primaryDark, surface: EFACT_THEME.colors.primaryDark },
+    { kind: 'purple', accent: '#6847FF', surface: '#F0EDFF' },
+    { kind: 'orange', accent: '#F97316', surface: '#FFF3E8' },
+    { kind: 'green', accent: '#08A889', surface: '#E8FBF7' },
   ];
   return palette[index % palette.length];
 }
@@ -1082,7 +1082,15 @@ function getServicesFromUser(user: LoginResponse, menus: DynamicMenu[]) {
 
   const fallbackServices = isSuperAdmin(user) && explicit.length === 0 && fromMenus.length === 0 ? SUPER_ADMIN_SERVICE_CATALOG : [];
 
-  return [...explicit, ...fromMenus, ...fallbackServices].filter((service) => service.estado !== false && service.habilitado !== false);
+  const unique = new Map<string, ServiceAccess>();
+  [...explicit, ...fromMenus, ...fallbackServices]
+    .filter((service) => service.estado !== false && service.habilitado !== false)
+    .forEach((service) => {
+      const key = normalizeText(getServiceDisplayName(service));
+      if (!unique.has(key)) unique.set(key, service);
+    });
+
+  return Array.from(unique.values());
 }
 
 function getLoginToken(response: LoginResponse) {
@@ -1398,6 +1406,18 @@ function puntoToForm(punto?: PuntoEmision | null): PuntoFormState {
 function normalizeSerieCode(value?: string | number | null) {
   const digits = String(value ?? '').replace(/\D/g, '');
   return digits ? digits.padStart(3, '0').slice(-3) : '';
+}
+
+function normalizeSerieDisplay(value?: string | number | null) {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  if (text.includes('-')) {
+    const [establecimiento, punto] = text.split('-');
+    return `${normalizeSerieCode(establecimiento)}-${normalizeSerieCode(punto)}`;
+  }
+  const digits = text.replace(/\D/g, '');
+  if (digits.length >= 6) return `${normalizeSerieCode(digits.slice(0, 3))}-${normalizeSerieCode(digits.slice(3, 6))}`;
+  return text;
 }
 
 function getPuntoSerie(punto: PuntoEmision) {
@@ -2801,7 +2821,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   }, [authorizedViews, reloadKey, userId]);
 
   useEffect(() => {
-    if (!catalogUserId || !authorizedViews.has('punto-emision')) return;
+    const needsPuntos = authorizedViews.has('punto-emision') || ['nueva-factura', 'nueva-nota-credito', 'nueva-nota-debito', 'nueva-liquidacion-compra', 'nueva-guia-remision'].includes(activeView);
+    if (!catalogUserId || !needsPuntos) return;
 
     let mounted = true;
     setLoadingPuntos(true);
@@ -2822,7 +2843,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     return () => {
       mounted = false;
     };
-  }, [authorizedViews, catalogUserId, reloadKey]);
+  }, [activeView, authorizedViews, catalogUserId, reloadKey]);
 
   useEffect(() => {
     if (!authorizedViews.has('firma') || activeView !== 'firma') return;
@@ -5236,7 +5257,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               {services
                 .filter((service) => {
                   const normalized = normalizeText(`${service.codigo ?? ''} ${service.nombre ?? ''}`);
-                  return normalized !== 'e-fact' && !normalized.includes('backoffice');
+                  return !normalized.includes('fact') && !normalized.includes('backoffice');
                 })
                 .map((service, index) => (
                   <PortalServiceCard
@@ -5970,6 +5991,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <NuevaFacturaMobileScreen
                 form={facturaForm}
                 preparacion={facturaPreparacion}
+                puntosData={puntosData}
                 cliente={facturaCliente}
                 clientes={facturaClientes}
                 productos={facturaProductos}
@@ -6019,6 +6041,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <NuevaNotaCreditoMobileScreen
                 form={notaCreditoForm}
                 preparacion={notaCreditoPreparacion}
+                puntosData={puntosData}
                 factura={notaCreditoFactura}
                 facturas={notaCreditoFacturas}
                 cliente={notaCreditoCliente}
@@ -6053,6 +6076,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <NuevaNotaDebitoMobileScreen
                 form={notaDebitoForm}
                 preparacion={notaDebitoPreparacion}
+                puntosData={puntosData}
                 factura={notaDebitoFactura}
                 facturas={notaDebitoFacturas}
                 cliente={notaDebitoCliente}
@@ -6087,6 +6111,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <NuevaLiquidacionCompraMobileScreen
                 form={liquidacionForm}
                 preparacion={liquidacionPreparacion}
+                puntosData={puntosData}
                 proveedor={liquidacionProveedor}
                 proveedores={liquidacionProveedores}
                 productos={liquidacionProductos}
@@ -6122,6 +6147,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <NuevaGuiaRemisionMobileScreen
                 form={guiaForm}
                 preparacion={guiaPreparacion}
+                puntosData={puntosData}
                 transportista={guiaTransportista}
                 transportistas={guiaTransportistas}
                 cliente={guiaCliente}
@@ -6628,9 +6654,19 @@ function numberValue(value: unknown) {
 }
 
 type FacturaSerieOption = NonNullable<FacturaPreparacion['series']>[number];
+type DocumentSeriesKind = 'factura' | 'notaCredito' | 'notaDebito' | 'liquidacion' | 'guia';
 
 function getSerieValue(item?: FacturaSerieOption) {
-  return item?.serieRaw ?? item?.serieVisual ?? '';
+  const row = item as (FacturaSerieOption & Record<string, unknown>) | undefined;
+  return String(
+    item?.serieRaw ??
+      item?.serieVisual ??
+      row?.serie ??
+      row?.Serie ??
+      row?.serieFactura ??
+      row?.SerieFactura ??
+      '',
+  );
 }
 
 function getSelectedSerie(preparacion: FacturaPreparacion | null, serie: string) {
@@ -6665,6 +6701,70 @@ function getNextSequence(preparacion: FacturaPreparacion | null, serie: string, 
 
 function getSerieCodemisor(preparacion: FacturaPreparacion | null, serie: string) {
   return getSelectedSerie(preparacion, serie)?.codemisor ?? preparacion?.caja?.codemisor;
+}
+
+function getPuntoSerieForDocument(punto: PuntoEmision, kind: DocumentSeriesKind) {
+  const row = punto as PuntoEmision & Record<string, unknown>;
+  const byKind =
+    kind === 'notaCredito' ? punto.serieNotasCred ?? row.serieNotaCredito :
+    kind === 'notaDebito' ? punto.serieNotasDeb ?? row.serieNotaDebito :
+    kind === 'liquidacion' ? punto.serieLiquidacion ?? row.serieLiquidacionCompra :
+    kind === 'guia' ? punto.serieGuia :
+    punto.serieFactura;
+  return String(byKind || getPuntoSerie(punto) || '');
+}
+
+function getPuntoSequenceForDocument(punto: PuntoEmision, kind: DocumentSeriesKind) {
+  if (kind === 'notaCredito') return getPuntoSequenceValue(punto, ['secNotaCredito', 'secuencialNotaCredito', 'secuenciaNotaCredito', 'secNC']);
+  if (kind === 'notaDebito') return getPuntoSequenceValue(punto, ['secNotaDebito', 'secuencialNotaDebito', 'secuenciaNotaDebito', 'secND']);
+  if (kind === 'liquidacion') return getPuntoSequenceValue(punto, ['secLiquidacion', 'secuencialLiquidacion', 'secuenciaLiquidacion', 'secLiquidacionCompra']);
+  if (kind === 'guia') return getPuntoSequenceValue(punto, ['secGuia', 'secuencialGuia', 'secuenciaGuia']);
+  return getPuntoSequenceValue(punto, ['secFactura', 'secuencialFactura', 'secuenciaFactura', 'sec']);
+}
+
+function getDocumentSerieOptions(preparacion: FacturaPreparacion | null, puntosData: PuntosEmisionData | null, kind: DocumentSeriesKind) {
+  const puntos = (puntosData?.cajas ?? [])
+    .map((punto) => {
+      const serie = normalizeSerieDisplay(getPuntoSerieForDocument(punto, kind));
+      if (!serie) return null;
+      const secuencia = getPuntoSequenceForDocument(punto, kind);
+      return {
+        serieRaw: serie,
+        serieVisual: serie,
+        codemisor: preparacion?.caja?.codemisor ?? null,
+        sec: secuencia === '-' ? null : numberValue(secuencia),
+        numCaja: punto.numCaja,
+      } satisfies FacturaSerieOption;
+    })
+    .filter(Boolean) as FacturaSerieOption[];
+
+  const prepared = (preparacion?.series ?? []).map((item, index) => {
+    const value = normalizeSerieDisplay(getSerieValue(item));
+    if (value && !value.toLowerCase().startsWith('serie ')) return { ...item, serieRaw: value, serieVisual: value };
+    return puntos[index] ?? item;
+  });
+  const source = prepared.some((item) => normalizeSerieDisplay(getSerieValue(item))) ? prepared : puntos;
+  const unique = new Map<string, FacturaSerieOption>();
+  source.forEach((item) => {
+    const key = normalizeSerieDisplay(getSerieValue(item));
+    if (key && !unique.has(key)) unique.set(key, { ...item, serieRaw: key, serieVisual: key });
+  });
+
+  return Array.from(unique.values());
+}
+
+function getSerieLabelFromOptions(options: FacturaSerieOption[], serie: string, fallback: string) {
+  const selected = options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
+  return selected?.serieVisual || selected?.serieRaw || serie || fallback;
+}
+
+function getNextSequenceFromOptions(options: FacturaSerieOption[], serie: string, fallback: string) {
+  const selected = options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
+  const row = selected as (FacturaSerieOption & Record<string, unknown>) | undefined;
+  const candidate = numberValue(row?.siguiente ?? row?.proximo ?? row?.secuencial ?? row?.numeroSecuencia ?? row?.sec);
+  if (candidate <= 0) return fallback;
+  const alreadyNext = row?.siguiente || row?.proximo;
+  return String(alreadyNext ? candidate : candidate + 1).padStart(9, '0');
 }
 
 function getClienteKey(cliente: Cliente, index: number) {
@@ -6737,6 +6837,7 @@ function listItemKey(prefix: string, parts: Array<string | number | null | undef
 function NuevaFacturaMobileScreen({
   form,
   preparacion,
+  puntosData,
   cliente,
   clientes,
   productos,
@@ -6756,6 +6857,7 @@ function NuevaFacturaMobileScreen({
 }: {
   form: NuevaFacturaFormState;
   preparacion: FacturaPreparacion | null;
+  puntosData: PuntosEmisionData | null;
   cliente: Cliente | null;
   clientes: Cliente[];
   productos: FacturaProducto[];
@@ -6793,11 +6895,11 @@ function NuevaFacturaMobileScreen({
     },
     { baseTaxed: 0, baseZero: 0, discount: 0, iva: 0, total: 0 },
   );
-  const serieOptions = preparacion?.series ?? [];
+  const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'factura');
   const formaPagoOptions = preparacion?.formasPago ?? [];
   const ivaOptions = preparacion?.porcentajesIva ?? [];
-  const serieLabel = getSerieLabel(preparacion, form.serie, '001-001');
-  const invoiceNumber = form.numeroFactura || getNextSequence(preparacion, form.serie, 1);
+  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-001'));
+  const invoiceNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie, 1));
   const referenciaWords = form.referencia.trim().split(/\s+/).filter(Boolean).length;
   const displayProductos = productos.length > 0 ? productos.slice(0, 2) : lineas.map((item) => item.producto).slice(0, 2);
   const [step, setStep] = useState(0);
@@ -7062,6 +7164,7 @@ function InvoiceProgressSteps({ labels, activeIndex }: { labels: string[]; activ
 function NuevaNotaCreditoMobileScreen({
   form,
   preparacion,
+  puntosData,
   factura,
   facturas,
   cliente,
@@ -7080,6 +7183,7 @@ function NuevaNotaCreditoMobileScreen({
 }: {
   form: NotaCreditoFormState;
   preparacion: FacturaPreparacion | null;
+  puntosData: PuntosEmisionData | null;
   factura: FacturaListItem | null;
   facturas: FacturaListItem[];
   cliente: Cliente | null;
@@ -7111,9 +7215,9 @@ function NuevaNotaCreditoMobileScreen({
     },
     { subtotal: 0, descuento: 0, iva: 0, ivaZero: 0, total: 0 },
   );
-  const serieOptions = preparacion?.series ?? [];
-  const serieLabel = getSerieLabel(preparacion, form.serie, '001-002');
-  const notaNumber = form.numeroFactura || getNextSequence(preparacion, form.serie);
+  const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'notaCredito');
+  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
+  const notaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie));
   const addDefaultLine = () => onAddLinea({
     codproducto: 0,
     codprincipal: 'NC',
@@ -7316,26 +7420,30 @@ function DocumentActionsMenu({ actions }: { actions: DocumentAction[] }) {
         <MaterialCommunityIcons name="dots-horizontal" size={21} color="#294D69" />
       </Pressable>
       {open ? (
-        <View style={styles.documentActionMenu}>
-          {actions.map((action) => {
-            const color = toneColor(action.tone);
-            return (
-              <Pressable
-                key={action.label}
-                style={styles.documentActionItem}
-                onPress={() => {
-                  setOpen(false);
-                  action.onPress();
-                }}
-              >
-                <View style={styles.documentActionIcon}>
-                  <MaterialCommunityIcons name={action.icon} size={16} color={color} />
-                </View>
-                <Text style={[styles.documentActionText, { color }]}>{action.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <Modal transparent visible={open} animationType="fade" onRequestClose={() => setOpen(false)}>
+          <Pressable style={styles.documentActionOverlay} onPress={() => setOpen(false)}>
+            <View style={styles.documentActionMenu}>
+              {actions.map((action) => {
+                const color = toneColor(action.tone);
+                return (
+                  <Pressable
+                    key={action.label}
+                    style={styles.documentActionItem}
+                    onPress={() => {
+                      setOpen(false);
+                      action.onPress();
+                    }}
+                  >
+                    <View style={styles.documentActionIcon}>
+                      <MaterialCommunityIcons name={action.icon} size={16} color={color} />
+                    </View>
+                    <Text style={[styles.documentActionText, { color }]}>{action.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Modal>
       ) : null}
     </View>
   );
@@ -7456,6 +7564,7 @@ function MisNotasCreditoMobileScreen({
 function NuevaNotaDebitoMobileScreen({
   form,
   preparacion,
+  puntosData,
   factura,
   facturas,
   cliente,
@@ -7474,6 +7583,7 @@ function NuevaNotaDebitoMobileScreen({
 }: {
   form: NotaDebitoFormState;
   preparacion: FacturaPreparacion | null;
+  puntosData: PuntosEmisionData | null;
   factura: FacturaListItem | null;
   facturas: FacturaListItem[];
   cliente: Cliente | null;
@@ -7506,9 +7616,9 @@ function NuevaNotaDebitoMobileScreen({
     },
     { subtotal: 0, ice: 0, iva: 0, ivaZero: 0, total: 0 },
   );
-  const serieOptions = preparacion?.series ?? [];
-  const serieLabel = getSerieLabel(preparacion, form.serie, '001-002');
-  const notaNumber = form.numeroFactura || getNextSequence(preparacion, form.serie, 1158);
+  const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'notaDebito');
+  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
+  const notaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie, 1158));
   const [step, setStep] = useState(0);
   const handleClear = () => {
     onClear();
@@ -7777,6 +7887,7 @@ function MisNotasDebitoMobileScreen({
 function NuevaLiquidacionCompraMobileScreen({
   form,
   preparacion,
+  puntosData,
   proveedor,
   proveedores,
   productos,
@@ -7796,6 +7907,7 @@ function NuevaLiquidacionCompraMobileScreen({
 }: {
   form: LiquidacionCompraFormState;
   preparacion: FacturaPreparacion | null;
+  puntosData: PuntosEmisionData | null;
   proveedor: Cliente | null;
   proveedores: Cliente[];
   productos: FacturaProducto[];
@@ -7822,10 +7934,10 @@ function NuevaLiquidacionCompraMobileScreen({
     },
     { subtotal: 0, descuento: 0, iva: 0, total: 0 },
   );
-  const serieOptions = preparacion?.series ?? [];
+  const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'liquidacion');
   const formaPagoOptions = preparacion?.formasPago ?? [];
-  const serieLabel = getSerieLabel(preparacion, form.serie, '001-002');
-  const liquidacionNumber = form.numeroFactura || getNextSequence(preparacion, form.serie);
+  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
+  const liquidacionNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie));
   const [step, setStep] = useState(0);
   const handleClear = () => {
     onClear();
@@ -8099,6 +8211,7 @@ function MisLiquidacionesCompraMobileScreen({
 function NuevaGuiaRemisionMobileScreen({
   form,
   preparacion,
+  puntosData,
   transportista,
   transportistas,
   cliente,
@@ -8126,6 +8239,7 @@ function NuevaGuiaRemisionMobileScreen({
 }: {
   form: GuiaRemisionFormState;
   preparacion: FacturaPreparacion | null;
+  puntosData: PuntosEmisionData | null;
   transportista: Cliente | null;
   transportistas: Cliente[];
   cliente: Cliente | null;
@@ -8151,9 +8265,9 @@ function NuevaGuiaRemisionMobileScreen({
   onClear: () => void;
   onSave: () => void;
 }) {
-  const serieOptions = preparacion?.series ?? [];
-  const serieLabel = getSerieLabel(preparacion, form.serie, '001-002');
-  const guiaNumber = form.numeroFactura || getNextSequence(preparacion, form.serie);
+  const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'guia');
+  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
+  const guiaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie));
   const totalCantidad = detalles.reduce((sum, item) => sum + (Number(item.cantidad.replace(',', '.')) || 0), 0);
   const [step, setStep] = useState(0);
   const handleClear = () => {
@@ -9211,7 +9325,12 @@ function PortalServiceCard({
       onPress={onPress}
     >
       <View style={[styles.portalServiceIcon, { backgroundColor: visual.surface, borderColor: visual.accent }]}>
-        {visual.kind === 'efact' ? <Image source={require('./assets/logo-numerica.png')} style={styles.portalServiceLogo} /> : <PortalServiceGlyph kind={visual.kind} />}
+        {visual.kind === 'efact' ? <Image source={require('./assets/logo-numerica.png')} style={styles.portalServiceLogo} /> : null}
+        {visual.kind === 'orange' ? <Image source={require('./assets/logo-numerica-naranja.png')} style={styles.portalServiceLogo} /> : null}
+        {visual.kind === 'green' ? <Image source={require('./assets/logo-numerica-verde.png')} style={styles.portalServiceLogo} /> : null}
+        {visual.kind === 'purple' ? <Image source={require('./assets/logo-numerica-morado.png')} style={styles.portalServiceLogo} /> : null}
+        {visual.kind === 'rubrica' ? <Image source={require('./assets/logo-numerica-rubrica.png')} style={styles.portalServiceLogoWide} /> : null}
+        {['document', 'calculator', 'pencil', 'briefcase'].includes(visual.kind) ? <PortalServiceGlyph kind={visual.kind} /> : null}
       </View>
       <View style={styles.portalServiceCopy}>
         <Text style={styles.portalServiceTitle}>{title}</Text>
@@ -14523,6 +14642,11 @@ const styles = StyleSheet.create({
     height: 36,
     width: 36,
   },
+  portalServiceLogoWide: {
+    borderRadius: 10,
+    height: 36,
+    width: 44,
+  },
   portalServiceCopy: {
     flex: 1,
     gap: 6,
@@ -16498,7 +16622,6 @@ const styles = StyleSheet.create({
   },
   documentActionWrap: {
     alignItems: 'flex-end',
-    alignSelf: 'stretch',
     zIndex: 2,
   },
   documentActionTrigger: {
@@ -16511,16 +16634,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 42,
   },
+  documentActionOverlay: {
+    alignItems: 'flex-end',
+    backgroundColor: 'rgba(3, 18, 33, 0.08)',
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+  },
   documentActionMenu: {
     backgroundColor: '#FFFFFF',
     borderColor: '#DCE8F1',
     borderRadius: 14,
     borderWidth: 1,
     gap: 4,
-    marginTop: 8,
     minWidth: 210,
     padding: 8,
-    alignSelf: 'flex-end',
     shadowColor: '#123B58',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
