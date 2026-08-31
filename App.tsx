@@ -6,6 +6,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import * as Speech from 'expo-speech';
 import * as Sharing from 'expo-sharing';
+import type { Dispatch, SetStateAction } from 'react';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ActivityIndicator,
@@ -196,7 +197,6 @@ type WorkspaceView =
   | 'recargas'
   | 'comprar-documentos'
   | 'reportes'
-  | 'reporte-documentos'
   | 'configuracion'
   | 'soporte'
   | 'bot'
@@ -422,7 +422,6 @@ const BASE_EFACT_MOBILE_MENUS: DynamicMenu[] = [
   { id: -1014, nombre: 'Cuentas por cobrar', ruta: '/cuentas-cobrar', icono: 'ri-money-dollar-circle-line', orden: 14, estado: true },
   { id: -1015, nombre: 'Estado de cuenta', ruta: '/estado-cuenta', icono: 'ri-file-chart-line', orden: 15, estado: true },
   { id: -1016, nombre: 'Comprar documentos', ruta: '/comprar-documentos', icono: 'ri-file-add-line', orden: 16, estado: true },
-  { id: -1017, nombre: 'Reporte documentos', ruta: '/reporte-documentos', icono: 'ri-file-list-3-line', orden: 17, estado: true },
   { id: -1018, nombre: 'Historial de recargas', ruta: '/recargas', icono: 'ri-history-line', orden: 18, estado: true },
   { id: -1019, nombre: 'Centro normativo', ruta: '/centro-normativo', icono: 'ri-book-open-line', orden: 19, estado: true },
   { id: -1020, nombre: 'Configuracion', ruta: '/configuracion', icono: 'ri-settings-3-line', orden: 20, estado: true },
@@ -447,7 +446,6 @@ const SUPER_ADMIN_SERVICE_CATALOG: ServiceAccess[] = [
   { codigo: 'e-conta', nombre: 'E-CONTAX', ruta: '/e-contax', estado: true, habilitado: true },
   { codigo: 'e-declara', nombre: 'E-DECLARA', ruta: '/e-declara', estado: true, habilitado: true },
   { codigo: 'e-rubrica', nombre: 'E-RÚBRICA', ruta: '/e-rubrica', estado: true, habilitado: true },
-  { codigo: 'backoffice', nombre: 'BACKOFFICE', ruta: '/backoffice', estado: true, habilitado: true },
 ];
 const AVATARS = [
   'Bandera-Argentina.png',
@@ -768,7 +766,6 @@ const EFACT_MODULES: Omit<MobileModule, 'count' | 'enabled'>[] = [
   { view: 'cuentas-cobrar', title: 'Cuentas por cobrar', description: 'Facturas pendientes y registro de abonos.' },
   { view: 'estado-cuenta', title: 'Estado de cuenta', description: 'Saldos, movimientos y resumen por cliente.' },
   { view: 'comprar-documentos', title: 'Comprar documentos', description: 'Compra paquetes y revisa el saldo disponible.' },
-  { view: 'reporte-documentos', title: 'Reporte documentos', description: 'Documentos emitidos, recibidos y autorizaciones.' },
   { view: 'recargas', title: 'Historial de recargas', description: 'Recargas y paquetes de documentos.' },
   { view: 'centro-normativo', title: 'Centro normativo', description: 'Identificaciones, categorias, impuestos y normativa.' },
   { view: 'configuracion', title: 'Configuracion', description: 'Usuarios, roles, permisos, impuestos y parametros.' },
@@ -786,7 +783,7 @@ const EFACT_MODULES: Omit<MobileModule, 'count' | 'enabled'>[] = [
   { view: 'admin-sql-auditoria', title: 'SQL Auditoria', description: 'Eventos de auditoria SQL y trazabilidad.' },
 ];
 
-const VIEW_ROUTE_ALIASES: Record<Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto'>, string[]> = {
+const VIEW_ROUTE_ALIASES: Partial<Record<Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto'>, string[]>> = {
   perfil: ['perfil', 'profile'],
   emisor: ['emisor', 'empresa'],
   firma: ['firma', 'certificado'],
@@ -824,7 +821,6 @@ const VIEW_ROUTE_ALIASES: Record<Exclude<WorkspaceView, 'portal' | 'dashboard' |
   'cuentas-cobrar': ['cuentas-cobrar', 'cuentas-por-cobrar', 'cobrar', 'cxc', 'abonos', 'registro-abonos'],
   'estado-cuenta': ['estado-cuenta', 'cuentas-por-cobrar/estado-cuenta', 'cuenta-cliente'],
   'comprar-documentos': ['compra-documentos', 'comprar-documentos', 'documentos-compra'],
-  'reporte-documentos': ['reporte-documentos', 'reportes-documentos', 'reportes/documentos'],
   recargas: ['recargas', 'historial-recargas'],
   reportes: ['reportes', 'logs', 'auditoria'],
   configuracion: ['configuracion', 'usuarios', 'roles', 'permisos', 'impuestos'],
@@ -905,16 +901,16 @@ function isERubricaService(service: Pick<ServiceAccess, 'codigo' | 'nombre' | 'r
 
 function getPortalServiceVisual(title: string, index: number) {
   const normalized = normalizeText(title);
-  if (normalized.includes('fact')) return { kind: 'document', accent: EFACT_THEME.colors.primary, surface: EFACT_THEME.colors.primary };
-  if (normalized.includes('cont')) return { kind: 'calculator', accent: EFACT_THEME.colors.secondary, surface: EFACT_THEME.colors.secondary };
-  if (normalized.includes('declara')) return { kind: 'document', accent: EFACT_THEME.colors.info, surface: EFACT_THEME.colors.info };
-  if (normalized.includes('rubrica') || normalized.includes('sign')) return { kind: 'pencil', accent: ERUBRICA_COLORS.primary, surface: ERUBRICA_COLORS.primary };
-  if (normalized.includes('back')) return { kind: 'briefcase', accent: EFACT_THEME.colors.primaryDark, surface: EFACT_THEME.colors.primaryDark };
+  if (normalized.includes('fact')) return { kind: 'efact', accent: EFACT_THEME.colors.primary, surface: '#EAF7FF' };
+  if (normalized.includes('cont')) return { kind: 'orange', accent: '#F97316', surface: '#FFF3E8' };
+  if (normalized.includes('declara')) return { kind: 'green', accent: '#08A889', surface: '#E8FBF7' };
+  if (normalized.includes('rubrica') || normalized.includes('sign')) return { kind: 'rubrica', accent: ERUBRICA_COLORS.primary, surface: '#EAFBF4' };
+  if (normalized.includes('back')) return { kind: 'purple', accent: '#6847FF', surface: '#F0EDFF' };
 
   const palette = [
-    { kind: 'document', accent: EFACT_THEME.colors.primary, surface: EFACT_THEME.colors.primary },
-    { kind: 'calculator', accent: EFACT_THEME.colors.secondary, surface: EFACT_THEME.colors.secondary },
-    { kind: 'briefcase', accent: EFACT_THEME.colors.primaryDark, surface: EFACT_THEME.colors.primaryDark },
+    { kind: 'purple', accent: '#6847FF', surface: '#F0EDFF' },
+    { kind: 'orange', accent: '#F97316', surface: '#FFF3E8' },
+    { kind: 'green', accent: '#08A889', surface: '#E8FBF7' },
   ];
   return palette[index % palette.length];
 }
@@ -981,7 +977,7 @@ function menuMatchesView(menu: DynamicMenu, view: Exclude<WorkspaceView, 'portal
   if (ADMIN_ROUTE_VIEW_MAP[normalizedRoute] === view) return true;
 
   const source = `${normalizedRoute} ${normalizeText(menu.nombre)} ${normalizeText(menu.descripcion)}`;
-  return VIEW_ROUTE_ALIASES[view].some((alias) => source.includes(alias));
+  return (VIEW_ROUTE_ALIASES[view] ?? []).some((alias) => source.includes(alias));
 }
 
 function getAuthorizedViews(menus: DynamicMenu[]) {
@@ -1086,7 +1082,15 @@ function getServicesFromUser(user: LoginResponse, menus: DynamicMenu[]) {
 
   const fallbackServices = isSuperAdmin(user) && explicit.length === 0 && fromMenus.length === 0 ? SUPER_ADMIN_SERVICE_CATALOG : [];
 
-  return [...explicit, ...fromMenus, ...fallbackServices].filter((service) => service.estado !== false && service.habilitado !== false);
+  const unique = new Map<string, ServiceAccess>();
+  [...explicit, ...fromMenus, ...fallbackServices]
+    .filter((service) => service.estado !== false && service.habilitado !== false)
+    .forEach((service) => {
+      const key = normalizeText(getServiceDisplayName(service));
+      if (!unique.has(key)) unique.set(key, service);
+    });
+
+  return Array.from(unique.values());
 }
 
 function getLoginToken(response: LoginResponse) {
@@ -1404,11 +1408,43 @@ function normalizeSerieCode(value?: string | number | null) {
   return digits ? digits.padStart(3, '0').slice(-3) : '';
 }
 
+function normalizeSerieDisplay(value?: string | number | null) {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  if (text.includes('-')) {
+    const [establecimiento, punto] = text.split('-');
+    return `${normalizeSerieCode(establecimiento)}-${normalizeSerieCode(punto)}`;
+  }
+  const digits = text.replace(/\D/g, '');
+  if (digits.length >= 6) return `${normalizeSerieCode(digits.slice(0, 3))}-${normalizeSerieCode(digits.slice(3, 6))}`;
+  return text;
+}
+
 function getPuntoSerie(punto: PuntoEmision) {
   if (punto.establecimiento && punto.puntoEmision) return `${normalizeSerieCode(punto.establecimiento)}-${normalizeSerieCode(punto.puntoEmision)}`;
   const serie = punto.serieFactura ?? punto.serieNotasCred ?? punto.serieGuia ?? '';
   if (serie.includes('-')) return serie;
   return normalizeSerieCode(punto.puntoEmision ?? punto.numCaja);
+}
+
+function getPuntoSequenceValue(punto: PuntoEmision, keys: string[]) {
+  const row = punto as PuntoEmision & Record<string, unknown>;
+  const value = keys.map((key) => row[key]).find((candidate) => candidate !== null && candidate !== undefined && String(candidate).trim());
+  if (value === undefined) return '-';
+  const numeric = numberValue(value);
+  return numeric > 0 ? String(numeric).padStart(9, '0') : String(value);
+}
+
+function getPuntoDocumentSequences(punto: PuntoEmision) {
+  const serie = getPuntoSerie(punto) || 'Sin serie';
+  return [
+    { label: 'Factura', serie: punto.serieFactura || serie, secuencia: getPuntoSequenceValue(punto, ['secFactura', 'secuencialFactura', 'secuenciaFactura', 'sec']) },
+    { label: 'Nota credito', serie: punto.serieNotasCred || serie, secuencia: getPuntoSequenceValue(punto, ['secNotaCredito', 'secuencialNotaCredito', 'secuenciaNotaCredito', 'secNC']) },
+    { label: 'Nota debito', serie: punto.serieNotasDeb || serie, secuencia: getPuntoSequenceValue(punto, ['secNotaDebito', 'secuencialNotaDebito', 'secuenciaNotaDebito', 'secND']) },
+    { label: 'Guia', serie: punto.serieGuia || serie, secuencia: getPuntoSequenceValue(punto, ['secGuia', 'secuencialGuia', 'secuenciaGuia']) },
+    { label: 'Retencion', serie: punto.serieRetencion || serie, secuencia: getPuntoSequenceValue(punto, ['secRetencion', 'secuencialRetencion', 'secuenciaRetencion']) },
+    { label: 'Liquidacion', serie: punto.serieLiquidacion || serie, secuencia: getPuntoSequenceValue(punto, ['secLiquidacion', 'secuencialLiquidacion', 'secuenciaLiquidacion']) },
+  ];
 }
 
 function getNextPuntoCode(cajas: PuntoEmision[]) {
@@ -2123,6 +2159,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [selectedPunto, setSelectedPunto] = useState<PuntoEmision | null>(null);
   const [puntoForm, setPuntoForm] = useState<PuntoFormState>(initialPuntoForm);
   const [savingPunto, setSavingPunto] = useState(false);
+  const [botMessages, setBotMessages] = useState<BotMessage[]>([]);
+  const [botDraft, setBotDraft] = useState('');
+  const [botFeedbackByMessage, setBotFeedbackByMessage] = useState<BotFeedbackState>({});
 
   const userId = getClaimNumber(currentUser, 'idUsuario') ?? 0;
   const catalogUserId = getClaimNumber(currentUser, 'idJefe') ?? userId;
@@ -2171,6 +2210,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
     return () => subscription.remove();
   }, []);
+
+  useEffect(() => {
+    if (activeView !== 'bot') {
+      void Speech.stop();
+    }
+  }, [activeView]);
 
   useEffect(() => {
     if (!userId) return;
@@ -2295,7 +2340,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getFacturaPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setFacturaPreparacion(data);
-          const serie = data.series?.[0]?.serieRaw ?? data.series?.[0]?.serieVisual ?? data.caja?.serieFactura ?? '';
+          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
           const formaPago = data.formasPago?.[0]?.codigo ?? '';
           setFacturaForm((current) => ({ ...current, serie, formaPago }));
         })
@@ -2353,7 +2398,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getGuiaRemisionPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setGuiaPreparacion(data);
-          const serie = data.series?.[0]?.serieRaw ?? data.series?.[0]?.serieVisual ?? data.caja?.serieFactura ?? '';
+          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
           setGuiaForm((current) => ({ ...current, serie }));
         })
       : getGuiasRemision(catalogUserId, 0).then((data) => {
@@ -2386,7 +2431,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getLiquidacionCompraPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setLiquidacionPreparacion(data);
-          const serie = data.series?.[0]?.serieRaw ?? data.series?.[0]?.serieVisual ?? data.caja?.serieFactura ?? '';
+          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
           const formaPago = data.formasPago?.[0]?.codigo ?? '';
           setLiquidacionForm((current) => ({ ...current, serie, formaPago }));
         })
@@ -2420,7 +2465,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getNotaDebitoPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setNotaDebitoPreparacion(data);
-          const serie = data.series?.[0]?.serieRaw ?? data.series?.[0]?.serieVisual ?? data.caja?.serieFactura ?? '';
+          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
           setNotaDebitoForm((current) => ({ ...current, serie }));
         })
       : getNotasDebito(catalogUserId, 0).then((data) => {
@@ -2453,7 +2498,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getNotaCreditoPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setNotaCreditoPreparacion(data);
-          const serie = data.series?.[0]?.serieRaw ?? data.series?.[0]?.serieVisual ?? data.caja?.serieFactura ?? '';
+          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
           setNotaCreditoForm((current) => ({ ...current, serie }));
         })
       : getNotasCredito(catalogUserId, 0).then((data) => {
@@ -2478,7 +2523,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     if (!catalogUserId || !authorizedViews.has('dashboard')) return;
 
     let mounted = true;
-    const views: WorkspaceView[] = ['cuentas-cobrar', 'estado-cuenta', 'comprar-documentos', 'recargas', 'reporte-documentos', 'centro-normativo'];
+    const views: WorkspaceView[] = ['cuentas-cobrar', 'estado-cuenta', 'comprar-documentos', 'recargas', 'centro-normativo'];
 
     Promise.all(
       views.map(async (view) => {
@@ -2806,7 +2851,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   }, [authorizedViews, reloadKey, userId]);
 
   useEffect(() => {
-    if (!catalogUserId || !authorizedViews.has('punto-emision')) return;
+    const needsPuntos = authorizedViews.has('punto-emision') || ['nueva-factura', 'nueva-nota-credito', 'nueva-nota-debito', 'nueva-liquidacion-compra', 'nueva-guia-remision'].includes(activeView);
+    if (!catalogUserId || !needsPuntos) return;
 
     let mounted = true;
     setLoadingPuntos(true);
@@ -2827,7 +2873,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     return () => {
       mounted = false;
     };
-  }, [authorizedViews, catalogUserId, reloadKey]);
+  }, [activeView, authorizedViews, catalogUserId, reloadKey]);
 
   useEffect(() => {
     if (!authorizedViews.has('firma') || activeView !== 'firma') return;
@@ -4213,7 +4259,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         idUsuario: catalogUserId,
         cliente: facturaCliente,
         serie: facturaForm.serie,
-        codemisor: facturaPreparacion?.series?.[0]?.codemisor ?? facturaPreparacion?.caja?.codemisor,
+        codemisor: getSerieCodemisor(facturaPreparacion, facturaForm.serie),
         formaPago: facturaForm.formaPago,
         referencia: facturaForm.referencia,
         correos: facturaForm.correoAdicional ? [facturaForm.correoAdicional] : [],
@@ -4383,7 +4429,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         cliente: notaCreditoCliente,
         facturaModificada: notaCreditoFactura,
         serie: notaCreditoForm.serie,
-        codemisor: notaCreditoPreparacion?.series?.[0]?.codemisor ?? notaCreditoPreparacion?.caja?.codemisor,
+        codemisor: getSerieCodemisor(notaCreditoPreparacion, notaCreditoForm.serie),
         motivo: notaCreditoForm.motivo,
         observacion: notaCreditoForm.observacion,
         correos: notaCreditoForm.correoAdicional ? [notaCreditoForm.correoAdicional] : [],
@@ -4493,7 +4539,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         cliente: notaDebitoCliente,
         facturaModificada: notaDebitoFactura,
         serie: notaDebitoForm.serie,
-        codemisor: notaDebitoPreparacion?.series?.[0]?.codemisor ?? notaDebitoPreparacion?.caja?.codemisor,
+        codemisor: getSerieCodemisor(notaDebitoPreparacion, notaDebitoForm.serie),
         correos: notaDebitoForm.correoAdicional ? [notaDebitoForm.correoAdicional] : [],
         detalles: notaDebitoLineas.map((linea) => ({
           descripcion: linea.descripcion,
@@ -4615,7 +4661,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         idUsuario: catalogUserId,
         proveedor: liquidacionProveedor,
         serie: liquidacionForm.serie,
-        codemisor: liquidacionPreparacion?.series?.[0]?.codemisor ?? liquidacionPreparacion?.caja?.codemisor,
+        codemisor: getSerieCodemisor(liquidacionPreparacion, liquidacionForm.serie),
         formaPago: liquidacionForm.formaPago,
         diasCredito: Number(liquidacionForm.diasCredito) || 0,
         correos: liquidacionForm.correoAdicional ? [liquidacionForm.correoAdicional] : [],
@@ -4776,7 +4822,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         destinatario: guiaCliente,
         factura: guiaFactura,
         serie: guiaForm.serie,
-        codemisor: guiaPreparacion?.series?.[0]?.codemisor ?? guiaPreparacion?.caja?.codemisor,
+        codemisor: getSerieCodemisor(guiaPreparacion, guiaForm.serie),
         placa: guiaForm.placa,
         contribuyenteEspecial: guiaForm.contribuyenteEspecial,
         obligadoContabilidad: guiaForm.transportistaObligadoContabilidad,
@@ -4889,7 +4935,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         'cuentas-cobrar',
         'estado-cuenta',
         'comprar-documentos',
-         'reporte-documentos',
          'recargas',
          'centro-normativo',
          'bot',
@@ -5038,7 +5083,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       disabled: !authorizedViews.has('recargas'),
       children: [menuNode('recargas', 'Mis recargas')],
     },
-    menuNode('reporte-documentos', 'Reporte documentos'),
     {
       key: 'documentos-generados',
       label: 'Documentos Generados',
@@ -5209,11 +5253,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           <View style={styles.portalStack}>
             <View style={styles.portalShowcase}>
               <View style={styles.portalShowcaseIcon}>
-                <MaterialCommunityIcons name="view-dashboard-outline" size={26} color="#FFFFFF" />
+                <Image source={require('./assets/logo-numerica.png')} style={styles.portalShowcaseLogo} />
               </View>
               <View style={styles.portalShowcaseCopy}>
                 <Text style={styles.portalShowcaseTitle}>Servicios Numerica</Text>
-                <Text style={styles.portalShowcaseText}>Accede a tus herramientas operativas desde un panel limpio y directo.</Text>
+                <Text style={styles.portalShowcaseText}>Elige tu herramienta y continua tu operacion sin cambiar de entorno.</Text>
+                <View style={styles.portalShowcaseBadges}>
+                  <Text style={styles.portalShowcaseBadge}>Facturacion</Text>
+                  <Text style={styles.portalShowcaseBadge}>Firma electronica</Text>
+                </View>
               </View>
             </View>
             <View style={styles.portalSectionHeader}>
@@ -5231,7 +5279,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 index={0}
               />
               {services
-                .filter((service) => normalizeText(service.codigo ?? service.nombre) !== 'e-fact')
+                .filter((service) => {
+                  const normalized = normalizeText(`${service.codigo ?? ''} ${service.nombre ?? ''}`);
+                  return !normalized.includes('fact') && !normalized.includes('backoffice');
+                })
                 .map((service, index) => (
                   <PortalServiceCard
                     key={`${service.codigo ?? service.nombre ?? 'servicio'}-${index}`}
@@ -5309,7 +5360,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                  onSave={saveCliente}
                />
              ) : activeView === 'bot' ? (
-               <EfactBotScreen userName={portalFirstName} />
+               <EfactBotScreen
+                 userName={portalFirstName}
+                 messages={botMessages}
+                 setMessages={setBotMessages}
+                 draft={botDraft}
+                 setDraft={setBotDraft}
+                 feedbackByMessage={botFeedbackByMessage}
+                 setFeedbackByMessage={setBotFeedbackByMessage}
+               />
              ) : activeView === 'clientes' ? (
                <>
                  <DirectoryHero
@@ -5956,6 +6015,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <NuevaFacturaMobileScreen
                 form={facturaForm}
                 preparacion={facturaPreparacion}
+                puntosData={puntosData}
                 cliente={facturaCliente}
                 clientes={facturaClientes}
                 productos={facturaProductos}
@@ -6005,6 +6065,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <NuevaNotaCreditoMobileScreen
                 form={notaCreditoForm}
                 preparacion={notaCreditoPreparacion}
+                puntosData={puntosData}
                 factura={notaCreditoFactura}
                 facturas={notaCreditoFacturas}
                 cliente={notaCreditoCliente}
@@ -6039,6 +6100,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <NuevaNotaDebitoMobileScreen
                 form={notaDebitoForm}
                 preparacion={notaDebitoPreparacion}
+                puntosData={puntosData}
                 factura={notaDebitoFactura}
                 facturas={notaDebitoFacturas}
                 cliente={notaDebitoCliente}
@@ -6073,6 +6135,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <NuevaLiquidacionCompraMobileScreen
                 form={liquidacionForm}
                 preparacion={liquidacionPreparacion}
+                puntosData={puntosData}
                 proveedor={liquidacionProveedor}
                 proveedores={liquidacionProveedores}
                 productos={liquidacionProductos}
@@ -6108,6 +6171,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <NuevaGuiaRemisionMobileScreen
                 form={guiaForm}
                 preparacion={guiaPreparacion}
+                puntosData={puntosData}
                 transportista={guiaTransportista}
                 transportistas={guiaTransportistas}
                 cliente={guiaCliente}
@@ -6400,7 +6464,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 }
 
 function getWorkspaceTitle(view: WorkspaceView) {
-  const titles: Record<WorkspaceView, string> = {
+  const titles: Partial<Record<WorkspaceView, string>> = {
     portal: 'Portal de Servicios',
     dashboard: 'Inicio',
     perfil: 'Perfil',
@@ -6444,7 +6508,6 @@ function getWorkspaceTitle(view: WorkspaceView) {
     recargas: 'Mis recargas',
     'comprar-documentos': 'Comprar documentos',
     reportes: 'Reportes',
-    'reporte-documentos': 'Reporte documentos',
     configuracion: 'Configuracion',
      soporte: 'Soporte',
      bot: 'Númi Bot',
@@ -6453,7 +6516,7 @@ function getWorkspaceTitle(view: WorkspaceView) {
     'no-autorizado': 'No autorizado',
   };
 
-  return titles[view];
+  return titles[view] ?? 'No autorizado';
 }
 
 function isAdminMobileView(view: WorkspaceView) {
@@ -6472,7 +6535,6 @@ function getOperationalModuleSlug(view: WorkspaceView): OperationalModule | unde
     recargas: 'recargas',
     'comprar-documentos': 'recargas',
     reportes: 'reportes',
-    'reporte-documentos': 'reportes',
     'centro-normativo': 'centro-normativo',
   };
 
@@ -6485,7 +6547,6 @@ function getOperationalDefaultTab(view: WorkspaceView, module: OperationalModule
     'estado-cuenta': 'Estado de cuenta',
     'comprar-documentos': 'Comprar documentos',
     recargas: 'Historial',
-    'reporte-documentos': 'Documentos',
   };
 
   return defaults[view] ?? getOperationalModuleConfig(module).tabs[0] ?? '';
@@ -6520,13 +6581,6 @@ function getOperationalScreenConfig(view: WorkspaceView, module: OperationalModu
       title: 'Mis recargas',
       description: 'Consulta únicamente tus recargas realizadas.',
       tabs: ['Historial'],
-      placeholder: base.placeholder,
-    },
-    'reporte-documentos': {
-      eyebrow: 'Reportes',
-      title: 'Reporte documentos',
-      description: 'Consulta documentos emitidos y recibidos.',
-      tabs: ['Documentos', 'Emitidos', 'Recibidos'],
       placeholder: base.placeholder,
     },
     compras: {
@@ -6652,6 +6706,120 @@ function numberValue(value: unknown) {
   return 0;
 }
 
+type FacturaSerieOption = NonNullable<FacturaPreparacion['series']>[number];
+type DocumentSeriesKind = 'factura' | 'notaCredito' | 'notaDebito' | 'liquidacion' | 'guia';
+
+function getSerieValue(item?: FacturaSerieOption) {
+  const row = item as (FacturaSerieOption & Record<string, unknown>) | undefined;
+  return String(
+    item?.serieRaw ??
+      item?.serieVisual ??
+      row?.serie ??
+      row?.Serie ??
+      row?.serieFactura ??
+      row?.SerieFactura ??
+      '',
+  );
+}
+
+function getSelectedSerie(preparacion: FacturaPreparacion | null, serie: string) {
+  const options = preparacion?.series ?? [];
+  return options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
+}
+
+function getSerieLabel(preparacion: FacturaPreparacion | null, serie: string, fallback = '001-001') {
+  const selected = getSelectedSerie(preparacion, serie);
+  return selected?.serieVisual || selected?.serieRaw || serie || preparacion?.caja?.serieFactura || fallback;
+}
+
+function getNextSequence(preparacion: FacturaPreparacion | null, serie: string, fallbackStart = 0) {
+  const selected = getSelectedSerie(preparacion, serie);
+  const row = selected as Record<string, unknown> | undefined;
+  const caja = preparacion?.caja as Record<string, unknown> | null | undefined;
+  const candidate = numberValue(
+    row?.siguiente ??
+      row?.proximo ??
+      row?.secuencial ??
+      row?.numeroSecuencia ??
+      row?.sec ??
+      caja?.siguiente ??
+      caja?.proximo ??
+      caja?.secuencial ??
+      caja?.numeroSecuencia ??
+      caja?.sec,
+  );
+  const next = candidate > 0 ? candidate + (row?.siguiente || row?.proximo || caja?.siguiente || caja?.proximo ? 0 : 1) : fallbackStart + 1;
+  return String(next).padStart(9, '0');
+}
+
+function getSerieCodemisor(preparacion: FacturaPreparacion | null, serie: string) {
+  return getSelectedSerie(preparacion, serie)?.codemisor ?? preparacion?.caja?.codemisor;
+}
+
+function getPuntoSerieForDocument(punto: PuntoEmision, kind: DocumentSeriesKind) {
+  const row = punto as PuntoEmision & Record<string, unknown>;
+  const byKind =
+    kind === 'notaCredito' ? punto.serieNotasCred ?? row.serieNotaCredito :
+    kind === 'notaDebito' ? punto.serieNotasDeb ?? row.serieNotaDebito :
+    kind === 'liquidacion' ? punto.serieLiquidacion ?? row.serieLiquidacionCompra :
+    kind === 'guia' ? punto.serieGuia :
+    punto.serieFactura;
+  return String(byKind || getPuntoSerie(punto) || '');
+}
+
+function getPuntoSequenceForDocument(punto: PuntoEmision, kind: DocumentSeriesKind) {
+  if (kind === 'notaCredito') return getPuntoSequenceValue(punto, ['secNotaCredito', 'secuencialNotaCredito', 'secuenciaNotaCredito', 'secNC']);
+  if (kind === 'notaDebito') return getPuntoSequenceValue(punto, ['secNotaDebito', 'secuencialNotaDebito', 'secuenciaNotaDebito', 'secND']);
+  if (kind === 'liquidacion') return getPuntoSequenceValue(punto, ['secLiquidacion', 'secuencialLiquidacion', 'secuenciaLiquidacion', 'secLiquidacionCompra']);
+  if (kind === 'guia') return getPuntoSequenceValue(punto, ['secGuia', 'secuencialGuia', 'secuenciaGuia']);
+  return getPuntoSequenceValue(punto, ['secFactura', 'secuencialFactura', 'secuenciaFactura', 'sec']);
+}
+
+function getDocumentSerieOptions(preparacion: FacturaPreparacion | null, puntosData: PuntosEmisionData | null, kind: DocumentSeriesKind) {
+  const puntos = (puntosData?.cajas ?? [])
+    .map((punto) => {
+      const serie = normalizeSerieDisplay(getPuntoSerieForDocument(punto, kind));
+      if (!serie) return null;
+      const secuencia = getPuntoSequenceForDocument(punto, kind);
+      return {
+        serieRaw: serie,
+        serieVisual: serie,
+        codemisor: preparacion?.caja?.codemisor ?? null,
+        sec: secuencia === '-' ? null : numberValue(secuencia),
+        numCaja: punto.numCaja,
+      } satisfies FacturaSerieOption;
+    })
+    .filter(Boolean) as FacturaSerieOption[];
+
+  const prepared = (preparacion?.series ?? []).map((item, index) => {
+    const value = normalizeSerieDisplay(getSerieValue(item));
+    if (value && !value.toLowerCase().startsWith('serie ')) return { ...item, serieRaw: value, serieVisual: value };
+    return puntos[index] ?? item;
+  });
+  const source = prepared.some((item) => normalizeSerieDisplay(getSerieValue(item))) ? prepared : puntos;
+  const unique = new Map<string, FacturaSerieOption>();
+  source.forEach((item) => {
+    const key = normalizeSerieDisplay(getSerieValue(item));
+    if (key && !unique.has(key)) unique.set(key, { ...item, serieRaw: key, serieVisual: key });
+  });
+
+  return Array.from(unique.values());
+}
+
+function getSerieLabelFromOptions(options: FacturaSerieOption[], serie: string, fallback: string) {
+  const selected = options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
+  return selected?.serieVisual || selected?.serieRaw || serie || fallback;
+}
+
+function getNextSequenceFromOptions(options: FacturaSerieOption[], serie: string, fallback: string) {
+  const selected = options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
+  const row = selected as (FacturaSerieOption & Record<string, unknown>) | undefined;
+  const candidate = numberValue(row?.siguiente ?? row?.proximo ?? row?.secuencial ?? row?.numeroSecuencia ?? row?.sec);
+  if (candidate <= 0) return fallback;
+  const alreadyNext = row?.siguiente || row?.proximo;
+  return String(alreadyNext ? candidate : candidate + 1).padStart(9, '0');
+}
+
 function getClienteKey(cliente: Cliente, index: number) {
   const row = cliente as Cliente & Record<string, unknown>;
   return String(cliente.codcliente || row.Codcliente || row.CodCliente || getClienteIdentification(cliente) || `${getClienteDisplayName(cliente)}-${index}`);
@@ -6722,6 +6890,7 @@ function listItemKey(prefix: string, parts: Array<string | number | null | undef
 function NuevaFacturaMobileScreen({
   form,
   preparacion,
+  puntosData,
   cliente,
   clientes,
   productos,
@@ -6741,6 +6910,7 @@ function NuevaFacturaMobileScreen({
 }: {
   form: NuevaFacturaFormState;
   preparacion: FacturaPreparacion | null;
+  puntosData: PuntosEmisionData | null;
   cliente: Cliente | null;
   clientes: Cliente[];
   productos: FacturaProducto[];
@@ -6778,12 +6948,11 @@ function NuevaFacturaMobileScreen({
     },
     { baseTaxed: 0, baseZero: 0, discount: 0, iva: 0, total: 0 },
   );
-  const serieOptions = preparacion?.series ?? [];
+  const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'factura');
   const formaPagoOptions = preparacion?.formasPago ?? [];
   const ivaOptions = preparacion?.porcentajesIva ?? [];
-  const selectedSerie = serieOptions.find((item) => item.serieRaw === form.serie || item.serieVisual === form.serie);
-  const serieLabel = selectedSerie?.serieVisual || selectedSerie?.serieRaw || form.serie || preparacion?.caja?.serieFactura || '001-001';
-  const invoiceNumber = form.numeroFactura || String((preparacion?.caja?.sec ?? 1) + 1).padStart(9, '0');
+  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-001'));
+  const invoiceNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie, 1));
   const referenciaWords = form.referencia.trim().split(/\s+/).filter(Boolean).length;
   const displayProductos = productos.length > 0 ? productos.slice(0, 2) : lineas.map((item) => item.producto).slice(0, 2);
   const [step, setStep] = useState(0);
@@ -6808,8 +6977,13 @@ function NuevaFacturaMobileScreen({
         </View>
         <View style={styles.invoiceHeaderActions}>
           <View style={styles.invoiceHeaderBox}>
-            <Text style={styles.invoiceMiniLabel}>Serie</Text>
-            <Text style={styles.invoiceHeaderValue}>{serieLabel}</Text>
+            <DropdownField
+              label="Serie"
+              options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+              allowClear
+            />
           </View>
           <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Numero de factura</Text>
@@ -7025,9 +7199,25 @@ function InvoiceSummaryRow({ label, value, danger = false }: { label: string; va
   );
 }
 
+function InvoiceProgressSteps({ labels, activeIndex }: { labels: string[]; activeIndex: number }) {
+  return (
+    <View style={styles.invoiceSteps}>
+      {labels.map((label, index) => (
+        <View key={label} style={styles.invoiceStepItem}>
+          <View style={[styles.invoiceStepNumber, index <= activeIndex && styles.invoiceStepNumberActive]}>
+            <Text style={[styles.invoiceStepNumberText, index <= activeIndex && styles.invoiceStepNumberTextActive]}>{index + 1}</Text>
+          </View>
+          <Text style={[styles.invoiceStepLabel, index === activeIndex && styles.invoiceStepLabelActive]}>{label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function NuevaNotaCreditoMobileScreen({
   form,
   preparacion,
+  puntosData,
   factura,
   facturas,
   cliente,
@@ -7046,6 +7236,7 @@ function NuevaNotaCreditoMobileScreen({
 }: {
   form: NotaCreditoFormState;
   preparacion: FacturaPreparacion | null;
+  puntosData: PuntosEmisionData | null;
   factura: FacturaListItem | null;
   facturas: FacturaListItem[];
   cliente: Cliente | null;
@@ -7077,10 +7268,9 @@ function NuevaNotaCreditoMobileScreen({
     },
     { subtotal: 0, descuento: 0, iva: 0, ivaZero: 0, total: 0 },
   );
-  const serieOptions = preparacion?.series ?? [];
-  const selectedSerie = serieOptions.find((item) => item.serieRaw === form.serie || item.serieVisual === form.serie);
-  const serieLabel = selectedSerie?.serieVisual || selectedSerie?.serieRaw || form.serie || '001-002';
-  const notaNumber = form.numeroFactura || String((preparacion?.caja?.sec ?? 0) + 1).padStart(9, '0');
+  const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'notaCredito');
+  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
+  const notaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie));
   const addDefaultLine = () => onAddLinea({
     codproducto: 0,
     codprincipal: 'NC',
@@ -7088,6 +7278,11 @@ function NuevaNotaCreditoMobileScreen({
     precioUnitario: Number(factura?.total ?? 0.01),
     tarifaIva: 0,
   });
+  const [step, setStep] = useState(0);
+  const handleClear = () => {
+    onClear();
+    setStep(0);
+  };
 
   return (
     <>
@@ -7099,17 +7294,23 @@ function NuevaNotaCreditoMobileScreen({
         </View>
         <View style={styles.invoiceHeaderActions}>
           <View style={styles.invoiceHeaderBox}>
-            <Text style={styles.invoiceMiniLabel}>Serie</Text>
-            <Text style={styles.invoiceHeaderValue}>{serieLabel}</Text>
+            <DropdownField
+              label="Serie"
+              options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+              allowClear
+            />
           </View>
           <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Nota de credito</Text>
             <Text style={styles.invoiceHeaderValue}>{notaNumber}</Text>
           </View>
-          <SecondaryButton label="Historial" onPress={onClear} />
-          <SecondaryButton label="Limpiar pantalla" onPress={onClear} />
+          <SecondaryButton label="Historial" onPress={handleClear} />
+          <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
+      <InvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -7117,6 +7318,7 @@ function NuevaNotaCreditoMobileScreen({
           <Text style={styles.mutedText}>Cargando notas de credito...</Text>
         </View>
       ) : null}
+      {step === 0 ? <>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Opciones de emision</Text>
         <Text style={styles.invoiceSectionHelp}>Tambien puedes emitir la nota de credito de estas formas</Text>
@@ -7145,6 +7347,11 @@ function NuevaNotaCreditoMobileScreen({
         </View>
         {factura ? <Text style={styles.profileValue}>Factura modificada: {factura.numeroCompleto ?? factura.numfactura}</Text> : null}
       </View>
+      <View style={styles.formActions}>
+        <PrimaryButton label="Continuar con cliente" loading={false} onPress={() => factura ? setStep(1) : Alert.alert('Factura requerida', 'Selecciona primero la factura modificada.')} />
+      </View>
+      </> : null}
+      {step === 1 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Informacion del Cliente</Text>
@@ -7180,6 +7387,12 @@ function NuevaNotaCreditoMobileScreen({
           <Field label="Observacion (max 250 caracteres)" value={form.observacion} onChangeText={(value) => onChange('observacion', value.slice(0, 250))} />
         </View>
       </View>
+      <View style={styles.formActions}>
+        <SecondaryButton label="Volver a factura" onPress={() => setStep(0)} />
+        <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} />
+      </View>
+      </> : null}
+      {step === 2 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Detalle de Nota de Credito</Text>
@@ -7228,9 +7441,11 @@ function NuevaNotaCreditoMobileScreen({
       </View>
       <View style={styles.formActions}>
         <SecondaryButton label="Previsualizar PDF" onPress={() => Alert.alert('Previsualizar PDF', 'Genera la nota de credito para consultar el PDF.')} />
-        <SecondaryButton label="Cancelar / limpiar" onPress={onClear} />
+        <SecondaryButton label="Volver al cliente" onPress={() => setStep(1)} />
+        <SecondaryButton label="Cancelar / limpiar" onPress={handleClear} />
         <PrimaryButton label="Generar Nota de Credito" loading={saving} onPress={onSave} />
       </View>
+      </> : null}
     </>
   );
 }
@@ -7258,26 +7473,30 @@ function DocumentActionsMenu({ actions }: { actions: DocumentAction[] }) {
         <MaterialCommunityIcons name="dots-horizontal" size={21} color="#294D69" />
       </Pressable>
       {open ? (
-        <View style={styles.documentActionMenu}>
-          {actions.map((action) => {
-            const color = toneColor(action.tone);
-            return (
-              <Pressable
-                key={action.label}
-                style={styles.documentActionItem}
-                onPress={() => {
-                  setOpen(false);
-                  action.onPress();
-                }}
-              >
-                <View style={styles.documentActionIcon}>
-                  <MaterialCommunityIcons name={action.icon} size={16} color={color} />
-                </View>
-                <Text style={[styles.documentActionText, { color }]}>{action.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <Modal transparent visible={open} animationType="fade" onRequestClose={() => setOpen(false)}>
+          <Pressable style={styles.documentActionOverlay} onPress={() => setOpen(false)}>
+            <View style={styles.documentActionMenu}>
+              {actions.map((action) => {
+                const color = toneColor(action.tone);
+                return (
+                  <Pressable
+                    key={action.label}
+                    style={styles.documentActionItem}
+                    onPress={() => {
+                      setOpen(false);
+                      action.onPress();
+                    }}
+                  >
+                    <View style={styles.documentActionIcon}>
+                      <MaterialCommunityIcons name={action.icon} size={16} color={color} />
+                    </View>
+                    <Text style={[styles.documentActionText, { color }]}>{action.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Modal>
       ) : null}
     </View>
   );
@@ -7398,6 +7617,7 @@ function MisNotasCreditoMobileScreen({
 function NuevaNotaDebitoMobileScreen({
   form,
   preparacion,
+  puntosData,
   factura,
   facturas,
   cliente,
@@ -7416,6 +7636,7 @@ function NuevaNotaDebitoMobileScreen({
 }: {
   form: NotaDebitoFormState;
   preparacion: FacturaPreparacion | null;
+  puntosData: PuntosEmisionData | null;
   factura: FacturaListItem | null;
   facturas: FacturaListItem[];
   cliente: Cliente | null;
@@ -7448,10 +7669,14 @@ function NuevaNotaDebitoMobileScreen({
     },
     { subtotal: 0, ice: 0, iva: 0, ivaZero: 0, total: 0 },
   );
-  const serieOptions = preparacion?.series ?? [];
-  const selectedSerie = serieOptions.find((item) => item.serieRaw === form.serie || item.serieVisual === form.serie);
-  const serieLabel = selectedSerie?.serieVisual || selectedSerie?.serieRaw || form.serie || '001-002';
-  const notaNumber = form.numeroFactura || String((preparacion?.caja?.sec ?? 1158) + 1).padStart(9, '0');
+  const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'notaDebito');
+  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
+  const notaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie, 1158));
+  const [step, setStep] = useState(0);
+  const handleClear = () => {
+    onClear();
+    setStep(0);
+  };
 
   return (
     <>
@@ -7463,17 +7688,23 @@ function NuevaNotaDebitoMobileScreen({
         </View>
         <View style={styles.invoiceHeaderActions}>
           <View style={styles.invoiceHeaderBox}>
-            <Text style={styles.invoiceMiniLabel}>Serie</Text>
-            <Text style={styles.invoiceHeaderValue}>{serieLabel}</Text>
+            <DropdownField
+              label="Serie"
+              options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+              allowClear
+            />
           </View>
           <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Nota de debito</Text>
             <Text style={styles.invoiceHeaderValue}>{notaNumber}</Text>
           </View>
-          <SecondaryButton label="Historial" onPress={onClear} />
-          <SecondaryButton label="Limpiar pantalla" onPress={onClear} />
+          <SecondaryButton label="Historial" onPress={handleClear} />
+          <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
+      <InvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -7481,6 +7712,7 @@ function NuevaNotaDebitoMobileScreen({
           <Text style={styles.mutedText}>Cargando notas de debito...</Text>
         </View>
       ) : null}
+      {step === 0 ? <>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Opciones de emision</Text>
         <Text style={styles.invoiceSectionHelp}>Tambien puedes emitir la nota de debito de estas formas</Text>
@@ -7509,6 +7741,11 @@ function NuevaNotaDebitoMobileScreen({
         </View>
         {factura ? <Text style={styles.profileValue}>Factura modificada: {factura.numeroCompleto ?? factura.numfactura}</Text> : null}
       </View>
+      <View style={styles.formActions}>
+        <PrimaryButton label="Continuar con cliente" loading={false} onPress={() => factura ? setStep(1) : Alert.alert('Factura requerida', 'Selecciona primero la factura modificada.')} />
+      </View>
+      </> : null}
+      {step === 1 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Informacion del Cliente</Text>
@@ -7530,6 +7767,12 @@ function NuevaNotaDebitoMobileScreen({
         </View>
         <SecondaryButton label="Agregar correo" onPress={() => onChange('correoAdicional', form.correoPrincipal)} />
       </View>
+      <View style={styles.formActions}>
+        <SecondaryButton label="Volver a factura" onPress={() => setStep(0)} />
+        <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} />
+      </View>
+      </> : null}
+      {step === 2 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Detalle de la Nota de Debito</Text>
@@ -7579,9 +7822,11 @@ function NuevaNotaDebitoMobileScreen({
       </View>
       <View style={styles.formActions}>
         <SecondaryButton label="Previsualizar PDF" onPress={() => Alert.alert('Previsualizar PDF', 'Genera la nota de debito para consultar el PDF.')} />
-        <SecondaryButton label="Cancelar / limpiar" onPress={onClear} />
+        <SecondaryButton label="Volver al cliente" onPress={() => setStep(1)} />
+        <SecondaryButton label="Cancelar / limpiar" onPress={handleClear} />
         <PrimaryButton label="Generar Nota de Debito" loading={saving} onPress={onSave} />
       </View>
+      </> : null}
     </>
   );
 }
@@ -7695,6 +7940,7 @@ function MisNotasDebitoMobileScreen({
 function NuevaLiquidacionCompraMobileScreen({
   form,
   preparacion,
+  puntosData,
   proveedor,
   proveedores,
   productos,
@@ -7714,6 +7960,7 @@ function NuevaLiquidacionCompraMobileScreen({
 }: {
   form: LiquidacionCompraFormState;
   preparacion: FacturaPreparacion | null;
+  puntosData: PuntosEmisionData | null;
   proveedor: Cliente | null;
   proveedores: Cliente[];
   productos: FacturaProducto[];
@@ -7740,10 +7987,15 @@ function NuevaLiquidacionCompraMobileScreen({
     },
     { subtotal: 0, descuento: 0, iva: 0, total: 0 },
   );
-  const serieOptions = preparacion?.series ?? [];
+  const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'liquidacion');
   const formaPagoOptions = preparacion?.formasPago ?? [];
-  const selectedSerie = serieOptions.find((item) => item.serieRaw === form.serie || item.serieVisual === form.serie);
-  const serieLabel = selectedSerie?.serieVisual || selectedSerie?.serieRaw || form.serie || '001-002';
+  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
+  const liquidacionNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie));
+  const [step, setStep] = useState(0);
+  const handleClear = () => {
+    onClear();
+    setStep(0);
+  };
 
   return (
     <>
@@ -7755,17 +8007,23 @@ function NuevaLiquidacionCompraMobileScreen({
         </View>
         <View style={styles.invoiceHeaderActions}>
           <View style={styles.invoiceHeaderBox}>
-            <Text style={styles.invoiceMiniLabel}>Serie</Text>
-            <Text style={styles.invoiceHeaderValue}>{serieLabel}</Text>
+            <DropdownField
+              label="Serie"
+              options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+              allowClear
+            />
           </View>
           <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Liquidacion</Text>
-            <Text style={styles.invoiceHeaderValue}>{form.numeroFactura || '-'}</Text>
+            <Text style={styles.invoiceHeaderValue}>{liquidacionNumber}</Text>
           </View>
-          <SecondaryButton label="Historial" onPress={onClear} />
-          <SecondaryButton label="Limpiar pantalla" onPress={onClear} />
+          <SecondaryButton label="Historial" onPress={handleClear} />
+          <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
+      <InvoiceProgressSteps labels={['Proveedor', 'Detalle', 'Revision']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -7773,6 +8031,7 @@ function NuevaLiquidacionCompraMobileScreen({
           <Text style={styles.mutedText}>Cargando liquidaciones...</Text>
         </View>
       ) : null}
+      {step === 0 ? <>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Buscador de proveedor</Text>
         <Text style={styles.invoiceSectionHelp}>Encuentra o completa el proveedor de la liquidacion</Text>
@@ -7789,6 +8048,11 @@ function NuevaLiquidacionCompraMobileScreen({
           ))}
         </View>
       </View>
+      <View style={styles.formActions}>
+        <PrimaryButton label="Continuar con datos" loading={false} onPress={() => proveedor ? setStep(1) : Alert.alert('Proveedor requerido', 'Selecciona primero un proveedor.')} />
+      </View>
+      </> : null}
+      {step === 1 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Datos del Documento</Text>
@@ -7815,6 +8079,12 @@ function NuevaLiquidacionCompraMobileScreen({
           <Field label="Dias de credito" value={form.diasCredito} onChangeText={(value) => onChange('diasCredito', value.replace(/[^\d]/g, ''))} keyboardType="number-pad" />
         </View>
       </View>
+      <View style={styles.formActions}>
+        <SecondaryButton label="Volver a proveedor" onPress={() => setStep(0)} />
+        <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} />
+      </View>
+      </> : null}
+      {step === 2 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Detalle de la Liquidacion</Text>
@@ -7873,8 +8143,10 @@ function NuevaLiquidacionCompraMobileScreen({
       <View style={styles.formActions}>
         <SecondaryButton label="Previsualizar PDF" onPress={() => Alert.alert('Previsualizar PDF', 'Genera la liquidacion para consultar el PDF.')} />
         <PrimaryButton label="Generar Liquidacion" loading={saving} onPress={onSave} />
-        <SecondaryButton label="Cancelar / limpiar" onPress={onClear} />
+        <SecondaryButton label="Volver a datos" onPress={() => setStep(1)} />
+        <SecondaryButton label="Cancelar / limpiar" onPress={handleClear} />
       </View>
+      </> : null}
     </>
   );
 }
@@ -7992,6 +8264,7 @@ function MisLiquidacionesCompraMobileScreen({
 function NuevaGuiaRemisionMobileScreen({
   form,
   preparacion,
+  puntosData,
   transportista,
   transportistas,
   cliente,
@@ -8019,6 +8292,7 @@ function NuevaGuiaRemisionMobileScreen({
 }: {
   form: GuiaRemisionFormState;
   preparacion: FacturaPreparacion | null;
+  puntosData: PuntosEmisionData | null;
   transportista: Cliente | null;
   transportistas: Cliente[];
   cliente: Cliente | null;
@@ -8044,10 +8318,15 @@ function NuevaGuiaRemisionMobileScreen({
   onClear: () => void;
   onSave: () => void;
 }) {
-  const serieOptions = preparacion?.series ?? [];
-  const selectedSerie = serieOptions.find((item) => item.serieRaw === form.serie || item.serieVisual === form.serie);
-  const serieLabel = selectedSerie?.serieVisual || selectedSerie?.serieRaw || form.serie || '001-002';
+  const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'guia');
+  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
+  const guiaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie));
   const totalCantidad = detalles.reduce((sum, item) => sum + (Number(item.cantidad.replace(',', '.')) || 0), 0);
+  const [step, setStep] = useState(0);
+  const handleClear = () => {
+    onClear();
+    setStep(0);
+  };
 
   return (
     <>
@@ -8059,17 +8338,23 @@ function NuevaGuiaRemisionMobileScreen({
         </View>
         <View style={styles.invoiceHeaderActions}>
           <View style={styles.invoiceHeaderBox}>
-            <Text style={styles.invoiceMiniLabel}>Serie guia</Text>
-            <Text style={styles.invoiceHeaderValue}>{serieLabel}</Text>
+            <DropdownField
+              label="Serie guia"
+              options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+              allowClear
+            />
           </View>
           <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Numero de guia</Text>
-            <Text style={styles.invoiceHeaderValue}>{form.numeroFactura || '-'}</Text>
+            <Text style={styles.invoiceHeaderValue}>{guiaNumber}</Text>
           </View>
-          <SecondaryButton label="Historial" onPress={onClear} />
-          <SecondaryButton label="Limpiar pantalla" onPress={onClear} />
+          <SecondaryButton label="Historial" onPress={handleClear} />
+          <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
+      <InvoiceProgressSteps labels={['Transporte', 'Destino', 'Detalle']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -8077,10 +8362,11 @@ function NuevaGuiaRemisionMobileScreen({
           <Text style={styles.mutedText}>Cargando guias de remision...</Text>
         </View>
       ) : null}
+      {step === 0 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Datos operativos de la guia</Text>
-          <Text style={styles.invoicePanelPill}>Completa transportista, destinatario y fechas</Text>
+          <Text style={styles.invoicePanelPill}>Selecciona transportista</Text>
         </View>
         <SearchField label="Encontrar transportista" placeholder="Identificacion o razon social" value={form.transportistaBusqueda} onChangeText={(value) => onChange('transportistaBusqueda', value)} resultCount={transportistas.length} onSubmit={onSearchTransportistas} />
         <View style={styles.formActions}>
@@ -8093,6 +8379,18 @@ function NuevaGuiaRemisionMobileScreen({
               <Text style={styles.clientMeta}>{getClienteIdentification(item) || 'Sin identificacion'}</Text>
             </Pressable>
           ))}
+        </View>
+        {transportista ? <Text style={styles.profileValue}>Transportista: {getClienteDisplayName(transportista)}</Text> : null}
+      </View>
+      <View style={styles.formActions}>
+        <PrimaryButton label="Continuar con destino" loading={false} onPress={() => transportista ? setStep(1) : Alert.alert('Transportista requerido', 'Selecciona primero un transportista.')} />
+      </View>
+      </> : null}
+      {step === 1 ? <>
+      <View style={[styles.formSectionBox, styles.invoicePanel]}>
+        <View style={styles.invoicePanelHeader}>
+          <Text style={styles.invoicePanelTitle}>Destino y traslado</Text>
+          <Text style={styles.invoicePanelPill}>Cliente, factura y fechas</Text>
         </View>
         <SearchField label="Encontrar destinatario" placeholder="Identificacion o nombre del cliente" value={form.clienteBusquedaGuia} onChangeText={(value) => onChange('clienteBusquedaGuia', value)} resultCount={clientes.length} onSubmit={onSearchClientes} />
         <SearchField label="Vincular factura (opcional)" placeholder="Numero completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} />
@@ -8111,7 +8409,13 @@ function NuevaGuiaRemisionMobileScreen({
           ))}
         </View>
         <View style={styles.invoiceGrid}>
-          <Field label="Punto de emision" value={form.serie} onChangeText={(value) => onChange('serie', value)} />
+          <DropdownField
+            label="Punto de emision"
+            options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+            value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+            onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+            allowClear
+          />
           <Field label="Placa" value={form.placa} onChangeText={(value) => onChange('placa', value)} autoCapitalize="characters" />
         </View>
         <View style={styles.invoiceBottomGrid}>
@@ -8139,6 +8443,12 @@ function NuevaGuiaRemisionMobileScreen({
           </View>
         </View>
       </View>
+      <View style={styles.formActions}>
+        <SecondaryButton label="Volver a transporte" onPress={() => setStep(0)} />
+        <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} />
+      </View>
+      </> : null}
+      {step === 2 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Detalles de traslado</Text>
@@ -8184,9 +8494,11 @@ function NuevaGuiaRemisionMobileScreen({
       </View>
       <View style={styles.formActions}>
         <SecondaryButton label="Previsualizar PDF" onPress={() => Alert.alert('Previsualizar PDF', 'Genera la guia para consultar el PDF.')} />
-        <SecondaryButton label="Cancelar / limpiar" onPress={onClear} />
+        <SecondaryButton label="Volver al destino" onPress={() => setStep(1)} />
+        <SecondaryButton label="Cancelar / limpiar" onPress={handleClear} />
         <PrimaryButton label="Generar Guia de Remision" loading={saving} onPress={onSave} />
       </View>
+      </> : null}
     </>
   );
 }
@@ -8924,7 +9236,7 @@ function PurchaseDocumentsScreen({
 }
 
 function getOperationalCapabilities(view: WorkspaceView, tab: string) {
-  const readOnlyViews: WorkspaceView[] = ['estado-cuenta', 'reporte-documentos', 'reportes', 'centro-normativo'];
+  const readOnlyViews: WorkspaceView[] = ['estado-cuenta', 'reportes', 'centro-normativo'];
   if (readOnlyViews.includes(view)) {
     return { canCreate: false, canEdit: false, canDelete: false };
   }
@@ -9066,7 +9378,12 @@ function PortalServiceCard({
       onPress={onPress}
     >
       <View style={[styles.portalServiceIcon, { backgroundColor: visual.surface, borderColor: visual.accent }]}>
-        <PortalServiceGlyph kind={visual.kind} />
+        {visual.kind === 'efact' ? <Image source={require('./assets/logo-numerica.png')} style={styles.portalServiceLogo} /> : null}
+        {visual.kind === 'orange' ? <Image source={require('./assets/logo-numerica-naranja.png')} style={styles.portalServiceLogo} /> : null}
+        {visual.kind === 'green' ? <Image source={require('./assets/logo-numerica-verde.png')} style={styles.portalServiceLogo} /> : null}
+        {visual.kind === 'purple' ? <Image source={require('./assets/logo-numerica-morado.png')} style={styles.portalServiceLogo} /> : null}
+        {visual.kind === 'rubrica' ? <Image source={require('./assets/logo-numerica-rubrica.png')} style={styles.portalServiceLogoWide} /> : null}
+        {['document', 'calculator', 'pencil', 'briefcase'].includes(visual.kind) ? <PortalServiceGlyph kind={visual.kind} /> : null}
       </View>
       <View style={styles.portalServiceCopy}>
         <Text style={styles.portalServiceTitle}>{title}</Text>
@@ -9181,6 +9498,7 @@ function DirectoryHero({
 }
 
 type BotMessage = { id: string; role: 'user' | 'assistant'; text: string };
+type BotFeedbackState = Record<string, 'like' | 'dislike'>;
 
 type NumiThinkingStep = { label: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'] };
 
@@ -9295,18 +9613,35 @@ function NumiThinkingIndicator({ request }: { request: string }) {
   );
 }
 
-function EfactBotScreen({ userName }: { userName: string }) {
-  const [messages, setMessages] = useState<BotMessage[]>([
-    { id: 'welcome', role: 'assistant', text: `Hola ${userName || ''}. Soy Númi, tu asistente de E-FACT. ¿En qué te ayudo hoy?` },
-  ]);
-  const [draft, setDraft] = useState('');
+function EfactBotScreen({
+  userName,
+  messages,
+  setMessages,
+  draft,
+  setDraft,
+  feedbackByMessage,
+  setFeedbackByMessage,
+}: {
+  userName: string;
+  messages: BotMessage[];
+  setMessages: Dispatch<SetStateAction<BotMessage[]>>;
+  draft: string;
+  setDraft: Dispatch<SetStateAction<string>>;
+  feedbackByMessage: BotFeedbackState;
+  setFeedbackByMessage: Dispatch<SetStateAction<BotFeedbackState>>;
+}) {
   const [sending, setSending] = useState(false);
   const [thinkingRequest, setThinkingRequest] = useState('');
   const [error, setError] = useState('');
   const [listening, setListening] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
-  const [feedbackByMessage, setFeedbackByMessage] = useState<Record<string, 'like' | 'dislike'>>({});
   const voiceRecognition = useRef<any>(null);
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      setMessages([{ id: 'welcome', role: 'assistant', text: `Hola ${userName || ''}. Soy Númi, tu asistente de E-FACT. ¿En qué te ayudo hoy?` }]);
+    }
+  }, [messages.length, setMessages, userName]);
 
   const send = async (preset?: string) => {
     const text = (preset ?? draft).trim();
@@ -9361,6 +9696,18 @@ function EfactBotScreen({ userName }: { userName: string }) {
 
   return (
     <KeyboardAvoidingView style={styles.botScreen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.botWidgetHeader}>
+        <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botWidgetAvatar} />
+        <View style={styles.botWidgetCopy}>
+          <Text style={styles.botWidgetKicker}>Chat con</Text>
+          <Text style={styles.botWidgetTitle}>Númi</Text>
+          <Text style={styles.botWidgetStatus}>Estamos en línea</Text>
+        </View>
+        <View style={styles.botWidgetHeaderActions}>
+          <MaterialCommunityIcons name="dots-vertical" size={18} color="#FFFFFF" />
+          <MaterialCommunityIcons name="chevron-down" size={19} color="#FFFFFF" />
+        </View>
+      </View>
       <ScrollView style={styles.botMessages} contentContainerStyle={styles.botMessagesContent} keyboardShouldPersistTaps="handled">
         {messages.map((message) => (
           <View key={message.id} style={message.role === 'user' ? styles.botUserRow : styles.botAssistantRow}>
@@ -9378,7 +9725,7 @@ function EfactBotScreen({ userName }: { userName: string }) {
                     else next[message.id] = 'like';
                     return next;
                   })}>
-                    <MaterialCommunityIcons name="thumb-up-outline" size={15} color={feedbackByMessage[message.id] === 'like' ? '#FFFFFF' : '#6E94B4'} />
+                    <MaterialCommunityIcons name={feedbackByMessage[message.id] === 'like' ? 'thumb-up' : 'thumb-up-outline'} size={15} color={feedbackByMessage[message.id] === 'like' ? '#FFFFFF' : '#6E94B4'} />
                   </Pressable>
                   <Pressable accessibilityLabel="Respuesta no util" hitSlop={6} style={[styles.botFeedbackButton, feedbackByMessage[message.id] === 'dislike' && styles.botFeedbackButtonActive]} onPress={() => setFeedbackByMessage((current) => {
                     const next = { ...current };
@@ -9386,7 +9733,7 @@ function EfactBotScreen({ userName }: { userName: string }) {
                     else next[message.id] = 'dislike';
                     return next;
                   })}>
-                    <MaterialCommunityIcons name="thumb-down-outline" size={15} color={feedbackByMessage[message.id] === 'dislike' ? '#FFFFFF' : '#6E94B4'} />
+                    <MaterialCommunityIcons name={feedbackByMessage[message.id] === 'dislike' ? 'thumb-down' : 'thumb-down-outline'} size={15} color={feedbackByMessage[message.id] === 'dislike' ? '#FFFFFF' : '#6E94B4'} />
                   </Pressable>
                 </View>
               ) : null}
@@ -9483,7 +9830,7 @@ function PdfSignaturePositionPicker({
           javaScriptEnabled
           allowFileAccess
           style={styles.pdfWebView}
-          onMessage={(event) => {
+          onMessage={(event: { nativeEvent: { data: string } }) => {
             try {
               const result = JSON.parse(event.nativeEvent.data) as { type?: string; x?: number; y?: number; widthMm?: number; heightMm?: number };
               if (result.type === 'position' && typeof result.x === 'number' && typeof result.y === 'number') onPositionChange({ x: result.x, y: result.y });
@@ -9802,7 +10149,7 @@ function DashboardHomeScreen({
   const ventasTotal = facturas.reduce((sum, factura) => sum + Number(factura.total ?? 0), 0);
   const latestFacturas = facturas.slice(0, 3);
   const mainModules = modules
-    .filter((module) => ['mis-facturas', 'clientes', 'productos', 'reporte-documentos', 'emisor', 'punto-emision'].includes(module.view))
+    .filter((module) => ['mis-facturas', 'clientes', 'productos', 'emisor', 'punto-emision'].includes(module.view))
     .slice(0, 5);
   const recentFactura = facturas[0];
 
@@ -9849,7 +10196,7 @@ function DashboardHomeScreen({
         <DashboardPrimaryAction icon="robot-outline" label="Númi" text="Asistente" onPress={() => onOpenView('bot')} />
         <DashboardPrimaryAction icon="file-document-outline" label="Mis facturas" text="Consultar emitidas" onPress={() => onOpenView('mis-facturas')} />
         <DashboardPrimaryAction icon="package-variant-closed" label="Productos" text="Catalogo" onPress={() => onOpenView('productos')} />
-        <DashboardPrimaryAction icon="chart-box-outline" label="Reportes" text="Documentos" onPress={() => onOpenView('reporte-documentos')} />
+        <DashboardPrimaryAction icon="store-cog-outline" label="Series" text="Cajas" onPress={() => onOpenView('punto-emision')} />
       </View>
 
       <View style={styles.dashboardActivityPanel}>
@@ -10012,20 +10359,29 @@ function DashboardStatCard({ accent, compact, kind, value, label, trend }: { acc
 function DashboardChartCard({ facturas }: { facturas: FacturaListItem[] }) {
   const values = [500, 1200, 720, 1350, 1680, 1640, 2450].map((fallback, index) => Number(facturas[index]?.total ?? fallback));
   const max = Math.max(...values, 1);
+  const days = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
+  const [selectedIndex, setSelectedIndex] = useState(values.length - 1);
+  const selectedValue = values[selectedIndex] ?? 0;
 
   return (
     <View style={styles.dashboardChartCard}>
-      <Text style={styles.dashboardPanelTitle} numberOfLines={1} adjustsFontSizeToFit>Ventas de los últimos 7 días</Text>
+      <View style={styles.dashboardChartHeader}>
+        <Text style={styles.dashboardPanelTitle} numberOfLines={1} adjustsFontSizeToFit>Ventas de los ultimos 7 dias</Text>
+        <View style={styles.dashboardChartValuePill}>
+          <Text style={styles.dashboardChartValueDay}>{days[selectedIndex]}</Text>
+          <Text style={styles.dashboardChartValueText}>{formatMoney(selectedValue)}</Text>
+        </View>
+      </View>
       <View style={styles.dashboardChartArea}>
         {values.map((value, index) => (
-          <View key={`chart-${index}`} style={styles.dashboardChartColumn}>
-            <View style={[styles.dashboardChartBar, { height: `${Math.max(12, (value / max) * 86)}%` }]} />
-            <View style={[styles.dashboardChartPoint, { bottom: `${Math.max(8, (value / max) * 78)}%` }]} />
-          </View>
+          <Pressable key={`chart-${index}`} style={styles.dashboardChartColumn} onPress={() => setSelectedIndex(index)}>
+            <View style={[styles.dashboardChartBar, index === selectedIndex && styles.dashboardChartBarActive, { height: `${Math.max(12, (value / max) * 86)}%` }]} />
+            <View style={[styles.dashboardChartPoint, index === selectedIndex && styles.dashboardChartPointActive, { bottom: `${Math.max(8, (value / max) * 78)}%` }]} />
+          </Pressable>
         ))}
       </View>
       <View style={styles.dashboardChartLabels}>
-        {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((day) => <Text key={day} style={styles.dashboardChartLabel}>{day}</Text>)}
+        {days.map((day, index) => <Text key={day} style={[styles.dashboardChartLabel, index === selectedIndex && styles.dashboardChartLabelActive]}>{day}</Text>)}
       </View>
     </View>
   );
@@ -11555,6 +11911,7 @@ function PuntoEmisionCard({
   onMakePrincipal: () => void;
 }) {
   const serie = getPuntoSerie(punto);
+  const sequences = getPuntoDocumentSequences(punto);
 
   return (
     <View style={[styles.clientCard, punto.esPrincipal && styles.puntoCardPrincipal]}>
@@ -11573,14 +11930,19 @@ function PuntoEmisionCard({
         ) : null}
       </View>
 
-      <View style={styles.clientDetailGrid}>
-        <View style={styles.clientDetailItem}>
-          <Text style={styles.clientDetailLabel}>Serie factura</Text>
-          <Text style={styles.clientDetailValue}>{punto.serieFactura || serie || 'Sin serie'}</Text>
+      <View style={styles.puntoSequencePanel}>
+        <View style={styles.puntoSequenceHeader}>
+          <Text style={styles.puntoSequenceTitle}>Secuencias por documento</Text>
+          <Text style={styles.puntoSequenceStatus}>{punto.estado === false ? 'Inactivo' : 'Activo'}</Text>
         </View>
-        <View style={styles.clientDetailItem}>
-          <Text style={styles.clientDetailLabel}>Estado</Text>
-          <Text style={styles.clientDetailValue}>{punto.estado === false ? 'Inactivo' : 'Activo'}</Text>
+        <View style={styles.clientDetailGrid}>
+          {sequences.map((item) => (
+            <View key={`${serie}-${item.label}`} style={styles.clientDetailItem}>
+              <Text style={styles.clientDetailLabel}>{item.label}</Text>
+              <Text style={styles.clientDetailValue}>{item.serie}</Text>
+              <Text style={styles.clientMeta}>Sec. {item.secuencia}</Text>
+            </View>
+          ))}
         </View>
       </View>
 
@@ -13891,6 +14253,31 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 7,
   },
+  dashboardChartHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  dashboardChartValuePill: {
+    alignItems: 'center',
+    backgroundColor: '#E7F4FC',
+    borderColor: '#B9E0F5',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  dashboardChartValueDay: {
+    color: '#5D7184',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  dashboardChartValueText: {
+    color: '#0072BD',
+    fontSize: 12,
+    fontWeight: '900',
+  },
   dashboardPanelTitle: {
     color: EFACT_THEME.colors.textPrimary,
     fontSize: 14,
@@ -13921,6 +14308,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 12,
   },
+  dashboardChartPointActive: {
+    backgroundColor: '#F15A29',
+    height: 16,
+    width: 16,
+  },
   dashboardChartBar: {
     alignSelf: 'center',
     backgroundColor: '#BFE6FA',
@@ -13928,6 +14320,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     position: 'absolute',
     width: 10,
+  },
+  dashboardChartBarActive: {
+    backgroundColor: '#0878C9',
+    width: 14,
   },
   dashboardChartLabels: {
     flexDirection: 'row',
@@ -13938,6 +14334,10 @@ const styles = StyleSheet.create({
     color: '#52658F',
     fontSize: 11,
     fontWeight: '800',
+  },
+  dashboardChartLabelActive: {
+    color: '#0072BD',
+    fontWeight: '900',
   },
   dashboardQuickCard: {
     backgroundColor: '#FFFFFF',
@@ -14171,11 +14571,18 @@ const styles = StyleSheet.create({
   },
   portalShowcaseIcon: {
     alignItems: 'center',
-    backgroundColor: EFACT_THEME.colors.primaryDark,
+    backgroundColor: '#EAF7FF',
+    borderColor: '#B9E0F5',
+    borderWidth: 1,
     borderRadius: 14,
     height: 52,
     justifyContent: 'center',
     width: 52,
+  },
+  portalShowcaseLogo: {
+    borderRadius: 12,
+    height: 42,
+    width: 42,
   },
   portalShowcaseCopy: {
     flex: 1,
@@ -14192,6 +14599,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 17,
+  },
+  portalShowcaseBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 5,
+  },
+  portalShowcaseBadge: {
+    backgroundColor: '#EAF5FC',
+    borderRadius: 999,
+    color: '#0072BD',
+    fontSize: 9,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   portalHeroPanel: {
     backgroundColor: EFACT_THEME.colors.primaryDark,
@@ -14444,6 +14867,16 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     height: 44,
     justifyContent: 'center',
+    width: 44,
+  },
+  portalServiceLogo: {
+    borderRadius: 10,
+    height: 36,
+    width: 36,
+  },
+  portalServiceLogoWide: {
+    borderRadius: 10,
+    height: 36,
     width: 44,
   },
   portalServiceCopy: {
@@ -16440,8 +16873,7 @@ const styles = StyleSheet.create({
   },
   documentActionWrap: {
     alignItems: 'flex-end',
-    position: 'relative',
-    zIndex: 10,
+    zIndex: 2,
   },
   documentActionTrigger: {
     alignItems: 'center',
@@ -16453,18 +16885,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 42,
   },
+  documentActionOverlay: {
+    alignItems: 'flex-end',
+    backgroundColor: 'rgba(3, 18, 33, 0.08)',
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+  },
   documentActionMenu: {
     backgroundColor: '#FFFFFF',
     borderColor: '#DCE8F1',
     borderRadius: 14,
     borderWidth: 1,
     gap: 4,
-    marginTop: 8,
     minWidth: 210,
     padding: 8,
-    position: 'absolute',
-    right: 0,
-    top: 42,
     shadowColor: '#123B58',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
@@ -16861,6 +17296,36 @@ const styles = StyleSheet.create({
     borderColor: '#72B7F2',
     borderWidth: 1.5,
   },
+  puntoSequencePanel: {
+    backgroundColor: '#F4FAFF',
+    borderColor: '#B9D8EE',
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  puntoSequenceHeader: {
+    alignItems: 'center',
+    backgroundColor: '#0072BD',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  puntoSequenceTitle: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  puntoSequenceStatus: {
+    backgroundColor: '#E7F4FC',
+    borderRadius: 999,
+    color: '#0072BD',
+    fontSize: 10,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
   securityHeaderRow: {
     alignItems: 'flex-start',
     flexDirection: 'row',
@@ -16927,7 +17392,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
   },
-  botScreen: { backgroundColor: '#F7FAFD', borderColor: '#B9D8EE', borderRadius: 18, borderWidth: 2, flex: 1, minHeight: 560, overflow: 'hidden' },
+  botScreen: { backgroundColor: '#F7FAFD', borderColor: '#B9D8EE', borderRadius: 18, borderWidth: 2, flex: 1, maxHeight: 660, minHeight: 560, overflow: 'hidden' },
+  botWidgetHeader: { alignItems: 'center', backgroundColor: '#0878C9', flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
+  botWidgetAvatar: { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF', borderRadius: 18, borderWidth: 2, height: 36, width: 36 },
+  botWidgetCopy: { flex: 1, minWidth: 0 },
+  botWidgetKicker: { color: '#DDF0FA', fontSize: 9, fontWeight: '800' },
+  botWidgetTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '900', lineHeight: 18 },
+  botWidgetStatus: { color: '#DDF0FA', fontSize: 10, fontWeight: '800', marginTop: 2 },
+  botWidgetHeaderActions: { alignItems: 'center', flexDirection: 'row', gap: 6 },
   botHero: { alignItems: 'center', backgroundColor: '#06295A', flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 16 },
   botAvatar: { backgroundColor: '#FFFFFF', borderColor: '#68D9F6', borderRadius: 28, borderWidth: 2, height: 56, width: 56 },
   botHeroCopy: { flex: 1 },
