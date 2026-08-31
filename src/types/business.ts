@@ -204,12 +204,16 @@ export type PuntoEmision = {
   idUsuario?: number | null;
   idEmpresa?: number | null;
   idSucursal?: number | null;
+  codemisor?: number | null;
+  codEmisor?: number | null;
+  codigoEmisor?: number | null;
   serieFactura?: string | null;
   serieGuia?: string | null;
   serieNotasCred?: string | null;
   serieNotasDeb?: string | null;
   serieRetencion?: string | null;
   serieLiquidacion?: string | null;
+  serieLiquidacionCompra?: string | null;
   secFactura?: number | string | null;
   secNotaCredito?: number | string | null;
   secNotaDebito?: number | string | null;
