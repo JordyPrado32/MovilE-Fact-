@@ -1983,6 +1983,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const reduceMotion = useReducedMotion();
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [notifications, setNotifications] = useState<NotificacionItem[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [notificationsMessage, setNotificationsMessage] = useState<MessageState>(null);
@@ -2000,6 +2002,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [erubricaData, setErubricaData] = useState<ERubricaDashboard | null>(null);
   const [loadingErubrica, setLoadingErubrica] = useState(false);
   const [erubricaInitialPdf, setErubricaInitialPdf] = useState<{ uri: string; name: string; mimeType?: string } | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<{ uri: string; name: string } | null>(null);
   const [erubricaTabRequest, setErubricaTabRequest] = useState<ERubricaTab | null>(null);
   const [perfilData, setPerfilData] = useState<PerfilLookup | null>(null);
   const [puntosData, setPuntosData] = useState<PuntosEmisionData | null>(null);
@@ -2131,6 +2134,33 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const canUsePortal = isSuperAdmin(currentUser) || services.length > 0;
   const portalFirstName = getDisplayFirstName(currentUser, perfilData?.perfil);
   const unreadNotifications = notifications.filter((notification) => !notification.read).length;
+  const globalSearchResults = useMemo<GlobalSearchResult[]>(() => {
+    const term = globalSearchQuery.trim().toLowerCase();
+    if (!term) return [];
+    const matches = (value: unknown) => String(value ?? '').toLowerCase().includes(term);
+    const clientResults = clientes.filter((cliente) => [getClienteDisplayName(cliente), cliente.numeroidentificacion, cliente.correo].some(matches)).slice(0, 5).map((cliente) => ({
+      id: `cliente-${cliente.codcliente ?? cliente.numeroidentificacion}`,
+      title: getClienteDisplayName(cliente),
+      subtitle: `${cliente.numeroidentificacion ?? 'Sin identificación'} · Cliente`,
+      icon: 'account-outline' as const,
+      view: 'clientes' as WorkspaceView,
+    }));
+    const productResults = productos.filter((producto) => [producto.nombre, producto.codigo, producto.tipo].some(matches)).slice(0, 5).map((producto) => ({
+      id: `producto-${producto.codproducto ?? producto.codigo}`,
+      title: producto.nombre || producto.codigo || 'Producto',
+      subtitle: `${producto.codigo ?? 'Sin código'} · Producto`,
+      icon: 'package-variant-closed' as const,
+      view: 'productos' as WorkspaceView,
+    }));
+    const invoiceResults = facturasList.filter((factura) => [factura.numeroCompleto, factura.numfactura, factura.cliente, factura.identificacionCliente].some(matches)).slice(0, 5).map((factura) => ({
+      id: `factura-${factura.codfactura ?? factura.numeroCompleto}`,
+      title: factura.numeroCompleto ?? factura.numfactura ?? 'Factura',
+      subtitle: `${factura.cliente ?? 'Cliente'} · Factura`,
+      icon: 'file-document-outline' as const,
+      view: 'mis-facturas' as WorkspaceView,
+    }));
+    return [...clientResults, ...productResults, ...invoiceResults].slice(0, 12);
+  }, [clientes, facturasList, globalSearchQuery, productos]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -4217,33 +4247,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
   };
 
-  const openPdfOptions = async (loader: () => Promise<{ url: string }>, fileName: string) => {
-    try {
-      const response = await loader();
-      const url = response.url?.startsWith('http') ? response.url : `${API_BASE_URL.replace(/\/$/, '')}/${response.url.replace(/^\//, '')}`;
-      Alert.alert('Abrir PDF', '¿Cómo deseas abrir este documento?', [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Abrir PDF', onPress: () => Linking.openURL(url) },
-        {
-          text: 'Abrir con E-Rúbrica',
-          onPress: async () => {
-            try {
-              const target = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}erubrica-${Date.now()}.pdf`;
-              const download = await FileSystem.downloadAsync(url, target);
-              setErubricaInitialPdf({ uri: download.uri, name: fileName, mimeType: 'application/pdf' });
-              openView('e-rubrica');
-            } catch (error) {
-              setDirectoryMessage({ type: 'error', text: error instanceof Error ? error.message : 'No se pudo cargar el PDF en E-Rúbrica.' });
-            }
-          },
-        },
-      ]);
-    } catch (error) {
-      const text = error instanceof ApiError ? error.message : 'No se pudo abrir el documento.';
-      setDirectoryMessage({ type: 'error', text });
-    }
-  };
-
   const sendFacturaCorreo = async (factura: FacturaListItem) => {
     if (!catalogUserId) return;
     try {
@@ -5064,6 +5067,18 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setErubricaTabRequest(tab);
     openView('e-rubrica');
   };
+
+  const openPdfPreview = async (loader: () => Promise<{ url: string }>, fileName: string) => {
+    try {
+      const response = await loader();
+      const url = response.url?.startsWith('http') ? response.url : `${API_BASE_URL.replace(/\/$/, '')}/${response.url.replace(/^\//, '')}`;
+      const target = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}preview-${Date.now()}-${fileName.replace(/[^a-z0-9._-]/gi, '-')}`;
+      const download = await FileSystem.downloadAsync(url, target);
+      setPdfPreview({ uri: download.uri, name: fileName });
+    } catch (error) {
+      setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo cargar la previsualización del PDF.' });
+    }
+  };
   const drawerMenu: DrawerMenuNode[] = activeView === 'e-rubrica' ? [
     { key: 'erubrica-inicio', label: 'Inicio', view: 'e-rubrica', disabled: !canUseERubrica },
     { key: 'erubrica-solicitudes', label: 'Solicitudes', action: () => openERubricaTab('solicitudes') },
@@ -5124,6 +5139,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </View>
             </View>
             <View style={styles.dashboardHeaderActions}>
+              <Pressable style={styles.dashboardIconButton} onPress={() => { setGlobalSearchQuery(''); setGlobalSearchOpen(true); }} accessibilityLabel="Buscar en toda la operación">
+                <MaterialCommunityIcons name="magnify" size={22} color="#FFFFFF" />
+              </Pressable>
               <Pressable style={styles.dashboardIconButton} onPress={() => setNotificationsOpen(true)}>
                 <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
                 {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
@@ -5142,6 +5160,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </View>
             </View>
             <View style={styles.dashboardHeaderActions}>
+              <Pressable style={styles.dashboardIconButton} onPress={() => { setGlobalSearchQuery(''); setGlobalSearchOpen(true); }} accessibilityLabel="Buscar en toda la operación">
+                <MaterialCommunityIcons name="magnify" size={22} color="#FFFFFF" />
+              </Pressable>
               <Pressable style={styles.dashboardIconButton} onPress={() => setNotificationsOpen(true)}>
                 <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
                 {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
@@ -5160,6 +5181,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </View>
             </View>
             <View style={styles.workspaceHeaderActions}>
+              <Pressable style={styles.menuButton} onPress={() => { setGlobalSearchQuery(''); setGlobalSearchOpen(true); }} accessibilityLabel="Buscar en toda la operación">
+                <MaterialCommunityIcons name="magnify" size={22} color="#FFFFFF" />
+              </Pressable>
               <Pressable style={styles.menuButton} onPress={() => setNotificationsOpen(true)}>
                 <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
                 {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
@@ -5970,7 +5994,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 loading={loadingFacturas}
                 message={directoryMessage}
                 onRefresh={() => setReloadKey((value) => value + 1)}
-                onPdf={(factura) => catalogUserId && openPdfOptions(() => getFacturaPdf(catalogUserId, factura.codfactura), `${factura.numeroCompleto ?? 'factura'}.pdf`)}
+                onPdf={(factura) => catalogUserId && openPdfPreview(() => getFacturaPdf(catalogUserId, factura.codfactura), `${factura.numeroCompleto ?? 'factura'}.pdf`)}
                 onXml={(factura) => catalogUserId && openFacturaAsset(() => getFacturaXml(catalogUserId, factura.codfactura))}
                 onEmail={sendFacturaCorreo}
                 onAnular={confirmAnularFactura}
@@ -6005,7 +6029,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 loading={loadingNotasCredito}
                 message={directoryMessage}
                 onRefresh={() => setReloadKey((value) => value + 1)}
-                onPdf={(nota) => catalogUserId && openPdfOptions(() => getNotaCreditoPdf(catalogUserId, nota.codNotaCredito), 'nota-credito.pdf')}
+                onPdf={(nota) => catalogUserId && openPdfPreview(() => getNotaCreditoPdf(catalogUserId, nota.codNotaCredito), 'nota-credito.pdf')}
                 onXml={(nota) => catalogUserId && openFacturaAsset(() => getNotaCreditoXml(catalogUserId, nota.codNotaCredito))}
                 onEmail={sendNotaCreditoCorreo}
               />
@@ -6039,7 +6063,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 loading={loadingNotasDebito}
                 message={directoryMessage}
                 onRefresh={() => setReloadKey((value) => value + 1)}
-                onPdf={(nota) => catalogUserId && openPdfOptions(() => getNotaDebitoPdf(catalogUserId, nota.codNotaDebito), 'nota-debito.pdf')}
+                onPdf={(nota) => catalogUserId && openPdfPreview(() => getNotaDebitoPdf(catalogUserId, nota.codNotaDebito), 'nota-debito.pdf')}
                 onXml={(nota) => catalogUserId && openFacturaAsset(() => getNotaDebitoXml(catalogUserId, nota.codNotaDebito))}
                 onEmail={sendNotaDebitoCorreo}
               />
@@ -6074,7 +6098,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 loading={loadingLiquidaciones}
                 message={directoryMessage}
                 onRefresh={() => setReloadKey((value) => value + 1)}
-                onPdf={(liquidacion) => catalogUserId && openPdfOptions(() => getLiquidacionCompraPdf(catalogUserId, liquidacion.codLiquidacion), 'liquidacion-compra.pdf')}
+                onPdf={(liquidacion) => catalogUserId && openPdfPreview(() => getLiquidacionCompraPdf(catalogUserId, liquidacion.codLiquidacion), 'liquidacion-compra.pdf')}
                 onXml={(liquidacion) => catalogUserId && openFacturaAsset(() => getLiquidacionCompraXml(catalogUserId, liquidacion.codLiquidacion))}
                 onEmail={sendLiquidacionCorreo}
               />
@@ -6117,7 +6141,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 loading={loadingGuias}
                 message={directoryMessage}
                 onRefresh={() => setReloadKey((value) => value + 1)}
-                onPdf={(guia) => catalogUserId && openPdfOptions(() => getGuiaRemisionPdf(catalogUserId, guia.codGuia), 'guia-remision.pdf')}
+                onPdf={(guia) => catalogUserId && openPdfPreview(() => getGuiaRemisionPdf(catalogUserId, guia.codGuia), 'guia-remision.pdf')}
                 onXml={(guia) => catalogUserId && openFacturaAsset(() => getGuiaRemisionXml(catalogUserId, guia.codGuia))}
                 onEmail={sendGuiaCorreo}
               />
@@ -6129,7 +6153,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 loading={loadingRetenciones}
                 message={directoryMessage}
                 onRefresh={() => setReloadKey((value) => value + 1)}
-                onPdf={(retencion) => catalogUserId && openPdfOptions(() => getRetencionPdf(catalogUserId, retencion.codRetencion), 'retencion.pdf')}
+                onPdf={(retencion) => catalogUserId && openPdfPreview(() => getRetencionPdf(catalogUserId, retencion.codRetencion), 'retencion.pdf')}
                 onXml={(retencion) => catalogUserId && openFacturaAsset(() => getRetencionXml(catalogUserId, retencion.codRetencion))}
                 onEmail={sendRetencionCorreo}
               />
@@ -6302,6 +6326,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           </View>
         </View>
       </Modal>
+      <GlobalSearchModal
+        visible={globalSearchOpen}
+        query={globalSearchQuery}
+        results={globalSearchResults}
+        onChangeQuery={setGlobalSearchQuery}
+        onClose={() => setGlobalSearchOpen(false)}
+        onOpenResult={(result) => { setGlobalSearchOpen(false); openView(result.view); }}
+      />
       <Modal visible={menuOpen} animationType="fade" transparent onRequestClose={() => setMenuOpen(false)}>
         <View style={styles.menuOverlay}>
           <Animated.View style={[styles.menuBackdropWrap, { opacity: drawerProgress }]}>
@@ -6339,6 +6371,27 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               <Text style={styles.menuLogoutText}>Salir</Text>
             </Pressable>
           </Animated.View>
+        </View>
+      </Modal>
+      <Modal visible={Boolean(pdfPreview)} animationType="slide" transparent onRequestClose={() => setPdfPreview(null)}>
+        <View style={styles.pdfPreviewOverlay}>
+          <View style={styles.pdfPreviewPanel}>
+            <View style={styles.pdfPreviewHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pdfPreviewEyebrow}>PREVISUALIZACIÓN</Text>
+                <Text style={styles.pdfPreviewTitle} numberOfLines={1}>{pdfPreview?.name ?? 'Documento PDF'}</Text>
+              </View>
+              <Pressable style={styles.menuCloseButton} onPress={() => setPdfPreview(null)}><Text style={styles.menuCloseText}>×</Text></Pressable>
+            </View>
+            {pdfPreview ? <PdfDocumentPreview uri={pdfPreview.uri} /> : null}
+            <View style={styles.pdfPreviewActions}>
+              <SecondaryButton label="Cerrar" onPress={() => setPdfPreview(null)} />
+              <PrimaryButton label="Compartir PDF" loading={false} onPress={async () => {
+                if (!pdfPreview || !(await Sharing.isAvailableAsync())) return;
+                await Sharing.shareAsync(pdfPreview.uri, { mimeType: 'application/pdf', dialogTitle: 'Compartir PDF' });
+              }} />
+            </View>
+          </View>
         </View>
       </Modal>
       <StatusBar style="light" backgroundColor="#07305E" translucent={false} />
@@ -9129,12 +9182,115 @@ function DirectoryHero({
 
 type BotMessage = { id: string; role: 'user' | 'assistant'; text: string };
 
-function TypingDots() {
+type NumiThinkingStep = { label: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'] };
+
+function getNumiThinkingSteps(request: string): NumiThinkingStep[] {
+  const normalized = request.toLowerCase();
+  if (normalized.includes('cliente') || normalized.includes('proveedor')) {
+    return [
+      { label: 'Entendiendo tu solicitud', icon: 'brain' },
+      { label: 'Buscando cliente', icon: 'account-search-outline' },
+      { label: 'Preparando la respuesta', icon: 'lightbulb-on-outline' },
+    ];
+  }
+  if (normalized.includes('producto') || normalized.includes('servicio')) {
+    return [
+      { label: 'Entendiendo tu solicitud', icon: 'brain' },
+      { label: 'Buscando producto', icon: 'package-variant-closed' },
+      { label: 'Preparando la respuesta', icon: 'lightbulb-on-outline' },
+    ];
+  }
+  if (normalized.includes('factura') || normalized.includes('vender') || normalized.includes('venta')) {
+    return [
+      { label: 'Entendiendo tu solicitud', icon: 'brain' },
+      { label: 'Revisando los datos de facturación', icon: 'file-search-outline' },
+      { label: 'Preparando la respuesta', icon: 'file-document-edit-outline' },
+    ];
+  }
+  if (normalized.includes('firma') || normalized.includes('rúbrica') || normalized.includes('rubrica')) {
+    return [
+      { label: 'Entendiendo tu solicitud', icon: 'brain' },
+      { label: 'Revisando el proceso de firma', icon: 'file-document-check-outline' },
+      { label: 'Preparando la respuesta', icon: 'shield-check-outline' },
+    ];
+  }
+  return [
+    { label: 'Entendiendo tu solicitud', icon: 'brain' },
+    { label: 'Consultando la información', icon: 'database-search-outline' },
+    { label: 'Preparando la respuesta', icon: 'lightbulb-on-outline' },
+  ];
+}
+
+function NumiThinkingIndicator({ request }: { request: string }) {
+  const steps = getNumiThinkingSteps(request);
+  const [activeStep, setActiveStep] = useState(0);
+  const bob = useRef(new Animated.Value(0)).current;
+  const glow = useRef(new Animated.Value(0.55)).current;
+  const orbit = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(1)).current;
+  const progress = useRef(new Animated.Value(0.12)).current;
+
+  useEffect(() => {
+    setActiveStep(0);
+    progress.setValue(0.12);
+    const stepTimer = setInterval(() => setActiveStep((current) => {
+      const next = Math.min(current + 1, steps.length - 1);
+      Animated.timing(progress, { toValue: 0.12 + ((next + 1) / steps.length) * 0.78, duration: 520, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+      return next;
+    }), 1050);
+    const bobAnimation = Animated.loop(Animated.sequence([
+      Animated.timing(bob, { toValue: -4, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(bob, { toValue: 0, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+    ]));
+    const glowAnimation = Animated.loop(Animated.sequence([
+      Animated.timing(glow, { toValue: 1, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(glow, { toValue: 0.55, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+    ]));
+    const orbitAnimation = Animated.loop(Animated.timing(orbit, { toValue: 1, duration: 3600, easing: Easing.linear, useNativeDriver: true }));
+    const pulseAnimation = Animated.loop(Animated.sequence([
+      Animated.timing(pulse, { toValue: 1.08, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+    ]));
+    bobAnimation.start();
+    glowAnimation.start();
+    orbitAnimation.start();
+    pulseAnimation.start();
+    return () => {
+      clearInterval(stepTimer);
+      bobAnimation.stop();
+      glowAnimation.stop();
+      orbitAnimation.stop();
+      pulseAnimation.stop();
+    };
+  }, [bob, glow, orbit, progress, pulse, request, steps.length]);
+
   return (
-    <View style={styles.typingDots}>
-      <Text style={styles.typingDotText}>.</Text>
-      <Text style={styles.typingDotText}>.</Text>
-      <Text style={styles.typingDotText}>.</Text>
+    <View style={styles.numiThinkingCard} accessibilityLabel={`Númi está trabajando: ${steps[activeStep].label}`}>
+      <View style={styles.numiThinkingRobotWrap}>
+        <Animated.View style={[styles.numiThinkingGlow, { opacity: glow }]} />
+        <Animated.View style={[styles.numiThinkingOrbit, { transform: [{ rotate: orbit.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]}>
+          <View style={styles.numiThinkingOrbitDot} />
+        </Animated.View>
+        <Animated.Image source={require('./assets/numi-robot.png')} style={[styles.numiThinkingRobot, { transform: [{ translateY: bob }, { scale: pulse }] }]} />
+      </View>
+      <View style={styles.numiThinkingCopy}>
+        <View style={styles.numiThinkingTitleRow}>
+          <Text style={styles.numiThinkingTitle}>NUMI TRABAJANDO</Text>
+          <View style={styles.numiThinkingDots}><Text style={styles.numiThinkingDot}>•</Text><Text style={styles.numiThinkingDot}>•</Text><Text style={styles.numiThinkingDot}>•</Text></View>
+        </View>
+        <Text style={styles.numiThinkingSubtitle}>Estoy procesando tu petición</Text>
+        <View style={styles.numiThinkingProgressTrack}>
+          <Animated.View style={[styles.numiThinkingProgressFill, { width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} />
+        </View>
+        <View style={styles.numiThinkingSteps}>
+          {steps.map((step, index) => (
+            <View key={step.label} style={[styles.numiThinkingStep, index === activeStep && styles.numiThinkingStepActive]}>
+              <MaterialCommunityIcons name={index < activeStep ? 'check-circle' : step.icon} size={15} color={index <= activeStep ? '#0878C9' : '#9AB0C1'} />
+              <Text style={[styles.numiThinkingStepText, index === activeStep && styles.numiThinkingStepTextActive]}>{step.label}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
     </View>
   );
 }
@@ -9145,6 +9301,7 @@ function EfactBotScreen({ userName }: { userName: string }) {
   ]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [thinkingRequest, setThinkingRequest] = useState('');
   const [error, setError] = useState('');
   const [listening, setListening] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -9157,6 +9314,7 @@ function EfactBotScreen({ userName }: { userName: string }) {
     setDraft('');
     setError('');
     setMessages((current) => [...current, { id: `user-${Date.now()}`, role: 'user', text }]);
+    setThinkingRequest(text);
     setSending(true);
     try {
       const answer = await sendBotMessage({
@@ -9169,6 +9327,7 @@ function EfactBotScreen({ userName }: { userName: string }) {
       setError(err instanceof ApiError || err instanceof Error ? err.message : 'No se pudo contactar al bot.');
     } finally {
       setSending(false);
+      setThinkingRequest('');
     }
   };
 
@@ -9237,9 +9396,7 @@ function EfactBotScreen({ userName }: { userName: string }) {
         {sending ? (
           <View style={styles.botAssistantRow}>
             <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} />
-            <View style={[styles.botBubble, styles.botAssistantBubble, styles.botTypingBubble]}>
-              <TypingDots />
-            </View>
+            <NumiThinkingIndicator request={thinkingRequest} />
           </View>
         ) : null}
       </ScrollView>
@@ -9343,6 +9500,21 @@ function PdfSignaturePositionPicker({
       </View>
     </View>
   );
+}
+
+function PdfDocumentPreview({ uri }: { uri: string }) {
+  const [base64, setBase64] = useState<string | null>(null);
+  useEffect(() => {
+    let mounted = true;
+    setBase64(null);
+    FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 })
+      .then((value) => { if (mounted) setBase64(value); })
+      .catch(() => { if (mounted) setBase64(''); });
+    return () => { mounted = false; };
+  }, [uri]);
+
+  const html = base64 ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>html,body{margin:0;background:#eef3f7}#canvas{display:block;margin:12px auto;background:#fff;max-width:calc(100% - 24px);box-shadow:0 2px 8px #63758755}</style></head><body><canvas id="canvas"></canvas><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script>try{const r=atob('${base64}'),b=new Uint8Array(r.length);for(let i=0;i<r.length;i++)b[i]=r.charCodeAt(i);pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';pdfjsLib.getDocument({data:b}).promise.then(p=>p.getPage(1)).then(p=>{const v=p.getViewport({scale:1}),s=Math.min((innerWidth-24)/v.width,1.5),q=p.getViewport({scale:s}),c=document.getElementById('canvas');c.width=q.width;c.height=q.height;p.render({canvasContext:c.getContext('2d'),viewport:q})}).catch(()=>document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>')}catch(e){document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>'}</script></body></html>` : '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">Cargando PDF…</p>';
+  return <WebView originWhitelist={['*']} source={{ html }} javaScriptEnabled style={styles.pdfDocumentWebView} />;
 }
 
 function ERubricaMobileScreen({
@@ -9723,6 +9895,59 @@ function DashboardHomeScreen({
         ))}
       </View>
     </View>
+  );
+}
+
+type GlobalSearchResult = { id: string; title: string; subtitle: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; view: WorkspaceView };
+
+function GlobalSearchModal({
+  visible,
+  query,
+  results,
+  onChangeQuery,
+  onClose,
+  onOpenResult,
+}: {
+  visible: boolean;
+  query: string;
+  results: GlobalSearchResult[];
+  onChangeQuery: (value: string) => void;
+  onClose: () => void;
+  onOpenResult: (result: GlobalSearchResult) => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="fade" transparent statusBarTranslucent onRequestClose={onClose}>
+      <View style={styles.globalSearchOverlay}>
+        <Pressable style={styles.globalSearchBackdrop} onPress={onClose} />
+        <View style={styles.globalSearchPanel}>
+          <View style={styles.globalSearchHeader}>
+            <View style={styles.globalSearchTitleBlock}>
+              <Text style={styles.globalSearchEyebrow}>BUSCADOR INTELIGENTE</Text>
+              <Text style={styles.globalSearchTitle}>¿Qué necesitas encontrar?</Text>
+            </View>
+            <Pressable style={styles.menuCloseButton} onPress={onClose} accessibilityLabel="Cerrar búsqueda"><Text style={styles.menuCloseText}>×</Text></Pressable>
+          </View>
+          <View style={styles.globalSearchInputShell}>
+            <MaterialCommunityIcons name="magnify" size={22} color="#0878C9" />
+            <TextInput autoFocus value={query} onChangeText={onChangeQuery} placeholder="Cliente, producto, factura o RUC..." placeholderTextColor="#8DA1B4" style={styles.globalSearchInput} returnKeyType="search" />
+            {query ? <Pressable onPress={() => onChangeQuery('')} hitSlop={8}><MaterialCommunityIcons name="close-circle" size={19} color="#9AB0C1" /></Pressable> : null}
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.globalSearchResults}>
+            {!query.trim() ? (
+              <View style={styles.globalSearchEmpty}><MaterialCommunityIcons name="text-search" size={38} color="#9DDCF3" /><Text style={styles.globalSearchEmptyTitle}>Busca en toda tu operación</Text><Text style={styles.globalSearchEmptyText}>Clientes, productos y comprobantes desde un solo lugar.</Text></View>
+            ) : results.length ? results.map((result) => (
+              <Pressable key={result.id} style={({ pressed }) => [styles.globalSearchResult, pressed && styles.globalSearchResultPressed]} onPress={() => onOpenResult(result)}>
+                <View style={styles.globalSearchResultIcon}><MaterialCommunityIcons name={result.icon} size={21} color="#0878C9" /></View>
+                <View style={styles.globalSearchResultCopy}><Text style={styles.globalSearchResultTitle} numberOfLines={1}>{result.title}</Text><Text style={styles.globalSearchResultSubtitle} numberOfLines={1}>{result.subtitle}</Text></View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color="#9AB0C1" />
+              </Pressable>
+            )) : (
+              <View style={styles.globalSearchEmpty}><MaterialCommunityIcons name="magnify-close" size={38} color="#9AB0C1" /><Text style={styles.globalSearchEmptyTitle}>Sin resultados</Text><Text style={styles.globalSearchEmptyText}>Prueba con otro nombre, número o identificación.</Text></View>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -11614,6 +11839,13 @@ const styles = StyleSheet.create({
   pdfPageStage: { alignItems: 'center', backgroundColor: '#E7EFEA', borderRadius: 10, minHeight: 370, padding: 10 },
   pdfWebView: { alignSelf: 'stretch', backgroundColor: 'transparent', height: 520, width: '100%' },
   pdfViewerError: { color: EFACT_THEME.colors.error, fontSize: 12, marginTop: 8, textAlign: 'center' },
+  pdfPreviewOverlay: { backgroundColor: '#00000099', flex: 1, justifyContent: 'center', padding: 12 },
+  pdfPreviewPanel: { backgroundColor: '#FFFFFF', borderRadius: 18, maxHeight: '92%', overflow: 'hidden', padding: 14 },
+  pdfPreviewHeader: { alignItems: 'center', flexDirection: 'row', marginBottom: 10 },
+  pdfPreviewEyebrow: { color: ERUBRICA_COLORS.primary, fontSize: 10, fontWeight: '900' },
+  pdfPreviewTitle: { color: EFACT_THEME.colors.textPrimary, fontSize: 16, fontWeight: '900', marginTop: 3 },
+  pdfDocumentWebView: { backgroundColor: '#EEF3F7', height: 560, width: '100%' },
+  pdfPreviewActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end', marginTop: 10 },
   pdfPage: { backgroundColor: '#FFFFFF', borderColor: '#D7E1DC', borderRadius: 2, borderWidth: 1, elevation: 2, overflow: 'hidden', padding: 18, shadowColor: '#789184', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.16, shadowRadius: 4 },
   pdfPageBrandLine: { backgroundColor: ERUBRICA_COLORS.primary, height: 10, marginBottom: 20, width: '34%' },
   pdfPageTitleLine: { backgroundColor: '#294638', height: 8, marginBottom: 8, width: '67%' },
@@ -14492,6 +14724,25 @@ const styles = StyleSheet.create({
   portalTabTextActive: {
     color: EFACT_THEME.colors.primary,
   },
+  globalSearchOverlay: { alignItems: 'center', flex: 1, justifyContent: 'flex-start', paddingHorizontal: 16, paddingTop: 56 },
+  globalSearchBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(4, 24, 44, 0.62)' },
+  globalSearchPanel: { backgroundColor: '#F7FBFE', borderColor: '#9BDFF5', borderRadius: 24, borderWidth: 1, maxHeight: '78%', maxWidth: 500, padding: 18, shadowColor: '#001F38', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 18, width: '100%' },
+  globalSearchHeader: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between', marginBottom: 14 },
+  globalSearchTitleBlock: { flex: 1 },
+  globalSearchEyebrow: { color: '#0878C9', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
+  globalSearchTitle: { color: '#173E61', fontSize: 20, fontWeight: '900', marginTop: 3 },
+  globalSearchInputShell: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#B9DFF2', borderRadius: 15, borderWidth: 1, flexDirection: 'row', gap: 9, minHeight: 50, paddingHorizontal: 13 },
+  globalSearchInput: { color: '#263A4F', flex: 1, fontSize: 14, fontWeight: '600', paddingVertical: 10 },
+  globalSearchResults: { gap: 8, paddingTop: 14, paddingBottom: 4 },
+  globalSearchResult: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#E0EDF4', borderRadius: 15, borderWidth: 1, flexDirection: 'row', gap: 10, padding: 10 },
+  globalSearchResultPressed: { backgroundColor: '#EAF7FD', borderColor: '#8DDCF6' },
+  globalSearchResultIcon: { alignItems: 'center', backgroundColor: '#E7F5FC', borderRadius: 12, height: 40, justifyContent: 'center', width: 40 },
+  globalSearchResultCopy: { flex: 1, minWidth: 0 },
+  globalSearchResultTitle: { color: '#173E61', fontSize: 13, fontWeight: '900' },
+  globalSearchResultSubtitle: { color: '#71869A', fontSize: 11, fontWeight: '600', marginTop: 2 },
+  globalSearchEmpty: { alignItems: 'center', paddingHorizontal: 20, paddingVertical: 35 },
+  globalSearchEmptyTitle: { color: '#173E61', fontSize: 15, fontWeight: '900', marginTop: 10, textAlign: 'center' },
+  globalSearchEmptyText: { color: '#71869A', fontSize: 12, fontWeight: '600', lineHeight: 18, marginTop: 4, textAlign: 'center' },
   notificationsOverlay: {
     alignItems: 'center',
     flex: 1,
@@ -16705,6 +16956,25 @@ const styles = StyleSheet.create({
   botTypingBubble: { minWidth: 58, paddingVertical: 8 },
   typingDots: { alignItems: 'center', flexDirection: 'row', gap: 3, justifyContent: 'center' },
   typingDotText: { color: '#0878C9', fontSize: 24, fontWeight: '900', lineHeight: 24 },
+  numiThinkingCard: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#8DDCF6', borderRadius: 20, borderWidth: 1, flexDirection: 'row', gap: 11, maxWidth: '90%', minWidth: 246, paddingHorizontal: 11, paddingVertical: 11, shadowColor: '#0878C9', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.16, shadowRadius: 12, elevation: 3 },
+  numiThinkingRobotWrap: { alignItems: 'center', height: 68, justifyContent: 'center', width: 62 },
+  numiThinkingGlow: { backgroundColor: '#9DEAFF', borderRadius: 28, height: 54, position: 'absolute', width: 54 },
+  numiThinkingOrbit: { borderColor: 'rgba(8,120,201,0.32)', borderRadius: 30, borderStyle: 'dashed', borderWidth: 1, height: 61, position: 'absolute', width: 61 },
+  numiThinkingOrbitDot: { backgroundColor: '#21BF73', borderColor: '#FFFFFF', borderRadius: 5, borderWidth: 2, height: 10, position: 'absolute', right: 0, top: 7, width: 10 },
+  numiThinkingRobot: { height: 59, width: 59 },
+  numiThinkingCopy: { flex: 1, minWidth: 0 },
+  numiThinkingTitleRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  numiThinkingTitle: { color: '#0878C9', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
+  numiThinkingDots: { flexDirection: 'row', gap: 1 },
+  numiThinkingDot: { color: '#21BF73', fontSize: 17, fontWeight: '900', lineHeight: 12 },
+  numiThinkingSubtitle: { color: '#71869A', fontSize: 11, fontWeight: '600', marginTop: 2 },
+  numiThinkingProgressTrack: { backgroundColor: '#E6F2F8', borderRadius: 99, height: 5, marginTop: 7, overflow: 'hidden', width: '100%' },
+  numiThinkingProgressFill: { backgroundColor: '#21BF73', borderRadius: 99, height: 5 },
+  numiThinkingSteps: { gap: 3, marginTop: 6 },
+  numiThinkingStep: { alignItems: 'center', flexDirection: 'row', gap: 5, opacity: 0.72 },
+  numiThinkingStepActive: { opacity: 1 },
+  numiThinkingStepText: { color: '#8CA0B0', flexShrink: 1, fontSize: 10, fontWeight: '700' },
+  numiThinkingStepTextActive: { color: '#263A4F', fontWeight: '900' },
   botSuggestions: { gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
   botSuggestion: { backgroundColor: '#E7F4FC', borderColor: '#B9E0F5', borderRadius: 999, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
   botSuggestionText: { color: '#0867A9', fontSize: 12, fontWeight: '800' },
