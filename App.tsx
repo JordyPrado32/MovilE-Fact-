@@ -65,6 +65,11 @@ import {
 } from './src/utils/authValidation';
 import { ItemDetailModal, ResultCollection } from './src/components/data/ResultCollection';
 import { ExternalLink, Field, InlineSwitch, LoginActionTiles, MessageBox, PrimaryButton, SearchField, SecondaryButton, SecurityNotice, SegmentButton, TextLink } from './src/components/ui/FormControls';
+import { NumiThinkingIndicator as ExtractedNumiThinkingIndicator } from './src/components/bot/NumiThinkingIndicator';
+import type { BotFeedbackState, BotMessage } from './src/types/bot';
+import { GlobalSearchModal as ExtractedGlobalSearchModal } from './src/components/search/GlobalSearchModal';
+import type { GlobalSearchResult as ExtractedGlobalSearchResult } from './src/types/globalSearch';
+import { InvoiceProgressSteps as SharedInvoiceProgressSteps, InvoiceSummaryRow as SharedInvoiceSummaryRow } from './src/components/facturacion/InvoiceShared';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'change';
 
@@ -381,6 +386,7 @@ const EFACT_PUBLIC_URL = 'https://efact.numericasoftware.com';
 const AVATAR_BASE_URL = 'https://efact.numericasoftware.com/images/Avatars';
 const LAUNCH_DURATION_MS = 1600;
 const BIOMETRIC_CREDENTIALS_KEY = 'efact.biometric.credentials';
+const INVOICE_DRAFT_KEY_PREFIX = 'efact.invoice.draft';
 
 type BiometricCredentials = { username: string; password: string };
 
@@ -2084,6 +2090,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [facturaClientes, setFacturaClientes] = useState<Cliente[]>([]);
   const [facturaProductos, setFacturaProductos] = useState<FacturaProducto[]>([]);
   const [facturaLineas, setFacturaLineas] = useState<NuevaFacturaLinea[]>([]);
+  const [invoiceDraftReady, setInvoiceDraftReady] = useState(false);
+  const [invoiceDraftSaved, setInvoiceDraftSaved] = useState(false);
   const [notaCreditoPreparacion, setNotaCreditoPreparacion] = useState<FacturaPreparacion | null>(null);
   const [notasCreditoList, setNotasCreditoList] = useState<NotaCreditoListItem[]>([]);
   const [notaCreditoFacturas, setNotaCreditoFacturas] = useState<FacturaListItem[]>([]);
@@ -2173,7 +2181,44 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const canUsePortal = isSuperAdmin(currentUser) || services.length > 0;
   const portalFirstName = getDisplayFirstName(currentUser, perfilData?.perfil);
   const unreadNotifications = notifications.filter((notification) => !notification.read).length;
-  const globalSearchResults = useMemo<GlobalSearchResult[]>(() => {
+
+  useEffect(() => {
+    if (activeView !== 'nueva-factura' || !catalogUserId) return;
+    let mounted = true;
+    const draftKey = `${INVOICE_DRAFT_KEY_PREFIX}.${catalogUserId}`;
+    setInvoiceDraftReady(false);
+    setInvoiceDraftSaved(false);
+    SecureStore.getItemAsync(draftKey).then((raw) => {
+      if (!mounted) return;
+      if (raw) {
+        try {
+          const draft = JSON.parse(raw) as { form?: NuevaFacturaFormState; cliente?: Cliente | null; lineas?: NuevaFacturaLinea[] };
+          if (draft.form) setFacturaForm(draft.form);
+          if (draft.cliente) setFacturaCliente(draft.cliente);
+          if (draft.lineas) setFacturaLineas(draft.lineas);
+          setInvoiceDraftSaved(Boolean(draft.form || draft.lineas?.length));
+        } catch {
+          SecureStore.deleteItemAsync(draftKey).catch(() => undefined);
+        }
+      }
+      setInvoiceDraftReady(true);
+    }).catch(() => {
+      if (mounted) setInvoiceDraftReady(true);
+    });
+    return () => { mounted = false; };
+  }, [activeView, catalogUserId]);
+
+  useEffect(() => {
+    if (activeView !== 'nueva-factura' || !catalogUserId || !invoiceDraftReady) return;
+    const draftKey = `${INVOICE_DRAFT_KEY_PREFIX}.${catalogUserId}`;
+    const timer = setTimeout(() => {
+      const hasDraft = Boolean(facturaCliente || facturaLineas.length || facturaForm.clienteBusqueda || facturaForm.productoBusqueda || facturaForm.referencia || facturaForm.correoAdicional);
+      if (!hasDraft) return;
+      SecureStore.setItemAsync(draftKey, JSON.stringify({ form: facturaForm, cliente: facturaCliente, lineas: facturaLineas })).then(() => setInvoiceDraftSaved(true)).catch(() => undefined);
+    }, 650);
+    return () => clearTimeout(timer);
+  }, [activeView, catalogUserId, facturaCliente, facturaForm, facturaLineas, invoiceDraftReady]);
+  const globalSearchResults = useMemo<ExtractedGlobalSearchResult[]>(() => {
     const term = globalSearchQuery.trim().toLowerCase();
     if (!term) return [];
     const matches = (value: unknown) => String(value ?? '').toLowerCase().includes(term);
@@ -4238,6 +4283,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setFacturaClientes([]);
     setFacturaProductos([]);
     setFacturaLineas([]);
+    setInvoiceDraftSaved(false);
+    if (catalogUserId) SecureStore.deleteItemAsync(`${INVOICE_DRAFT_KEY_PREFIX}.${catalogUserId}`).catch(() => undefined);
     setDirectoryMessage(null);
   };
 
@@ -5173,7 +5220,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.workspaceSafeArea, activeView === 'portal' && styles.portalSafeArea]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.workspaceCanvasWithBottomNav, { paddingBottom: 88 + insets.bottom }]} keyboardShouldPersistTaps="handled">
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.workspaceCanvasWithBottomNav, { paddingBottom: 88 + insets.bottom }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" nestedScrollEnabled automaticallyAdjustKeyboardInsets>
         {activeView === 'portal' ? (
           <View style={styles.dashboardHeader}>
             <View style={styles.dashboardBrandBlock}>
@@ -6023,6 +6070,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 loading={loadingFacturas}
                 saving={savingFactura}
                 message={directoryMessage}
+                draftSaved={invoiceDraftSaved}
                 onChange={updateFacturaForm}
                 onSearchClientes={searchFacturaClientes}
                 onSelectCliente={(cliente) => {
@@ -6390,13 +6438,13 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           </View>
         </View>
       </Modal>
-      <GlobalSearchModal
+      <ExtractedGlobalSearchModal
         visible={globalSearchOpen}
         query={globalSearchQuery}
         results={globalSearchResults}
         onChangeQuery={setGlobalSearchQuery}
         onClose={() => setGlobalSearchOpen(false)}
-        onOpenResult={(result) => { setGlobalSearchOpen(false); openView(result.view); }}
+        onOpenResult={(result) => { setGlobalSearchOpen(false); openView(result.view as WorkspaceView); }}
       />
       <Modal visible={menuOpen} animationType="fade" transparent onRequestClose={() => setMenuOpen(false)}>
         <View style={styles.menuOverlay}>
@@ -6898,6 +6946,7 @@ function NuevaFacturaMobileScreen({
   loading,
   saving,
   message,
+  draftSaved,
   onChange,
   onSearchClientes,
   onSelectCliente,
@@ -6918,6 +6967,7 @@ function NuevaFacturaMobileScreen({
   loading: boolean;
   saving: boolean;
   message?: MessageState;
+  draftSaved: boolean;
   onChange: (field: keyof NuevaFacturaFormState, value: string) => void;
   onSearchClientes: () => void;
   onSelectCliente: (cliente: Cliente) => void;
@@ -6974,6 +7024,7 @@ function NuevaFacturaMobileScreen({
           <Text style={styles.heroEyebrow}>Documento de venta</Text>
           <Text style={styles.heroTitle}>Nueva factura</Text>
           <Text style={styles.heroText}>Completa cliente, detalle y cobro con una vista ordenada.</Text>
+          {draftSaved ? <View style={styles.invoiceDraftStatus}><MaterialCommunityIcons name="cloud-check-outline" size={15} color="#0F8A4B" /><Text style={styles.invoiceDraftStatusText}>Borrador guardado automáticamente</Text></View> : null}
         </View>
         <View style={styles.invoiceHeaderActions}>
           <View style={styles.invoiceHeaderBox}>
@@ -7165,15 +7216,15 @@ function NuevaFacturaMobileScreen({
         <View style={[styles.formSectionBox, styles.invoiceSummaryBox]}>
           <Text style={styles.clientFormSubtitle}>Resumen</Text>
           <Text style={styles.invoiceSectionHelp}>Totales del comprobante</Text>
-          <InvoiceSummaryRow label="Subtotal base gravada" value={totals.baseTaxed} />
-          <InvoiceSummaryRow label="Subtotal base 0%" value={totals.baseZero} />
-          <InvoiceSummaryRow label="Subtotal no objeto IVA" value={0} />
-          <InvoiceSummaryRow label="Subtotal exento IVA" value={0} />
-          <InvoiceSummaryRow label="Descuento" value={totals.discount} danger />
-          <InvoiceSummaryRow label="Subtotal con descuento" value={totals.baseTaxed + totals.baseZero} />
-          <InvoiceSummaryRow label="ICE" value={0} />
-          <InvoiceSummaryRow label="Servicio 10%" value={0} />
-          <InvoiceSummaryRow label="IRBPNR" value={0} />
+          <SharedInvoiceSummaryRow label="Subtotal base gravada" value={totals.baseTaxed} />
+          <SharedInvoiceSummaryRow label="Subtotal base 0%" value={totals.baseZero} />
+          <SharedInvoiceSummaryRow label="Subtotal no objeto IVA" value={0} />
+          <SharedInvoiceSummaryRow label="Subtotal exento IVA" value={0} />
+          <SharedInvoiceSummaryRow label="Descuento" value={totals.discount} danger />
+          <SharedInvoiceSummaryRow label="Subtotal con descuento" value={totals.baseTaxed + totals.baseZero} />
+          <SharedInvoiceSummaryRow label="ICE" value={0} />
+          <SharedInvoiceSummaryRow label="Servicio 10%" value={0} />
+          <SharedInvoiceSummaryRow label="IRBPNR" value={0} />
           <View style={styles.invoiceTotalRow}>
             <Text style={styles.invoiceTotalLabel}>Total</Text>
             <Text style={styles.invoiceTotalValue}>{formatMoney(totals.total)}</Text>
@@ -8735,7 +8786,9 @@ function MisFacturasMobileScreen({
 }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(1);
-  const visibleFacturas = facturas.filter((factura) => {
+  const [page, setPage] = useState(1);
+  const [selectedFactura, setSelectedFactura] = useState<FacturaListItem | null>(null);
+  const filteredFacturas = facturas.filter((factura) => {
     const term = filter.trim().toLowerCase();
     const matchesText = !term || [
       factura.numeroCompleto,
@@ -8748,8 +8801,19 @@ function MisFacturasMobileScreen({
     const matchesStatus = statusFilter === 1 || (statusFilter === 2 && isAuthorized) || (statusFilter === 3 && !isAuthorized);
     return matchesText && matchesStatus;
   });
-  const autorizadas = visibleFacturas.filter((factura) => factura.autorizado || String(factura.estadoSri ?? '').toUpperCase().includes('AUTORIZ')).length;
-  const total = visibleFacturas.reduce((sum, factura) => sum + Number(factura.total ?? 0), 0);
+  const pageSize = 8;
+  const totalPages = Math.max(1, Math.ceil(filteredFacturas.length / pageSize));
+  const visibleFacturas = filteredFacturas.slice((page - 1) * pageSize, page * pageSize);
+  const autorizadas = filteredFacturas.filter((factura) => factura.autorizado || String(factura.estadoSri ?? '').toUpperCase().includes('AUTORIZ')).length;
+  const total = filteredFacturas.reduce((sum, factura) => sum + Number(factura.total ?? 0), 0);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter, statusFilter]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   return (
     <>
@@ -8776,7 +8840,10 @@ function MisFacturasMobileScreen({
           value={statusFilter}
           onChange={(value) => setStatusFilter(value ?? 1)}
         />
-        <PrimaryButton label="Refrescar" loading={loading} onPress={onRefresh} />
+        <View style={styles.formActions}>
+          <SecondaryButton label="Limpiar filtros" onPress={() => { setFilter(''); setStatusFilter(1); }} />
+          <PrimaryButton label="Refrescar" loading={loading} onPress={onRefresh} />
+        </View>
       </View>
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
@@ -8812,7 +8879,8 @@ function MisFacturasMobileScreen({
               </View>
             </View>
             <DocumentActionsMenu actions={[
-              { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(factura) },
+              { label: 'Detalle', icon: 'information-outline', tone: 'primary', onPress: () => setSelectedFactura(factura) },
+              { label: 'Ver PDF', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(factura) },
               { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(factura) },
               { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(factura) },
               { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(factura) },
@@ -8822,6 +8890,32 @@ function MisFacturasMobileScreen({
           );
         })}
       </View>
+      {filteredFacturas.length > pageSize ? (
+        <View style={styles.documentPagination}>
+          <Pressable style={[styles.documentPaginationButton, page === 1 && styles.documentPaginationButtonDisabled]} disabled={page === 1} onPress={() => setPage((value) => Math.max(1, value - 1))}>
+            <MaterialCommunityIcons name="chevron-left" size={20} color={page === 1 ? '#AFC2CF' : '#0878C9'} />
+          </Pressable>
+          <Text style={styles.documentPaginationText}>Página {page} de {totalPages} · {filteredFacturas.length} facturas</Text>
+          <Pressable style={[styles.documentPaginationButton, page === totalPages && styles.documentPaginationButtonDisabled]} disabled={page === totalPages} onPress={() => setPage((value) => Math.min(totalPages, value + 1))}>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={page === totalPages ? '#AFC2CF' : '#0878C9'} />
+          </Pressable>
+        </View>
+      ) : null}
+      <ItemDetailModal
+        visible={Boolean(selectedFactura)}
+        title={selectedFactura?.numeroCompleto ?? selectedFactura?.numfactura ?? 'Detalle de factura'}
+        values={selectedFactura ? [
+          `Cliente: ${selectedFactura.cliente ?? 'Consumidor final'}`,
+          `Identificación: ${selectedFactura.identificacionCliente ?? 'Sin identificación'}`,
+          `Fecha de emisión: ${formatDocumentDate(selectedFactura.fechaEmision)}`,
+          `Total: ${formatMoney(selectedFactura.total)}`,
+          `Estado SRI: ${selectedFactura.estadoSri ?? (selectedFactura.autorizado ? 'AUTORIZADO' : 'PENDIENTE')}`,
+          `Estado de pago: ${selectedFactura.estadoPago ?? 'Sin información'}`,
+          selectedFactura.numeroAutorizacion ? `Autorización: ${selectedFactura.numeroAutorizacion}` : '',
+          selectedFactura.mensajeSri ? `Mensaje SRI: ${selectedFactura.mensajeSri}` : '',
+        ].filter(Boolean) : []}
+        onClose={() => setSelectedFactura(null)}
+      />
     </>
   );
 }
@@ -9497,9 +9591,6 @@ function DirectoryHero({
   );
 }
 
-type BotMessage = { id: string; role: 'user' | 'assistant'; text: string };
-type BotFeedbackState = Record<string, 'like' | 'dislike'>;
-
 type NumiThinkingStep = { label: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'] };
 
 function getNumiThinkingSteps(request: string): NumiThinkingStep[] {
@@ -9636,6 +9727,15 @@ function EfactBotScreen({
   const [listening, setListening] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const voiceRecognition = useRef<any>(null);
+  const messagesScrollRef = useRef<ScrollView>(null);
+
+  const scrollMessagesToEnd = (animated = true) => {
+    requestAnimationFrame(() => messagesScrollRef.current?.scrollToEnd({ animated }));
+  };
+
+  useEffect(() => {
+    scrollMessagesToEnd(false);
+  }, [messages.length, sending]);
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -9695,7 +9795,7 @@ function EfactBotScreen({
   };
 
   return (
-    <KeyboardAvoidingView style={styles.botScreen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={styles.botScreen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
       <View style={styles.botWidgetHeader}>
         <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botWidgetAvatar} />
         <View style={styles.botWidgetCopy}>
@@ -9708,7 +9808,17 @@ function EfactBotScreen({
           <MaterialCommunityIcons name="chevron-down" size={19} color="#FFFFFF" />
         </View>
       </View>
-      <ScrollView style={styles.botMessages} contentContainerStyle={styles.botMessagesContent} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={messagesScrollRef}
+        style={styles.botMessages}
+        contentContainerStyle={styles.botMessagesContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        nestedScrollEnabled
+        automaticallyAdjustKeyboardInsets
+        showsVerticalScrollIndicator
+        onContentSizeChange={() => scrollMessagesToEnd()}
+      >
         {messages.map((message) => (
           <View key={message.id} style={message.role === 'user' ? styles.botUserRow : styles.botAssistantRow}>
             {message.role === 'assistant' ? <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} /> : null}
@@ -9743,7 +9853,7 @@ function EfactBotScreen({
         {sending ? (
           <View style={styles.botAssistantRow}>
             <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} />
-            <NumiThinkingIndicator request={thinkingRequest} />
+            <ExtractedNumiThinkingIndicator request={thinkingRequest} />
           </View>
         ) : null}
       </ScrollView>
@@ -9764,7 +9874,7 @@ function EfactBotScreen({
         <Pressable style={[styles.botVoiceButton, listening && styles.botVoiceButtonActive]} onPress={toggleVoiceInput} disabled={sending}>
           <MaterialCommunityIcons name={listening ? 'microphone' : 'microphone-outline'} size={21} color={listening ? '#FFFFFF' : '#0878C9'} />
         </Pressable>
-        <TextInput value={draft} onChangeText={setDraft} placeholder={listening ? 'Escuchando...' : 'Escribe o dicta tu consulta...'} placeholderTextColor="#8DA1B4" style={styles.botInput} editable={!sending && !listening} multiline maxLength={800} onSubmitEditing={() => send()} />
+        <TextInput value={draft} onChangeText={setDraft} placeholder={listening ? 'Escuchando...' : 'Escribe o dicta tu consulta...'} placeholderTextColor="#8DA1B4" style={styles.botInput} editable={!sending && !listening} multiline maxLength={800} onFocus={() => scrollMessagesToEnd()} onSubmitEditing={() => send()} />
         <Pressable style={[styles.botSendButton, (!draft.trim() || sending) && styles.botSendButtonDisabled]} onPress={() => send()} disabled={!draft.trim() || sending}>
           <Text style={styles.botSendText}>➤</Text>
         </Pressable>
@@ -15819,6 +15929,8 @@ const styles = StyleSheet.create({
   invoiceHeroText: {
     gap: 2,
   },
+  invoiceDraftStatus: { alignItems: 'center', alignSelf: 'flex-start', backgroundColor: '#E9F8F0', borderColor: '#BCE9CE', borderRadius: 999, borderWidth: 1, flexDirection: 'row', gap: 5, marginTop: 8, paddingHorizontal: 9, paddingVertical: 5 },
+  invoiceDraftStatusText: { color: '#0F6B32', fontSize: 10, fontWeight: '900' },
   invoiceHeaderActions: {
     gap: 10,
   },
@@ -16875,6 +16987,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     zIndex: 2,
   },
+  documentPagination: { alignItems: 'center', backgroundColor: '#F1F7FB', borderColor: '#D7E8F1', borderRadius: 16, borderWidth: 1, flexDirection: 'row', gap: 10, justifyContent: 'space-between', marginTop: 14, padding: 8 },
+  documentPaginationButton: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#B9DFF2', borderRadius: 10, borderWidth: 1, height: 36, justifyContent: 'center', width: 36 },
+  documentPaginationButtonDisabled: { backgroundColor: '#E8F0F4', borderColor: '#E0E9EE' },
+  documentPaginationText: { color: '#46657B', flex: 1, fontSize: 11, fontWeight: '900', textAlign: 'center' },
   documentActionTrigger: {
     alignItems: 'center',
     backgroundColor: '#F1F6FA',
