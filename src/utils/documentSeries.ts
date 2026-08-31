@@ -56,7 +56,7 @@ export function getPuntoDocumentSequences(punto: PuntoEmision) {
     { label: 'Nota credito', serie: punto.serieNotasCred || serie, secuencia: getPuntoSequenceForDocument(punto, 'notaCredito') },
     { label: 'Nota debito', serie: punto.serieNotasDeb || serie, secuencia: getPuntoSequenceForDocument(punto, 'notaDebito') },
     { label: 'Guia', serie: punto.serieGuia || serie, secuencia: getPuntoSequenceForDocument(punto, 'guia') },
-    { label: 'Retencion', serie: punto.serieRetencion || serie, secuencia: getPuntoSequenceValue(punto, ['secRetencion', 'secuencialRetencion', 'secuenciaRetencion', 'siguienteRetencion', 'proximoRetencion', 'numRetencion', 'numeroRetencion']) },
+    { label: 'Retencion', serie: punto.serieRetencion || serie, secuencia: punto.secuenciaRetencionInicializada === false ? '-' : getPuntoSequenceValue(punto, ['secRetencion', 'secuencialRetencion', 'secuenciaRetencion', 'siguienteRetencion', 'proximoRetencion', 'numRetencion', 'numeroRetencion']) },
     { label: 'Liquidacion', serie: punto.serieLiquidacion || punto.serieLiquidacionCompra || serie, secuencia: getPuntoSequenceForDocument(punto, 'liquidacion') },
   ];
 }
@@ -124,12 +124,23 @@ function getPuntoSerieForDocument(punto: PuntoEmision, kind: DocumentSeriesKind)
   return String(byKind || getPuntoSerie(punto) || '');
 }
 
+function getPuntoSequenceInitialized(punto: PuntoEmision, kind: DocumentSeriesKind) {
+  if (kind === 'notaCredito') return punto.secuenciaNotaCreditoInicializada;
+  if (kind === 'notaDebito') return punto.secuenciaNotaDebitoInicializada;
+  if (kind === 'liquidacion') return punto.secuenciaLiquidacionInicializada;
+  if (kind === 'guia') return punto.secuenciaGuiaInicializada;
+  return punto.secuenciaFacturaInicializada;
+}
+
 function getPuntoSequenceForDocument(punto: PuntoEmision, kind: DocumentSeriesKind) {
+  const initialized = getPuntoSequenceInitialized(punto, kind);
+  if (initialized === false) return '-';
+
   if (kind === 'notaCredito') return getPuntoSequenceValue(punto, ['secNotaCredito', 'secuencialNotaCredito', 'secuenciaNotaCredito', 'siguienteNotaCredito', 'proximoNotaCredito', 'secNC', 'numNotaCredito', 'numeroNotaCredito']);
   if (kind === 'notaDebito') return getPuntoSequenceValue(punto, ['secNotaDebito', 'secuencialNotaDebito', 'secuenciaNotaDebito', 'siguienteNotaDebito', 'proximoNotaDebito', 'secND', 'numNotaDebito', 'numeroNotaDebito']);
   if (kind === 'liquidacion') return getPuntoSequenceValue(punto, ['secLiquidacion', 'secuencialLiquidacion', 'secuenciaLiquidacion', 'siguienteLiquidacion', 'proximoLiquidacion', 'secLiquidacionCompra', 'numLiquidacion', 'numeroLiquidacion']);
   if (kind === 'guia') return getPuntoSequenceValue(punto, ['secGuia', 'secuencialGuia', 'secuenciaGuia', 'siguienteGuia', 'proximoGuia', 'numGuia', 'numeroGuia']);
-  return getPuntoSequenceValue(punto, ['secFactura', 'secuencialFactura', 'secuenciaFactura', 'siguienteFactura', 'proximoFactura', 'numFactura', 'numeroFactura', 'sec']);
+  return getPuntoSequenceValue(punto, ['secFactura', 'secuencialFactura', 'secuenciaFactura', 'siguienteFactura', 'proximoFactura', 'numFactura', 'numeroFactura']);
 }
 
 export function getDocumentSerieOptions(preparacion: FacturaPreparacion | null, puntosData: PuntosEmisionData | null, kind: DocumentSeriesKind) {

@@ -226,6 +226,12 @@ export type PuntoEmision = {
   secuencialGuia?: number | string | null;
   secuencialRetencion?: number | string | null;
   secuencialLiquidacion?: number | string | null;
+  secuenciaFacturaInicializada?: boolean | null;
+  secuenciaNotaCreditoInicializada?: boolean | null;
+  secuenciaNotaDebitoInicializada?: boolean | null;
+  secuenciaGuiaInicializada?: boolean | null;
+  secuenciaRetencionInicializada?: boolean | null;
+  secuenciaLiquidacionInicializada?: boolean | null;
   estado?: boolean | null;
   esPrincipal?: boolean;
   establecimiento?: string | null;

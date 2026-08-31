@@ -48,7 +48,7 @@ import { clearNotificaciones, dismissNotificacion, getNotificaciones, Notificaci
 import { syncDeviceNotifications } from './src/services/deviceNotificationsService';
 import { createOperationalItem, deleteOperationalItem, getOperationalMobileModule, getOperationalModuleConfig, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, updateOperationalItem } from './src/services/operationalMobileService';
 import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
-import { createPuntoEmision, deletePuntoEmision, getPuntosEmision, markPuntoPrincipal, updatePuntoEmision } from './src/services/puntosEmisionService';
+import { createPuntoEmision, deletePuntoEmision, getPuntoEmisionSiguienteSecuencial, getPuntosEmision, markPuntoPrincipal, PuntoDocumentoKey, savePuntoEmisionSecuenciaInicial, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
 import { enviarRetencionCorreo, getRetencionPdf, getRetenciones, getRetencionXml, RetencionListItem } from './src/services/retencionesMobileService';
 import { ERubricaDashboard, ERubricaEmisor, buscarERubricaSolicitudesProveedor, descargarERubricaFirmaP12, firmarERubricaDocumento, getERubricaDashboard, getERubricaEmisores, getERubricaFirmaEstado, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, sincronizarERubricaPendientes, validarERubricaFirmaPdf, validarERubricaQr } from './src/services/erubricaMobileService';
@@ -69,6 +69,7 @@ import type { GlobalSearchResult as ExtractedGlobalSearchResult } from './src/ty
 import { InvoiceProgressSteps as SharedInvoiceProgressSteps, InvoiceSummaryRow as SharedInvoiceSummaryRow } from './src/components/facturacion/InvoiceShared';
 import { styles } from './src/styles/appStyles';
 import { EfactBotScreen } from './src/components/bot/EfactBotScreen';
+import { InitialSequenceModal } from './src/components/documentos/InitialSequenceModal';
 import { PuntosEmisionScreen } from './src/components/puntos/PuntosEmisionScreen';
 import { EFACT_THEME, ERUBRICA_COLORS } from './src/styles/theme';
 import { getDocumentSerieOptions, getNextSequence, getNextSequenceFromOptions, getPuntoSerie, getSerieCodemisorFromOptions, getSerieLabel, getSerieLabelFromOptions, getSerieValue, normalizeSerieCode, usePreferredDocumentSerie } from './src/utils/documentSeries';
@@ -260,6 +261,14 @@ type GuiaRemisionFormState = NuevaFacturaFormState & {
   fechaInicioTraslado: string;
   fechaFinTraslado: string;
   direccionOrigen: string;
+};
+
+type SequencePromptState = {
+  documento: PuntoDocumentoKey;
+  documentLabel: string;
+  serie: string;
+  codemisor?: number | null;
+  form: 'factura' | 'notaCredito' | 'notaDebito' | 'liquidacion' | 'guia';
 };
 
 type ProductoFormState = {
@@ -2061,6 +2070,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [guiaDetalles, setGuiaDetalles] = useState<GuiaRemisionDetalle[]>([]);
   const [loadingGuias, setLoadingGuias] = useState(false);
   const [savingGuia, setSavingGuia] = useState(false);
+  const [sequencePrompt, setSequencePrompt] = useState<SequencePromptState | null>(null);
+  const [sequencePromptSaving, setSequencePromptSaving] = useState(false);
+  const [sequencePromptMessage, setSequencePromptMessage] = useState<string | null>(null);
   const [retencionesList, setRetencionesList] = useState<RetencionListItem[]>([]);
   const [loadingRetenciones, setLoadingRetenciones] = useState(false);
   const [clienteFormMode, setClienteFormMode] = useState<ClienteFormMode>(null);
@@ -2112,6 +2124,66 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const portalAvatarUrl = getProfileAvatarUrl(currentUser, perfilData?.perfil);
   const visibleNotifications = useMemo(() => notifications.filter((notification) => !dismissedNotificationIds.has(notification.id)), [dismissedNotificationIds, notifications]);
   const unreadNotifications = visibleNotifications.filter((notification) => !notification.read).length;
+
+  const syncDocumentSequence = (
+    expectedView: WorkspaceView,
+    documento: PuntoDocumentoKey,
+    documentLabel: string,
+    kind: 'factura' | 'notaCredito' | 'notaDebito' | 'liquidacion' | 'guia',
+    serie: string,
+    preparacion: FacturaPreparacion | null,
+    setForm: (updater: (current: any) => any) => void,
+  ) => {
+    if (activeView !== expectedView || !catalogUserId || !serie || !puntosData?.cajas?.length) return () => undefined;
+
+    let mounted = true;
+    const codemisor = getSerieCodemisorFromOptions(getDocumentSerieOptions(preparacion, puntosData, kind), serie, preparacion);
+    getPuntoEmisionSiguienteSecuencial(catalogUserId, documento, serie, codemisor)
+      .then((response) => {
+        if (!mounted) return;
+        const proximo = response.inicializada ? response.proximo?.trim() ?? '' : '';
+        setForm((current) => current.serie === serie && current.numeroFactura !== proximo ? { ...current, numeroFactura: proximo } : current);
+        if (!response.inicializada) {
+          setSequencePrompt((current) => (
+            current?.documento === documento && current?.serie === serie
+              ? current
+              : { documento, documentLabel, serie, codemisor, form: kind }
+          ));
+        } else {
+          setSequencePrompt((current) => current?.documento === documento && current?.serie === serie ? null : current);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      mounted = false;
+    };
+  };
+
+  useEffect(
+    () => syncDocumentSequence('nueva-factura', 'factura', 'facturas', 'factura', facturaForm.serie, facturaPreparacion, setFacturaForm),
+    [activeView, catalogUserId, facturaForm.serie, facturaPreparacion, puntosData, reloadKey],
+  );
+
+  useEffect(
+    () => syncDocumentSequence('nueva-nota-credito', 'nota-credito', 'notas de crédito', 'notaCredito', notaCreditoForm.serie, notaCreditoPreparacion, setNotaCreditoForm),
+    [activeView, catalogUserId, notaCreditoForm.serie, notaCreditoPreparacion, puntosData, reloadKey],
+  );
+
+  useEffect(
+    () => syncDocumentSequence('nueva-nota-debito', 'nota-debito', 'notas de débito', 'notaDebito', notaDebitoForm.serie, notaDebitoPreparacion, setNotaDebitoForm),
+    [activeView, catalogUserId, notaDebitoForm.serie, notaDebitoPreparacion, puntosData, reloadKey],
+  );
+
+  useEffect(
+    () => syncDocumentSequence('nueva-liquidacion-compra', 'liquidacion-compra', 'liquidaciones de compra', 'liquidacion', liquidacionForm.serie, liquidacionPreparacion, setLiquidacionForm),
+    [activeView, catalogUserId, liquidacionForm.serie, liquidacionPreparacion, puntosData, reloadKey],
+  );
+
+  useEffect(
+    () => syncDocumentSequence('nueva-guia-remision', 'guia-remision', 'guías de remisión', 'guia', guiaForm.serie, guiaPreparacion, setGuiaForm),
+    [activeView, catalogUserId, guiaForm.serie, guiaPreparacion, puntosData, reloadKey],
+  );
 
   useEffect(() => {
     if (activeView !== 'nueva-factura' || !catalogUserId) return;
@@ -4781,6 +4853,39 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setDirectoryMessage(null);
   };
 
+  const applySequenceNumberToForm = (form: SequencePromptState['form'], proximo: string) => {
+    if (form === 'factura') setFacturaForm((current) => ({ ...current, numeroFactura: proximo }));
+    if (form === 'notaCredito') setNotaCreditoForm((current) => ({ ...current, numeroFactura: proximo }));
+    if (form === 'notaDebito') setNotaDebitoForm((current) => ({ ...current, numeroFactura: proximo }));
+    if (form === 'liquidacion') setLiquidacionForm((current) => ({ ...current, numeroFactura: proximo }));
+    if (form === 'guia') setGuiaForm((current) => ({ ...current, numeroFactura: proximo }));
+  };
+
+  const saveInitialSequence = async (input: { habiaGenerado: boolean; secuenciaAnterior: string }) => {
+    if (!catalogUserId || !sequencePrompt) return;
+
+    setSequencePromptSaving(true);
+    setSequencePromptMessage(null);
+    try {
+      const response = await savePuntoEmisionSecuenciaInicial({
+        userId: catalogUserId,
+        documento: sequencePrompt.documento,
+        serie: sequencePrompt.serie,
+        codemisor: sequencePrompt.codemisor,
+        habiaGenerado: input.habiaGenerado,
+        secuenciaAnterior: input.secuenciaAnterior,
+      });
+      applySequenceNumberToForm(sequencePrompt.form, response.proximo?.trim() ?? '');
+      setSequencePrompt(null);
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo guardar la secuencia inicial.';
+      setSequencePromptMessage(text);
+    } finally {
+      setSequencePromptSaving(false);
+    }
+  };
+
   const saveNuevaGuia = async () => {
     if (!catalogUserId) return;
     if (!guiaTransportista) {
@@ -6266,6 +6371,18 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         onBot={() => openView('bot')}
         onNewInvoice={() => openView('nueva-factura')}
         onProfile={() => openView('perfil')}
+      />
+      <InitialSequenceModal
+        visible={Boolean(sequencePrompt)}
+        documentLabel={sequencePrompt?.documentLabel ?? 'documentos'}
+        serie={sequencePrompt?.serie ?? ''}
+        saving={sequencePromptSaving}
+        message={sequencePromptMessage}
+        onClose={() => {
+          setSequencePrompt(null);
+          setSequencePromptMessage(null);
+        }}
+        onSave={saveInitialSequence}
       />
       <ItemDetailModal
         visible={Boolean(viewingCliente)}

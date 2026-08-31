@@ -1,24 +1,38 @@
-import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
+import { NativeModules, Platform } from 'react-native';
+import type * as ExpoNotifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { NotificacionItem } from './notificacionesService';
 
 const CHANNEL_ID = 'efact-activity';
 const DELIVERED_KEY_PREFIX = 'efact_delivered_notifications_';
+let notificationsModule: typeof ExpoNotifications | null = null;
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: false,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+function isExpoGo() {
+  return NativeModules.ExponentConstants?.appOwnership === 'expo';
+}
+
+function getNotificationsModule() {
+  if (Platform.OS === 'web' || isExpoGo()) return null;
+  if (!notificationsModule) {
+    notificationsModule = require('expo-notifications') as typeof ExpoNotifications;
+    notificationsModule.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldPlaySound: false,
+        shouldSetBadge: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+  }
+  return notificationsModule;
+}
 
 export async function syncDeviceNotifications(userId: number, items: NotificacionItem[]) {
   if (Platform.OS === 'web' || userId <= 0 || !items.length) return;
+  const Notifications = getNotificationsModule();
+  if (!Notifications) return;
 
-  const granted = await ensureNotificationPermission();
+  const granted = await ensureNotificationPermission(Notifications);
   if (!granted) return;
 
   const key = `${DELIVERED_KEY_PREFIX}${userId}`;
@@ -45,7 +59,7 @@ export async function syncDeviceNotifications(userId: number, items: Notificacio
   await Notifications.setBadgeCountAsync(items.filter((item) => !item.read).length);
 }
 
-async function ensureNotificationPermission() {
+async function ensureNotificationPermission(Notifications: typeof ExpoNotifications) {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: 'Actividad E-FACT',
