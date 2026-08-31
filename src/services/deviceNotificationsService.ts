@@ -1,6 +1,5 @@
 import { NativeModules, Platform } from 'react-native';
 import type * as ExpoNotifications from 'expo-notifications';
-import { Platform } from 'react-native';
 import { isRunningInExpoGo } from 'expo';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';

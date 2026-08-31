@@ -2782,6 +2782,14 @@ export const styles = StyleSheet.create({
     height: 34,
     width: 70,
   },
+  portalServiceIcon: {
+    alignItems: 'center',
+    borderRadius: 15,
+    borderWidth: 1,
+    height: 70,
+    justifyContent: 'center',
+    width: 70,
+  },
   portalServiceCopy: {
     alignItems: 'flex-start',
     flex: 1,
@@ -2789,6 +2797,19 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     minWidth: 0,
     padding: 12,
+  },
+  portalServiceArrow: {
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  portalServiceArrowText: {
+    fontSize: 23,
+    fontWeight: '900',
+    lineHeight: 25,
   },
   portalServiceAccentLine: {
     borderRadius: 999,
