@@ -101,7 +101,7 @@ export function EfactBotScreen({
   return (
     <KeyboardAvoidingView style={styles.botScreen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
       <View style={styles.botWidgetHeader}>
-        <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botWidgetAvatar} />
+        <Image source={require('../../../assets/numi-chat-avatar.jpg')} style={styles.botWidgetAvatar} />
         <View style={styles.botWidgetCopy}>
           <Text style={styles.botWidgetKicker}>Chat con</Text>
           <Text style={styles.botWidgetTitle}>Númi</Text>
@@ -125,7 +125,7 @@ export function EfactBotScreen({
       >
         {messages.map((message) => (
           <View key={message.id} style={message.role === 'user' ? styles.botUserRow : styles.botAssistantRow}>
-            {message.role === 'assistant' ? <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} /> : null}
+            {message.role === 'assistant' ? <Image source={require('../../../assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} /> : null}
             <View style={[styles.botBubble, message.role === 'user' ? styles.botUserBubble : styles.botAssistantBubble]}>
               <View style={styles.botMessageRow}>
                 <Text style={[styles.botBubbleText, message.role === 'user' && styles.botUserBubbleText]}>{message.text}</Text>
@@ -156,7 +156,7 @@ export function EfactBotScreen({
         ))}
         {sending ? (
           <View style={styles.botAssistantRow}>
-            <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} />
+            <Image source={require('../../../assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} />
             <NumiThinkingIndicator request={thinkingRequest} />
           </View>
         ) : null}
