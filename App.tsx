@@ -45,11 +45,11 @@ import { getMenusByRol, hasMenusByRolEndpoint } from './src/services/menuService
 import { buscarLiquidacionProductos, buscarLiquidacionProveedores, enviarLiquidacionCompraCorreo, getLiquidacionCompraPdf, getLiquidacionCompraPreparacion, getLiquidacionesCompra, getLiquidacionCompraXml, guardarLiquidacionCompra, LiquidacionCompraListItem } from './src/services/liquidacionesCompraMobileService';
 import { buscarNotaCreditoFacturas, enviarNotaCreditoCorreo, getNotaCreditoPdf, getNotaCreditoPreparacion, getNotasCredito, getNotaCreditoXml, guardarNotaCredito, NotaCreditoListItem } from './src/services/notasCreditoMobileService';
 import { buscarNotaDebitoFacturas, enviarNotaDebitoCorreo, getNotaDebitoPdf, getNotaDebitoPreparacion, getNotasDebito, getNotaDebitoXml, guardarNotaDebito, NotaDebitoListItem } from './src/services/notasDebitoMobileService';
-import { getNotificaciones, NotificacionItem } from './src/services/notificacionesService';
+import { clearNotificaciones, dismissNotificacion, getNotificaciones, NotificacionItem } from './src/services/notificacionesService';
 import { syncDeviceNotifications } from './src/services/deviceNotificationsService';
 import { createOperationalItem, deleteOperationalItem, getOperationalMobileModule, getOperationalModuleConfig, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, updateOperationalItem } from './src/services/operationalMobileService';
 import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
-import { createPuntoEmision, deletePuntoEmision, getPuntosEmision, markPuntoPrincipal, updatePuntoEmision } from './src/services/puntosEmisionService';
+import { createPuntoEmision, deletePuntoEmision, getPuntoEmisionSiguienteSecuencial, getPuntosEmision, markPuntoPrincipal, PuntoDocumentoKey, savePuntoEmisionSecuenciaInicial, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
 import { enviarRetencionCorreo, getRetencionPdf, getRetenciones, getRetencionXml, RetencionListItem } from './src/services/retencionesMobileService';
 import { ERubricaDashboard, ERubricaEmisor, buscarERubricaSolicitudesProveedor, descargarERubricaFirmaP12, firmarERubricaDocumento, getERubricaDashboard, getERubricaEmisores, getERubricaFirmaEstado, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, sincronizarERubricaPendientes, validarERubricaFirmaPdf, validarERubricaQr } from './src/services/erubricaMobileService';
@@ -71,6 +71,8 @@ import { InvoiceProgressSteps as SharedInvoiceProgressSteps, InvoiceSummaryRow }
 import { styles } from './src/styles/appStyles';
 import { DocumentActionsMenu } from './src/components/documents/DocumentActionsMenu';
 import { EfactBotScreen } from './src/components/bot/EfactBotScreen';
+import { InitialSequenceModal } from './src/components/documentos/InitialSequenceModal';
+import { PuntosEmisionScreen } from './src/components/puntos/PuntosEmisionScreen';
 import { EmptyState, MetricBox } from './src/components/ui/FeedbackStates';
 import { PortalServiceCard } from './src/components/portal/PortalServiceCard';
 import { DirectoryTabButton, DropdownField, FormTopBar, ToggleRow } from './src/components/ui/FormShared';
@@ -81,6 +83,7 @@ import { InitialsAvatar, MenuItem } from './src/components/ui/MenuItem';
 import { OperationalForm, OperationalMobileItemCard } from './src/components/operational/OperationalWidgets';
 import { BiometricSetupModal, BrandLockup, BrandMark, LoadingScreen, ScreenFrame } from './src/components/auth/AuthWidgets';
 import { EFACT_THEME, ERUBRICA_COLORS } from './src/styles/theme';
+import { getDocumentSerieOptions, getNextSequence, getNextSequenceFromOptions, getPuntoSerie, getSerieCodemisorFromOptions, getSerieLabel, getSerieLabelFromOptions, getSerieValue, normalizeSerieCode, usePreferredDocumentSerie } from './src/utils/documentSeries';
 import type { NuevaFacturaFormState, NuevaFacturaLinea } from './src/types/invoices';
 import { formatDocumentDate, formatMoney, listItemKey } from './src/utils/documentFormatting';
 
@@ -248,6 +251,14 @@ type GuiaRemisionFormState = NuevaFacturaFormState & {
   fechaInicioTraslado: string;
   fechaFinTraslado: string;
   direccionOrigen: string;
+};
+
+type SequencePromptState = {
+  documento: PuntoDocumentoKey;
+  documentLabel: string;
+  serie: string;
+  codemisor?: number | null;
+  form: 'factura' | 'notaCredito' | 'notaDebito' | 'liquidacion' | 'guia';
 };
 
 type ProductoFormState = {
@@ -844,12 +855,49 @@ function isERubricaService(service: Pick<ServiceAccess, 'codigo' | 'nombre' | 'r
   return source.includes('e-rubrica') || source.includes('erubrica') || source.includes('e-sign') || source.includes('rubrica');
 }
 
+function getPortalServiceVisual(title: string, index: number) {
+  const normalized = normalizeText(title);
+  if (normalized.includes('fact')) return { kind: 'efact', accent: EFACT_THEME.colors.primary, surface: '#EAF7FF' };
+  if (normalized.includes('rubrica') || normalized.includes('sign')) return { kind: 'rubrica', accent: ERUBRICA_COLORS.primary, surface: '#EAFBF4' };
+  if (normalized.includes('cont')) return { kind: 'green', accent: '#08A889', surface: '#E8FBF7' };
+  if (normalized.includes('declara')) return { kind: 'purple', accent: '#6847FF', surface: '#F0EDFF' };
+  if (normalized.includes('people') || normalized.includes('talento') || normalized.includes('rrhh')) return { kind: 'orange', accent: '#F97316', surface: '#FFF3E8' };
+  if (normalized.includes('back')) return { kind: 'purple', accent: '#6847FF', surface: '#F0EDFF' };
+
+  const palette = [
+    { kind: 'purple', accent: '#6847FF', surface: '#F0EDFF' },
+    { kind: 'orange', accent: '#F97316', surface: '#FFF3E8' },
+    { kind: 'green', accent: '#08A889', surface: '#E8FBF7' },
+  ];
+  return palette[index % palette.length];
+}
+
 function getNotificationTone(notification: NotificacionItem) {
   const source = normalizeText(`${notification.type ?? ''} ${notification.title} ${notification.text}`);
   if (source.includes('error') || source.includes('rechaz') || source.includes('anulad') || source.includes('fall') || source.includes('vencid')) return 'danger';
   if (source.includes('advert') || source.includes('pendient') || source.includes('proces') || source.includes('revision') || source.includes('alert')) return 'warning';
   if (source.includes('exito') || source.includes('correct') || source.includes('autoriz') || source.includes('aprob') || source.includes('emitid')) return 'success';
   return 'info';
+}
+
+function getNotificationView(notification: NotificacionItem): WorkspaceView | null {
+  const source = normalizeText(`${notification.view ?? ''} ${notification.route ?? ''} ${notification.module ?? ''} ${notification.type ?? ''} ${notification.title} ${notification.text}`);
+  const routeMap: Array<[WorkspaceView, string[]]> = [
+    ['mis-notas-credito', ['nota-credito', 'notas-credito', 'credito']],
+    ['mis-notas-debito', ['nota-debito', 'notas-debito', 'debito']],
+    ['mis-liquidaciones-compra', ['liquidacion', 'liquidaciones', 'compra']],
+    ['mis-guias-remision', ['guia-remision', 'guias-remision', 'remision']],
+    ['retenciones', ['retencion', 'retenciones']],
+    ['mis-facturas', ['factura', 'facturas']],
+    ['clientes', ['cliente', 'clientes', 'proveedor', 'proveedores']],
+    ['productos', ['producto', 'productos', 'categoria', 'subcategoria']],
+    ['firma', ['firma', 'certificado']],
+    ['punto-emision', ['punto-emision', 'puntos-emision', 'caja', 'serie', 'secuencia']],
+    ['cuentas-cobrar', ['cuentas-cobrar', 'cobrar', 'saldo']],
+    ['e-rubrica', ['rubrica', 'e-sign']],
+    ['bot', ['numi', 'bot', 'asistente']],
+  ];
+  return routeMap.find(([, terms]) => terms.some((term) => source.includes(term)))?.[0] ?? null;
 }
 
 function getDisplayFirstName(user: LoginResponse, perfil?: PerfilUsuario | null) {
@@ -1330,50 +1378,6 @@ function puntoToForm(punto?: PuntoEmision | null): PuntoFormState {
   return {
     puntoEmision: normalizeSerieCode(punto?.puntoEmision ?? ''),
   };
-}
-
-function normalizeSerieCode(value?: string | number | null) {
-  const digits = String(value ?? '').replace(/\D/g, '');
-  return digits ? digits.padStart(3, '0').slice(-3) : '';
-}
-
-function normalizeSerieDisplay(value?: string | number | null) {
-  const text = String(value ?? '').trim();
-  if (!text) return '';
-  if (text.includes('-')) {
-    const [establecimiento, punto] = text.split('-');
-    return `${normalizeSerieCode(establecimiento)}-${normalizeSerieCode(punto)}`;
-  }
-  const digits = text.replace(/\D/g, '');
-  if (digits.length >= 6) return `${normalizeSerieCode(digits.slice(0, 3))}-${normalizeSerieCode(digits.slice(3, 6))}`;
-  return text;
-}
-
-function getPuntoSerie(punto: PuntoEmision) {
-  if (punto.establecimiento && punto.puntoEmision) return `${normalizeSerieCode(punto.establecimiento)}-${normalizeSerieCode(punto.puntoEmision)}`;
-  const serie = punto.serieFactura ?? punto.serieNotasCred ?? punto.serieGuia ?? '';
-  if (serie.includes('-')) return serie;
-  return normalizeSerieCode(punto.puntoEmision ?? punto.numCaja);
-}
-
-function getPuntoSequenceValue(punto: PuntoEmision, keys: string[]) {
-  const row = punto as PuntoEmision & Record<string, unknown>;
-  const value = keys.map((key) => row[key]).find((candidate) => candidate !== null && candidate !== undefined && String(candidate).trim());
-  if (value === undefined) return '-';
-  const numeric = numberValue(value);
-  return numeric > 0 ? String(numeric).padStart(9, '0') : String(value);
-}
-
-function getPuntoDocumentSequences(punto: PuntoEmision) {
-  const serie = getPuntoSerie(punto) || 'Sin serie';
-  return [
-    { label: 'Factura', serie: punto.serieFactura || serie, secuencia: getPuntoSequenceValue(punto, ['secFactura', 'secuencialFactura', 'secuenciaFactura', 'sec']) },
-    { label: 'Nota credito', serie: punto.serieNotasCred || serie, secuencia: getPuntoSequenceValue(punto, ['secNotaCredito', 'secuencialNotaCredito', 'secuenciaNotaCredito', 'secNC']) },
-    { label: 'Nota debito', serie: punto.serieNotasDeb || serie, secuencia: getPuntoSequenceValue(punto, ['secNotaDebito', 'secuencialNotaDebito', 'secuenciaNotaDebito', 'secND']) },
-    { label: 'Guia', serie: punto.serieGuia || serie, secuencia: getPuntoSequenceValue(punto, ['secGuia', 'secuencialGuia', 'secuenciaGuia']) },
-    { label: 'Retencion', serie: punto.serieRetencion || serie, secuencia: getPuntoSequenceValue(punto, ['secRetencion', 'secuencialRetencion', 'secuenciaRetencion']) },
-    { label: 'Liquidacion', serie: punto.serieLiquidacion || serie, secuencia: getPuntoSequenceValue(punto, ['secLiquidacion', 'secuencialLiquidacion', 'secuenciaLiquidacion']) },
-  ];
 }
 
 function getNextPuntoCode(cajas: PuntoEmision[]) {
@@ -1951,6 +1955,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [notifications, setNotifications] = useState<NotificacionItem[]>([]);
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState<Set<string>>(new Set());
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [notificationsMessage, setNotificationsMessage] = useState<MessageState>(null);
   const [menus, setMenus] = useState<DynamicMenu[]>(getInitialMenus(currentUser));
@@ -2055,6 +2060,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [guiaDetalles, setGuiaDetalles] = useState<GuiaRemisionDetalle[]>([]);
   const [loadingGuias, setLoadingGuias] = useState(false);
   const [savingGuia, setSavingGuia] = useState(false);
+  const [sequencePrompt, setSequencePrompt] = useState<SequencePromptState | null>(null);
+  const [sequencePromptSaving, setSequencePromptSaving] = useState(false);
+  const [sequencePromptMessage, setSequencePromptMessage] = useState<string | null>(null);
   const [retencionesList, setRetencionesList] = useState<RetencionListItem[]>([]);
   const [loadingRetenciones, setLoadingRetenciones] = useState(false);
   const [clienteFormMode, setClienteFormMode] = useState<ClienteFormMode>(null);
@@ -2103,7 +2111,69 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const canUseERubrica = isSuperAdmin(currentUser) || authorizedViews.has('e-rubrica') || services.some(isERubricaService);
   const canUsePortal = isSuperAdmin(currentUser) || services.length > 0;
   const portalFirstName = getDisplayFirstName(currentUser, perfilData?.perfil);
-  const unreadNotifications = notifications.filter((notification) => !notification.read).length;
+  const portalAvatarUrl = getProfileAvatarUrl(currentUser, perfilData?.perfil);
+  const visibleNotifications = useMemo(() => notifications.filter((notification) => !dismissedNotificationIds.has(notification.id)), [dismissedNotificationIds, notifications]);
+  const unreadNotifications = visibleNotifications.filter((notification) => !notification.read).length;
+
+  const syncDocumentSequence = (
+    expectedView: WorkspaceView,
+    documento: PuntoDocumentoKey,
+    documentLabel: string,
+    kind: 'factura' | 'notaCredito' | 'notaDebito' | 'liquidacion' | 'guia',
+    serie: string,
+    preparacion: FacturaPreparacion | null,
+    setForm: (updater: (current: any) => any) => void,
+  ) => {
+    if (activeView !== expectedView || !catalogUserId || !serie || !puntosData?.cajas?.length) return () => undefined;
+
+    let mounted = true;
+    const codemisor = getSerieCodemisorFromOptions(getDocumentSerieOptions(preparacion, puntosData, kind), serie, preparacion);
+    getPuntoEmisionSiguienteSecuencial(catalogUserId, documento, serie, codemisor)
+      .then((response) => {
+        if (!mounted) return;
+        const proximo = response.inicializada ? response.proximo?.trim() ?? '' : '';
+        setForm((current) => current.serie === serie && current.numeroFactura !== proximo ? { ...current, numeroFactura: proximo } : current);
+        if (!response.inicializada) {
+          setSequencePrompt((current) => (
+            current?.documento === documento && current?.serie === serie
+              ? current
+              : { documento, documentLabel, serie, codemisor, form: kind }
+          ));
+        } else {
+          setSequencePrompt((current) => current?.documento === documento && current?.serie === serie ? null : current);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      mounted = false;
+    };
+  };
+
+  useEffect(
+    () => syncDocumentSequence('nueva-factura', 'factura', 'facturas', 'factura', facturaForm.serie, facturaPreparacion, setFacturaForm),
+    [activeView, catalogUserId, facturaForm.serie, facturaPreparacion, puntosData, reloadKey],
+  );
+
+  useEffect(
+    () => syncDocumentSequence('nueva-nota-credito', 'nota-credito', 'notas de crédito', 'notaCredito', notaCreditoForm.serie, notaCreditoPreparacion, setNotaCreditoForm),
+    [activeView, catalogUserId, notaCreditoForm.serie, notaCreditoPreparacion, puntosData, reloadKey],
+  );
+
+  useEffect(
+    () => syncDocumentSequence('nueva-nota-debito', 'nota-debito', 'notas de débito', 'notaDebito', notaDebitoForm.serie, notaDebitoPreparacion, setNotaDebitoForm),
+    [activeView, catalogUserId, notaDebitoForm.serie, notaDebitoPreparacion, puntosData, reloadKey],
+  );
+
+  useEffect(
+    () => syncDocumentSequence('nueva-liquidacion-compra', 'liquidacion-compra', 'liquidaciones de compra', 'liquidacion', liquidacionForm.serie, liquidacionPreparacion, setLiquidacionForm),
+    [activeView, catalogUserId, liquidacionForm.serie, liquidacionPreparacion, puntosData, reloadKey],
+  );
+
+  useEffect(
+    () => syncDocumentSequence('nueva-guia-remision', 'guia-remision', 'guías de remisión', 'guia', guiaForm.serie, guiaPreparacion, setGuiaForm),
+    [activeView, catalogUserId, guiaForm.serie, guiaPreparacion, puntosData, reloadKey],
+  );
 
   useEffect(() => {
     if (activeView !== 'nueva-factura' || !catalogUserId) return;
@@ -4229,7 +4299,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         idUsuario: catalogUserId,
         cliente: facturaCliente,
         serie: facturaForm.serie,
-        codemisor: getSerieCodemisor(facturaPreparacion, facturaForm.serie),
+        codemisor: getSerieCodemisorFromOptions(getDocumentSerieOptions(facturaPreparacion, puntosData, 'factura'), facturaForm.serie, facturaPreparacion),
         formaPago: facturaForm.formaPago,
         referencia: facturaForm.referencia,
         correos: facturaForm.correoAdicional ? [facturaForm.correoAdicional] : [],
@@ -4399,7 +4469,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         cliente: notaCreditoCliente,
         facturaModificada: notaCreditoFactura,
         serie: notaCreditoForm.serie,
-        codemisor: getSerieCodemisor(notaCreditoPreparacion, notaCreditoForm.serie),
+        codemisor: getSerieCodemisorFromOptions(getDocumentSerieOptions(notaCreditoPreparacion, puntosData, 'notaCredito'), notaCreditoForm.serie, notaCreditoPreparacion),
         motivo: notaCreditoForm.motivo,
         observacion: notaCreditoForm.observacion,
         correos: notaCreditoForm.correoAdicional ? [notaCreditoForm.correoAdicional] : [],
@@ -4509,7 +4579,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         cliente: notaDebitoCliente,
         facturaModificada: notaDebitoFactura,
         serie: notaDebitoForm.serie,
-        codemisor: getSerieCodemisor(notaDebitoPreparacion, notaDebitoForm.serie),
+        codemisor: getSerieCodemisorFromOptions(getDocumentSerieOptions(notaDebitoPreparacion, puntosData, 'notaDebito'), notaDebitoForm.serie, notaDebitoPreparacion),
         correos: notaDebitoForm.correoAdicional ? [notaDebitoForm.correoAdicional] : [],
         detalles: notaDebitoLineas.map((linea) => ({
           descripcion: linea.descripcion,
@@ -4631,7 +4701,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         idUsuario: catalogUserId,
         proveedor: liquidacionProveedor,
         serie: liquidacionForm.serie,
-        codemisor: getSerieCodemisor(liquidacionPreparacion, liquidacionForm.serie),
+        codemisor: getSerieCodemisorFromOptions(getDocumentSerieOptions(liquidacionPreparacion, puntosData, 'liquidacion'), liquidacionForm.serie, liquidacionPreparacion),
         formaPago: liquidacionForm.formaPago,
         diasCredito: Number(liquidacionForm.diasCredito) || 0,
         correos: liquidacionForm.correoAdicional ? [liquidacionForm.correoAdicional] : [],
@@ -4773,6 +4843,39 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setDirectoryMessage(null);
   };
 
+  const applySequenceNumberToForm = (form: SequencePromptState['form'], proximo: string) => {
+    if (form === 'factura') setFacturaForm((current) => ({ ...current, numeroFactura: proximo }));
+    if (form === 'notaCredito') setNotaCreditoForm((current) => ({ ...current, numeroFactura: proximo }));
+    if (form === 'notaDebito') setNotaDebitoForm((current) => ({ ...current, numeroFactura: proximo }));
+    if (form === 'liquidacion') setLiquidacionForm((current) => ({ ...current, numeroFactura: proximo }));
+    if (form === 'guia') setGuiaForm((current) => ({ ...current, numeroFactura: proximo }));
+  };
+
+  const saveInitialSequence = async (input: { habiaGenerado: boolean; secuenciaAnterior: string }) => {
+    if (!catalogUserId || !sequencePrompt) return;
+
+    setSequencePromptSaving(true);
+    setSequencePromptMessage(null);
+    try {
+      const response = await savePuntoEmisionSecuenciaInicial({
+        userId: catalogUserId,
+        documento: sequencePrompt.documento,
+        serie: sequencePrompt.serie,
+        codemisor: sequencePrompt.codemisor,
+        habiaGenerado: input.habiaGenerado,
+        secuenciaAnterior: input.secuenciaAnterior,
+      });
+      applySequenceNumberToForm(sequencePrompt.form, response.proximo?.trim() ?? '');
+      setSequencePrompt(null);
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo guardar la secuencia inicial.';
+      setSequencePromptMessage(text);
+    } finally {
+      setSequencePromptSaving(false);
+    }
+  };
+
   const saveNuevaGuia = async () => {
     if (!catalogUserId) return;
     if (!guiaTransportista) {
@@ -4792,7 +4895,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         destinatario: guiaCliente,
         factura: guiaFactura,
         serie: guiaForm.serie,
-        codemisor: getSerieCodemisor(guiaPreparacion, guiaForm.serie),
+        codemisor: getSerieCodemisorFromOptions(getDocumentSerieOptions(guiaPreparacion, puntosData, 'guia'), guiaForm.serie, guiaPreparacion),
         placa: guiaForm.placa,
         contribuyenteEspecial: guiaForm.contribuyenteEspecial,
         obligadoContabilidad: guiaForm.transportistaObligadoContabilidad,
@@ -4952,6 +5055,43 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
 
     setActiveView('no-autorizado');
+  };
+
+  const dismissNotificationLocal = (notificationId: string) => {
+    setDismissedNotificationIds((current) => {
+      const next = new Set(current);
+      next.add(notificationId);
+      return next;
+    });
+  };
+
+  const dismissNotification = async (notificationId: string) => {
+    if (catalogUserId) {
+      try {
+        await dismissNotificacion(catalogUserId, notificationId);
+      } catch {}
+    }
+    dismissNotificationLocal(notificationId);
+  };
+
+  const clearVisibleNotifications = async () => {
+    if (catalogUserId) {
+      try {
+        await clearNotificaciones(catalogUserId);
+      } catch {}
+    }
+    setDismissedNotificationIds((current) => {
+      const next = new Set(current);
+      visibleNotifications.forEach((notification) => next.add(notification.id));
+      return next;
+    });
+  };
+
+  const openNotificationTarget = (notification: NotificacionItem) => {
+    const targetView = getNotificationView(notification);
+    dismissNotificationLocal(notification.id);
+    setNotificationsOpen(false);
+    if (targetView) openView(targetView);
   };
 
   useEffect(() => {
@@ -5229,26 +5369,41 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
         {!loadingMenus && activeView === 'portal' ? (
           <View style={styles.portalStack}>
-            <View style={styles.portalShowcase}>
-              <View style={styles.portalShowcaseIcon}>
-                <Image source={require('./assets/logo-numerica.png')} style={styles.portalShowcaseLogo} />
+            <View style={styles.portalWebHero}>
+              <View style={styles.portalWebTitleRow}>
+                <View style={styles.portalWebLogoShell}>
+                  <Image source={require('./assets/logo-numerica.png')} style={styles.portalWebLogo} />
+                </View>
+                <View style={styles.portalWebTitleCopy}>
+                  <Text style={styles.portalWebTitle}>Servicios Disponibles</Text>
+                  <Text style={styles.portalWebSubtitle}>Selecciona el modulo al que deseas ingresar</Text>
+                </View>
               </View>
-              <View style={styles.portalShowcaseCopy}>
-                <Text style={styles.portalShowcaseTitle}>Servicios Numerica</Text>
-                <Text style={styles.portalShowcaseText}>Elige tu herramienta y continua tu operacion sin cambiar de entorno.</Text>
-                <View style={styles.portalShowcaseBadges}>
-                  <Text style={styles.portalShowcaseBadge}>Facturacion</Text>
-                  <Text style={styles.portalShowcaseBadge}>Firma electronica</Text>
+              <View style={styles.portalWebSessionCard}>
+                <Image source={{ uri: resolveImageUrl(portalAvatarUrl) }} style={styles.portalWebSessionAvatar} />
+                <View style={styles.portalWebSessionCopy}>
+                  <Text style={styles.portalWebSessionName}>{portalFirstName}</Text>
+                  <View style={styles.portalWebSessionStatusRow}>
+                    <View style={styles.portalWebStatusDot} />
+                    <Text style={styles.portalWebSessionStatus}>Sesion activa</Text>
+                  </View>
+                </View>
+              </View>
+              <View style={styles.portalWelcomePanel}>
+                <View style={styles.portalWelcomeCopy}>
+                  <Text style={styles.portalWelcomeEyebrow}>Numerica Software</Text>
+                  <Text style={styles.portalWelcomeTitle}>Bienvenido, {portalFirstName}</Text>
+                  <Text style={styles.portalWelcomeText}>Tus servicios activos estan listos para usarse</Text>
+                </View>
+                <View style={styles.portalWelcomePills}>
+                  <PortalStatusPill icon="check-decagram-outline" label="Disponible" />
+                  <PortalStatusPill icon="pulse" label="Actual" />
+                  <PortalStatusPill icon="shield-check-outline" label="Suscripcion activa" />
                 </View>
               </View>
             </View>
-            <View style={styles.portalSectionHeader}>
-              <View style={styles.portalSectionTitleWrap}>
-                <Text style={styles.portalSectionTitle}>Mis servicios</Text>
-              </View>
-            </View>
 
-            <View style={styles.portalServiceList}>
+            <View style={styles.portalServiceGrid}>
               <PortalServiceCard
                 title="E-FACT"
                 description="Facturacion electronica movil segun menus asignados."
@@ -5912,81 +6067,24 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             ) : null}
 
             {activeView === 'punto-emision' ? (
-              <>
-                {puntosData?.emisor ? (
-                  <View style={styles.puntoHero}>
-                    <Text style={styles.puntoHeroEyebrow}>Configuracion tributaria</Text>
-                    <Text style={styles.puntoHeroTitle}>Establecimientos y puntos de emision</Text>
-                    <Text style={styles.puntoHeroText}>Administra las series electronicas que utilizaras para emitir documentos.</Text>
-                    <View style={styles.puntoHeroBadge}>
-                      <Text style={styles.puntoHeroBadgeLabel}>Serie en uso</Text>
-                      <Text style={styles.puntoHeroBadgeValue}>
-                        {getPuntoSerie((puntosData.cajas ?? []).find((punto) => punto.esPrincipal) ?? (puntosData.cajas ?? [])[0] ?? { sec: 0 }) || '001-000'}
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
-                <View style={styles.metricGrid}>
-                  <MetricBox value={puntosData?.emisor ? 1 : 0} label="Emisor activo" />
-                  <MetricBox value={puntosData?.cajas.length ?? 0} label="Puntos" />
-                </View>
-                {puntosData?.emisor ? (
-                  <View style={styles.profileBox}>
-                    <Text style={styles.profileLabel}>Establecimiento seleccionado</Text>
-                    <Text style={styles.profileValue}>{`${normalizeSerieCode(puntosData.emisor.codEstablecimiento) || '001'} - Matriz`}</Text>
-                    <Text style={styles.profileLabel}>Emisor</Text>
-                    <Text style={styles.profileValue}>{puntosData.emisor.razonSocial || puntosData.emisor.nomComercial || 'Emisor registrado'}</Text>
-                    <Text style={styles.profileLabel}>Direccion</Text>
-                    <Text style={styles.profileValue}>{puntosData.emisor.dirEstablecimiento || puntosData.emisor.direccionMatriz || 'Sin direccion configurada'}</Text>
-                  </View>
-                ) : null}
-                <View style={styles.actionRow}>
-                  <PrimaryButton label="Agregar punto de emision" loading={false} onPress={openNewPunto} />
-                </View>
-                {puntoFormMode ? (
-                  <PuntoEmisionForm
-                    form={puntoForm}
-                    mode={puntoFormMode}
-                    saving={savingPunto}
-                    establecimiento={normalizeSerieCode(puntosData?.emisor?.codEstablecimiento)}
-                    onCancel={closePuntoForm}
-                    onChange={updatePuntoForm}
-                    onReset={() => setPuntoForm(selectedPunto ? puntoToForm(selectedPunto) : { puntoEmision: getNextPuntoCode(puntosData?.cajas ?? []) })}
-                    onSave={savePunto}
-                  />
-                ) : null}
-                <SearchField label="Buscar puntos de emision" placeholder="Establecimiento, caja o serie" value={search} onChangeText={setSearch} totalCount={puntosData?.cajas.length ?? 0} />
-                {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
-                {loadingPuntos ? (
-                  <View style={styles.directoryLoading}>
-                    <ActivityIndicator color="#0072BD" />
-                    <Text style={styles.mutedText}>Cargando puntos de emision...</Text>
-                  </View>
-                ) : null}
-                {!loadingPuntos && (puntosData?.cajas.length ?? 0) === 0 ? (
-                  <EmptyState title="Sin puntos de emision" text="Cuando existan registros, apareceran aqui." />
-                ) : null}
-                <View style={styles.listStack}>
-                  {(puntosData?.cajas ?? [])
-                    .filter((punto) => {
-                      const term = search.trim().toLowerCase();
-                      if (!term) return true;
-                      return [getPuntoSerie(punto), punto.puntoEmision, punto.establecimiento]
-                        .filter(Boolean)
-                        .some((value) => String(value).toLowerCase().includes(term));
-                    })
-                    .map((punto, index, list) => (
-                      <PuntoEmisionCard
-                        key={`punto-${punto.sec}-${index}`}
-                        punto={punto}
-                        canDelete={!punto.esPrincipal && list.length > 1}
-                        onEdit={() => openEditPunto(punto)}
-                        onDelete={() => confirmDeletePunto(punto)}
-                        onMakePrincipal={() => makePuntoPrincipal(punto)}
-                      />
-                    ))}
-                </View>
-              </>
+              <PuntosEmisionScreen
+                data={puntosData}
+                loading={loadingPuntos}
+                message={directoryMessage}
+                search={search}
+                form={puntoForm}
+                formMode={puntoFormMode}
+                saving={savingPunto}
+                onSearchChange={setSearch}
+                onCreate={openNewPunto}
+                onCancelForm={closePuntoForm}
+                onChangeForm={updatePuntoForm}
+                onResetForm={() => setPuntoForm(selectedPunto ? puntoToForm(selectedPunto) : { puntoEmision: getNextPuntoCode(puntosData?.cajas ?? []) })}
+                onSaveForm={savePunto}
+                onEdit={openEditPunto}
+                onDelete={confirmDeletePunto}
+                onMakePrincipal={makePuntoPrincipal}
+              />
             ) : null}
 
             {activeView === 'nueva-factura' ? (
@@ -6272,6 +6370,18 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         onNewInvoice={() => openView('nueva-factura')}
         onProfile={() => openView('perfil')}
       />
+      <InitialSequenceModal
+        visible={Boolean(sequencePrompt)}
+        documentLabel={sequencePrompt?.documentLabel ?? 'documentos'}
+        serie={sequencePrompt?.serie ?? ''}
+        saving={sequencePromptSaving}
+        message={sequencePromptMessage}
+        onClose={() => {
+          setSequencePrompt(null);
+          setSequencePromptMessage(null);
+        }}
+        onSave={saveInitialSequence}
+      />
       <ItemDetailModal
         visible={Boolean(viewingCliente)}
         title={viewingCliente ? getClienteDisplayName(viewingCliente) : 'Cliente'}
@@ -6318,11 +6428,18 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             <View style={styles.notificationsHeader}>
               <View>
                 <Text style={styles.notificationsTitle}>NOTIFICACIONES</Text>
-                <Text style={styles.notificationsSubtitle}>{loadingNotifications ? 'Cargando actividad...' : `${notifications.length} registros del sistema`}</Text>
+                <Text style={styles.notificationsSubtitle}>{loadingNotifications ? 'Cargando actividad...' : `${visibleNotifications.length} registros del sistema`}</Text>
               </View>
-              <Pressable style={styles.menuCloseButton} onPress={() => setNotificationsOpen(false)}>
-                <Text style={styles.menuCloseText}>×</Text>
-              </Pressable>
+              <View style={styles.notificationsHeaderActions}>
+                {visibleNotifications.length > 0 ? (
+                  <Pressable style={styles.notificationsClearButton} onPress={clearVisibleNotifications}>
+                    <Text style={styles.notificationsClearText}>Borrar todo</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable style={styles.menuCloseButton} onPress={() => setNotificationsOpen(false)}>
+                  <Text style={styles.menuCloseText}>×</Text>
+                </Pressable>
+              </View>
             </View>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.notificationsList}>
               {notificationsMessage ? <MessageBox message={notificationsMessage} /> : null}
@@ -6332,14 +6449,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   <Text style={styles.notificationText}>Cargando notificaciones...</Text>
                 </View>
               ) : null}
-              {!loadingNotifications && !notifications.length && !notificationsMessage ? (
+              {!loadingNotifications && !visibleNotifications.length && !notificationsMessage ? (
                 <View style={styles.notificationEmpty}>
                   <Text style={styles.notificationTitle}>Sin notificaciones</Text>
                   <Text style={styles.notificationText}>No hay actividad pendiente para mostrar.</Text>
                 </View>
               ) : null}
-              {!loadingNotifications ? notifications.map((notification) => {
+              {!loadingNotifications ? visibleNotifications.map((notification) => {
                 const tone = getNotificationTone(notification);
+                const targetView = getNotificationView(notification);
                 const itemToneStyle = tone === 'danger'
                   ? styles.notificationItemDanger
                   : tone === 'warning'
@@ -6361,6 +6479,16 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     <Text style={styles.notificationTitle}>{notification.title}</Text>
                     <Text style={styles.notificationText}>{notification.text}</Text>
                     {notification.date ? <Text style={styles.notificationMeta}>{notification.date}</Text> : null}
+                    <View style={styles.notificationActions}>
+                      {targetView ? (
+                        <Pressable style={styles.notificationActionPrimary} onPress={() => openNotificationTarget(notification)}>
+                          <Text style={styles.notificationActionPrimaryText}>Ir</Text>
+                        </Pressable>
+                      ) : null}
+                      <Pressable style={styles.notificationActionGhost} onPress={() => dismissNotification(notification.id)}>
+                        <Text style={styles.notificationActionGhostText}>Descartar</Text>
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
               );
@@ -6685,120 +6813,6 @@ function numberValue(value: unknown) {
   return 0;
 }
 
-type FacturaSerieOption = NonNullable<FacturaPreparacion['series']>[number];
-type DocumentSeriesKind = 'factura' | 'notaCredito' | 'notaDebito' | 'liquidacion' | 'guia';
-
-function getSerieValue(item?: FacturaSerieOption) {
-  const row = item as (FacturaSerieOption & Record<string, unknown>) | undefined;
-  return String(
-    item?.serieRaw ??
-      item?.serieVisual ??
-      row?.serie ??
-      row?.Serie ??
-      row?.serieFactura ??
-      row?.SerieFactura ??
-      '',
-  );
-}
-
-function getSelectedSerie(preparacion: FacturaPreparacion | null, serie: string) {
-  const options = preparacion?.series ?? [];
-  return options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
-}
-
-function getSerieLabel(preparacion: FacturaPreparacion | null, serie: string, fallback = '001-001') {
-  const selected = getSelectedSerie(preparacion, serie);
-  return selected?.serieVisual || selected?.serieRaw || serie || preparacion?.caja?.serieFactura || fallback;
-}
-
-function getNextSequence(preparacion: FacturaPreparacion | null, serie: string, fallbackStart = 0) {
-  const selected = getSelectedSerie(preparacion, serie);
-  const row = selected as Record<string, unknown> | undefined;
-  const caja = preparacion?.caja as Record<string, unknown> | null | undefined;
-  const candidate = numberValue(
-    row?.siguiente ??
-      row?.proximo ??
-      row?.secuencial ??
-      row?.numeroSecuencia ??
-      row?.sec ??
-      caja?.siguiente ??
-      caja?.proximo ??
-      caja?.secuencial ??
-      caja?.numeroSecuencia ??
-      caja?.sec,
-  );
-  const next = candidate > 0 ? candidate + (row?.siguiente || row?.proximo || caja?.siguiente || caja?.proximo ? 0 : 1) : fallbackStart + 1;
-  return String(next).padStart(9, '0');
-}
-
-function getSerieCodemisor(preparacion: FacturaPreparacion | null, serie: string) {
-  return getSelectedSerie(preparacion, serie)?.codemisor ?? preparacion?.caja?.codemisor;
-}
-
-function getPuntoSerieForDocument(punto: PuntoEmision, kind: DocumentSeriesKind) {
-  const row = punto as PuntoEmision & Record<string, unknown>;
-  const byKind =
-    kind === 'notaCredito' ? punto.serieNotasCred ?? row.serieNotaCredito :
-    kind === 'notaDebito' ? punto.serieNotasDeb ?? row.serieNotaDebito :
-    kind === 'liquidacion' ? punto.serieLiquidacion ?? row.serieLiquidacionCompra :
-    kind === 'guia' ? punto.serieGuia :
-    punto.serieFactura;
-  return String(byKind || getPuntoSerie(punto) || '');
-}
-
-function getPuntoSequenceForDocument(punto: PuntoEmision, kind: DocumentSeriesKind) {
-  if (kind === 'notaCredito') return getPuntoSequenceValue(punto, ['secNotaCredito', 'secuencialNotaCredito', 'secuenciaNotaCredito', 'secNC']);
-  if (kind === 'notaDebito') return getPuntoSequenceValue(punto, ['secNotaDebito', 'secuencialNotaDebito', 'secuenciaNotaDebito', 'secND']);
-  if (kind === 'liquidacion') return getPuntoSequenceValue(punto, ['secLiquidacion', 'secuencialLiquidacion', 'secuenciaLiquidacion', 'secLiquidacionCompra']);
-  if (kind === 'guia') return getPuntoSequenceValue(punto, ['secGuia', 'secuencialGuia', 'secuenciaGuia']);
-  return getPuntoSequenceValue(punto, ['secFactura', 'secuencialFactura', 'secuenciaFactura', 'sec']);
-}
-
-function getDocumentSerieOptions(preparacion: FacturaPreparacion | null, puntosData: PuntosEmisionData | null, kind: DocumentSeriesKind) {
-  const puntos = (puntosData?.cajas ?? [])
-    .map((punto) => {
-      const serie = normalizeSerieDisplay(getPuntoSerieForDocument(punto, kind));
-      if (!serie) return null;
-      const secuencia = getPuntoSequenceForDocument(punto, kind);
-      return {
-        serieRaw: serie,
-        serieVisual: serie,
-        codemisor: preparacion?.caja?.codemisor ?? null,
-        sec: secuencia === '-' ? null : numberValue(secuencia),
-        numCaja: punto.numCaja,
-      } satisfies FacturaSerieOption;
-    })
-    .filter(Boolean) as FacturaSerieOption[];
-
-  const prepared = (preparacion?.series ?? []).map((item, index) => {
-    const value = normalizeSerieDisplay(getSerieValue(item));
-    if (value && !value.toLowerCase().startsWith('serie ')) return { ...item, serieRaw: value, serieVisual: value };
-    return puntos[index] ?? item;
-  });
-  const source = prepared.some((item) => normalizeSerieDisplay(getSerieValue(item))) ? prepared : puntos;
-  const unique = new Map<string, FacturaSerieOption>();
-  source.forEach((item) => {
-    const key = normalizeSerieDisplay(getSerieValue(item));
-    if (key && !unique.has(key)) unique.set(key, { ...item, serieRaw: key, serieVisual: key });
-  });
-
-  return Array.from(unique.values());
-}
-
-function getSerieLabelFromOptions(options: FacturaSerieOption[], serie: string, fallback: string) {
-  const selected = options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
-  return selected?.serieVisual || selected?.serieRaw || serie || fallback;
-}
-
-function getNextSequenceFromOptions(options: FacturaSerieOption[], serie: string, fallback: string) {
-  const selected = options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
-  const row = selected as (FacturaSerieOption & Record<string, unknown>) | undefined;
-  const candidate = numberValue(row?.siguiente ?? row?.proximo ?? row?.secuencial ?? row?.numeroSecuencia ?? row?.sec);
-  if (candidate <= 0) return fallback;
-  const alreadyNext = row?.siguiente || row?.proximo;
-  return String(alreadyNext ? candidate : candidate + 1).padStart(9, '0');
-}
-
 function getClienteKey(cliente: Cliente, index: number) {
   const row = cliente as Cliente & Record<string, unknown>;
   return String(cliente.codcliente || row.Codcliente || row.CodCliente || getClienteIdentification(cliente) || `${getClienteDisplayName(cliente)}-${index}`);
@@ -6908,6 +6922,7 @@ function NuevaFacturaMobileScreen({
     { baseTaxed: 0, baseZero: 0, discount: 0, iva: 0, total: 0 },
   );
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'factura');
+  usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
   const formaPagoOptions = preparacion?.formasPago ?? [];
   const ivaOptions = preparacion?.porcentajesIva ?? [];
   const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-001'));
@@ -7196,6 +7211,7 @@ function NuevaNotaCreditoMobileScreen({
     { subtotal: 0, descuento: 0, iva: 0, ivaZero: 0, total: 0 },
   );
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'notaCredito');
+  usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
   const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
   const notaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie));
   const addDefaultLine = () => onAddLinea({
@@ -7545,6 +7561,7 @@ function NuevaNotaDebitoMobileScreen({
     { subtotal: 0, ice: 0, iva: 0, ivaZero: 0, total: 0 },
   );
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'notaDebito');
+  usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
   const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
   const notaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie, 1158));
   const [step, setStep] = useState(0);
@@ -7863,6 +7880,7 @@ function NuevaLiquidacionCompraMobileScreen({
     { subtotal: 0, descuento: 0, iva: 0, total: 0 },
   );
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'liquidacion');
+  usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
   const formaPagoOptions = preparacion?.formasPago ?? [];
   const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
   const liquidacionNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie));
@@ -8194,6 +8212,7 @@ function NuevaGuiaRemisionMobileScreen({
   onSave: () => void;
 }) {
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'guia');
+  usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
   const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
   const guiaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, getNextSequence(preparacion, form.serie));
   const totalCantidad = detalles.reduce((sum, item) => sum + (Number(item.cantidad.replace(',', '.')) || 0), 0);
@@ -9171,6 +9190,208 @@ function getOperationalCapabilities(view: WorkspaceView, tab: string) {
   }
 
   return { canCreate: false, canEdit: false, canDelete: false };
+}
+
+function OperationalForm({
+  title,
+  form,
+  saving,
+  onCancel,
+  onChange,
+  onSave,
+}: {
+  title: string;
+  form: OperationalFormState;
+  saving: boolean;
+  onCancel: () => void;
+  onChange: (field: keyof OperationalFormState, value: string) => void;
+  onSave: () => void;
+}) {
+  return (
+    <View style={styles.formSectionBox}>
+      <Text style={styles.clientFormSubtitle}>Operacion</Text>
+      <Text style={styles.clientFormTitle}>{title}</Text>
+      <Field label="Codigo (opcional)" value={form.codigo} onChangeText={(value) => onChange('codigo', value)} autoCapitalize="characters" />
+      <Field label="Descripcion *" value={form.descripcion} onChangeText={(value) => onChange('descripcion', value)} />
+      <Field label="Valor / cantidad (opcional)" value={form.valor} onChangeText={(value) => onChange('valor', value)} keyboardType="decimal-pad" />
+      <Field label="Observacion (opcional)" value={form.observacion} onChangeText={(value) => onChange('observacion', value)} />
+      <View style={styles.formActions}>
+        <PrimaryButton label="Guardar" loading={saving} onPress={onSave} />
+        <SecondaryButton label="Cancelar" onPress={onCancel} />
+      </View>
+    </View>
+  );
+}
+
+function OperationalMobileItemCard({
+  item,
+  canEdit,
+  canDelete,
+  onView,
+  onEdit,
+  onDelete,
+}: {
+  item: OperationalMobileItem;
+  canEdit: boolean;
+  canDelete: boolean;
+  onView: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <View style={styles.clientCard}>
+      <View style={styles.clientCardHeader}>
+        <View style={styles.clientAvatar}>
+          <Text style={styles.clientAvatarText}>{(item.title || item.id || 'O').charAt(0).toUpperCase()}</Text>
+        </View>
+        <View style={styles.clientInfo}>
+          <Text style={styles.clientName}>{item.title || item.id}</Text>
+          {item.subtitle ? <Text style={styles.clientMeta}>{item.subtitle}</Text> : null}
+        </View>
+        {item.status ? (
+          <View style={styles.systemPill}>
+            <Text style={styles.systemPillText}>{item.status}</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={styles.clientDetailGrid}>
+        {item.meta ? (
+          <View style={styles.clientDetailItem}>
+            <Text style={styles.clientDetailLabel}>Dato</Text>
+            <Text style={styles.clientDetailValue}>{item.meta}</Text>
+          </View>
+        ) : null}
+        {item.detail ? (
+          <View style={styles.clientDetailItem}>
+            <Text style={styles.clientDetailLabel}>Detalle</Text>
+            <Text style={styles.clientDetailValue}>{item.detail}</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={styles.clientActions}>
+        <Pressable style={styles.smallActionButton} onPress={onView}>
+          <Text style={styles.smallActionText}>Ver</Text>
+        </Pressable>
+        {canEdit ? (
+          <Pressable style={styles.smallActionButton} onPress={onEdit}>
+            <Text style={styles.smallActionText}>Editar</Text>
+          </Pressable>
+        ) : null}
+        {canDelete ? (
+          <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={onDelete}>
+            <Text style={[styles.smallActionText, styles.smallDangerText]}>Eliminar</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function MetricBox({ value, label }: { value: string | number; label: string }) {
+  return (
+    <View style={styles.metricBox}>
+      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function PortalStatusPill({ icon, label }: { icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; label: string }) {
+  return (
+    <View style={styles.portalStatusPill}>
+      <MaterialCommunityIcons name={icon} size={15} color={EFACT_THEME.colors.primary} />
+      <Text style={styles.portalStatusPillText}>{label}</Text>
+    </View>
+  );
+}
+
+function PortalServiceCard({
+  title,
+  description,
+  enabled,
+  onPress,
+  index,
+}: {
+  title: string;
+  description: string;
+  enabled: boolean;
+  onPress: () => void;
+  index: number;
+}) {
+  const visual = getPortalServiceVisual(title, index);
+
+  return (
+    <Pressable
+      disabled={!enabled}
+      style={[styles.portalServiceCard, { borderColor: visual.accent }, !enabled && styles.portalServiceCardDisabled]}
+      onPress={onPress}
+    >
+      <View style={[styles.portalServiceTop, { backgroundColor: visual.accent }]}>
+        <View style={[styles.portalServiceLogoPlate, { backgroundColor: visual.surface }]}>
+          {visual.kind === 'efact' ? <Image source={require('./assets/logo-numerica.png')} style={styles.portalServiceLogo} /> : null}
+          {visual.kind === 'orange' ? <Image source={require('./assets/logo-numerica-naranja.png')} style={styles.portalServiceLogo} /> : null}
+          {visual.kind === 'green' ? <Image source={require('./assets/logo-numerica-verde.png')} style={styles.portalServiceLogo} /> : null}
+          {visual.kind === 'purple' ? <Image source={require('./assets/logo-numerica-morado.png')} style={styles.portalServiceLogo} /> : null}
+          {visual.kind === 'rubrica' ? <Image source={require('./assets/logo-numerica-rubrica.png')} style={styles.portalServiceLogoWide} /> : null}
+          {['document', 'calculator', 'pencil', 'briefcase'].includes(visual.kind) ? <PortalServiceGlyph kind={visual.kind} /> : null}
+        </View>
+      </View>
+      <View style={styles.portalServiceCopy}>
+        <View style={[styles.portalServiceAccentLine, { backgroundColor: visual.accent }]} />
+        <Text style={styles.portalServiceTitle}>{title}</Text>
+        <Text style={styles.portalServiceDescription}>{description}</Text>
+        <View style={styles.portalServiceBadges}>
+          <Text style={[styles.portalServicePill, { borderColor: visual.accent, color: visual.accent }]}>
+            {enabled ? 'Disponible' : 'No disponible'}
+          </Text>
+          <Text style={styles.portalServiceSubscription}>Suscripcion activa</Text>
+        </View>
+        <View style={[styles.portalServiceButton, { backgroundColor: enabled ? visual.accent : '#B8C5D2' }]}>
+          <Text style={styles.portalServiceButtonText}>Ingresar</Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function PortalServiceGlyph({ kind }: { kind: string }) {
+  if (kind === 'calculator') {
+    return (
+      <View style={styles.portalGlyphCalculator}>
+        <View style={styles.portalGlyphCalculatorScreen} />
+        <View style={styles.portalGlyphCalculatorGrid}>
+          {Array.from({ length: 9 }).map((_, index) => <View key={`calc-dot-${index}`} style={styles.portalGlyphCalculatorDot} />)}
+        </View>
+      </View>
+    );
+  }
+
+  if (kind === 'pencil') {
+    return (
+      <View style={styles.portalGlyphPencilWrap}>
+        <Text style={styles.portalGlyphPencil}>✎</Text>
+        <View style={styles.portalGlyphPencilLine} />
+      </View>
+    );
+  }
+
+  if (kind === 'briefcase') {
+    return (
+      <View style={styles.portalGlyphBriefcase}>
+        <View style={styles.portalGlyphBriefcaseHandle} />
+        <View style={styles.portalGlyphBriefcaseBody} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.portalGlyphDocument}>
+      <View style={styles.portalGlyphDocumentFold} />
+      <View style={styles.portalGlyphDocumentLine} />
+      <View style={styles.portalGlyphDocumentLine} />
+      <Text style={styles.portalGlyphDocumentMoney}>$</Text>
+    </View>
+  );
 }
 
 function DirectoryHero({
@@ -10771,6 +10992,16 @@ function ProfileInfoTile({
     </View>
   );
 }
+
+function EmptyState({ title, text }: { title: string; text: string }) {
+  return (
+    <View style={styles.emptyState}>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptyText}>{text}</Text>
+    </View>
+  );
+}
+
 function PuntoEmisionForm({
   form,
   mode,
