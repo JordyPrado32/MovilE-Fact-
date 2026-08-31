@@ -5,7 +5,11 @@ import { PuntoEmision, PuntosEmisionData } from '../types/business';
 export type DocumentSeriesKind = 'factura' | 'notaCredito' | 'notaDebito' | 'liquidacion' | 'guia';
 
 type FacturaSerieOption = NonNullable<FacturaPreparacion['series']>[number];
-type DocumentSerieOption = FacturaSerieOption & { esPrincipal?: boolean };
+type DocumentSerieOption = FacturaSerieOption & {
+  esPrincipal?: boolean;
+  sequenceInitialized?: boolean | null;
+  previousSequence?: string | null;
+};
 
 function numberValue(value: unknown) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -15,6 +19,33 @@ function numberValue(value: unknown) {
   }
 
   return 0;
+}
+
+function sequenceCandidate(item?: Record<string, unknown> | null) {
+  if (!item) return 0;
+  return numberValue(item.siguiente ?? item.proximo ?? item.secuencial ?? item.numeroSecuencia ?? item.previousSequence);
+}
+
+function hasSequenceCandidate(item?: DocumentSerieOption | null) {
+  if (!item) return false;
+  return sequenceCandidate(item as Record<string, unknown>) > 0 || item.sequenceInitialized === true || Boolean(item.previousSequence);
+}
+
+function mergeSerieOption(existing: DocumentSerieOption, incoming: DocumentSerieOption): DocumentSerieOption {
+  const merged = { ...existing };
+  if (!hasSequenceCandidate(existing) && hasSequenceCandidate(incoming)) {
+    merged.siguiente = incoming.siguiente;
+    merged.proximo = incoming.proximo;
+    merged.secuencial = incoming.secuencial;
+    merged.numeroSecuencia = incoming.numeroSecuencia;
+    merged.previousSequence = incoming.previousSequence;
+    merged.sequenceInitialized = incoming.sequenceInitialized;
+  }
+  if (merged.sequenceInitialized === undefined && incoming.sequenceInitialized !== undefined) merged.sequenceInitialized = incoming.sequenceInitialized;
+  if (!merged.codemisor && incoming.codemisor) merged.codemisor = incoming.codemisor;
+  if (!merged.numCaja && incoming.numCaja) merged.numCaja = incoming.numCaja;
+  merged.esPrincipal = Boolean(existing.esPrincipal || incoming.esPrincipal);
+  return merged;
 }
 
 export function normalizeSerieCode(value?: string | number | null) {
@@ -93,12 +124,10 @@ export function getNextSequence(preparacion: FacturaPreparacion | null, serie: s
       row?.proximo ??
       row?.secuencial ??
       row?.numeroSecuencia ??
-      row?.sec ??
       caja?.siguiente ??
       caja?.proximo ??
       caja?.secuencial ??
-      caja?.numeroSecuencia ??
-      caja?.sec,
+      caja?.numeroSecuencia,
   );
   const next = candidate > 0 ? candidate + (row?.siguiente || row?.proximo || caja?.siguiente || caja?.proximo ? 0 : 1) : fallbackStart + 1;
   return String(next).padStart(9, '0');
@@ -143,6 +172,19 @@ function getPuntoSequenceForDocument(punto: PuntoEmision, kind: DocumentSeriesKi
   return getPuntoSequenceValue(punto, ['secFactura', 'secuencialFactura', 'secuenciaFactura', 'siguienteFactura', 'proximoFactura', 'numFactura', 'numeroFactura']);
 }
 
+export function getSelectedDocumentSerieOption(options: DocumentSerieOption[], serie: string) {
+  const normalized = normalizeSerieDisplay(serie);
+  return options.find((item) => normalizeSerieDisplay(item.serieRaw) === normalized || normalizeSerieDisplay(item.serieVisual) === normalized);
+}
+
+export function serieNeedsInitialSequence(options: DocumentSerieOption[], serie: string) {
+  const selected = getSelectedDocumentSerieOption(options, serie);
+  if (!selected) return false;
+  if (selected.sequenceInitialized === false) return true;
+  const candidate = sequenceCandidate(selected as Record<string, unknown>);
+  return selected.sequenceInitialized !== true && candidate <= 0 && !selected.previousSequence;
+}
+
 export function getDocumentSerieOptions(preparacion: FacturaPreparacion | null, puntosData: PuntosEmisionData | null, kind: DocumentSeriesKind) {
   const orderedPuntos = [...(puntosData?.cajas ?? [])].sort((a, b) => {
     const principal = Number(Boolean(b.esPrincipal)) - Number(Boolean(a.esPrincipal));
@@ -155,6 +197,7 @@ export function getDocumentSerieOptions(preparacion: FacturaPreparacion | null, 
       const serie = normalizeSerieDisplay(getPuntoSerieForDocument(punto, kind));
       if (!serie) return null;
       const secuencia = getPuntoSequenceForDocument(punto, kind);
+      const initialized = getPuntoSequenceInitialized(punto, kind);
       return {
         serieRaw: serie,
         serieVisual: serie,
@@ -162,6 +205,8 @@ export function getDocumentSerieOptions(preparacion: FacturaPreparacion | null, 
         sec: secuencia === '-' ? null : numberValue(secuencia),
         numCaja: punto.numCaja,
         esPrincipal: punto.esPrincipal,
+        sequenceInitialized: initialized,
+        previousSequence: secuencia === '-' ? null : secuencia,
       } as DocumentSerieOption;
     })
     .filter(Boolean) as DocumentSerieOption[];
@@ -175,7 +220,10 @@ export function getDocumentSerieOptions(preparacion: FacturaPreparacion | null, 
   const unique = new Map<string, DocumentSerieOption>();
   source.forEach((item) => {
     const key = normalizeSerieDisplay(getSerieValue(item));
-    if (key && !unique.has(key)) unique.set(key, { ...item, serieRaw: key, serieVisual: key });
+    if (!key) return;
+    const normalized = { ...item, serieRaw: key, serieVisual: key };
+    const existing = unique.get(key);
+    unique.set(key, existing ? mergeSerieOption(existing, normalized) : normalized);
   });
 
   return Array.from(unique.values());
@@ -203,7 +251,7 @@ export function getSerieLabelFromOptions(options: DocumentSerieOption[], serie: 
 export function getNextSequenceFromOptions(options: DocumentSerieOption[], serie: string, fallback: string) {
   const selected = options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
   const row = selected as (DocumentSerieOption & Record<string, unknown>) | undefined;
-  const candidate = numberValue(row?.siguiente ?? row?.proximo ?? row?.secuencial ?? row?.numeroSecuencia ?? row?.sec);
+  const candidate = sequenceCandidate(row);
   if (selected && candidate <= 0) return '';
   if (candidate <= 0) return fallback;
   const alreadyNext = row?.siguiente || row?.proximo;
