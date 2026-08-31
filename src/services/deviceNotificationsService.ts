@@ -1,22 +1,26 @@
 import { Platform } from 'react-native';
+import { isRunningInExpoGo } from 'expo';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { NotificacionItem } from './notificacionesService';
 
 const CHANNEL_ID = 'efact-activity';
 const DELIVERED_KEY_PREFIX = 'efact_delivered_notifications_';
+const canUseDeviceNotifications = Platform.OS !== 'web' && !isRunningInExpoGo();
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: false,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+if (canUseDeviceNotifications) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldPlaySound: false,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 export async function syncDeviceNotifications(userId: number, items: NotificacionItem[]) {
-  if (Platform.OS === 'web' || userId <= 0 || !items.length) return;
+  if (!canUseDeviceNotifications || userId <= 0 || !items.length) return;
 
   const granted = await ensureNotificationPermission();
   if (!granted) return;

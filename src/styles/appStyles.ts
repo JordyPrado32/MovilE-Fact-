@@ -1137,10 +1137,9 @@ export const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   avatarGalleryGrid: {
-    columnGap: 10,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     paddingBottom: 28,
     paddingTop: 6,
   },
@@ -1160,7 +1159,7 @@ export const styles = StyleSheet.create({
     height: 116,
     marginBottom: 12,
     padding: 9,
-    width: '30%',
+    width: '32%',
   },
   avatarGalleryImage: {
     borderRadius: 14,
@@ -1964,13 +1963,15 @@ export const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.18,
     shadowRadius: 18,
-    width: '48%',
+    flexBasis: '46%',
+    flexGrow: 1,
     elevation: 6,
   },
   dashboardStatCardCompact: {
+    flexBasis: '46%',
+    flexGrow: 1,
     minHeight: 108,
     padding: 10,
-    width: '48%',
   },
   dashboardStatIcon: {
     alignItems: 'center',
@@ -2016,7 +2017,7 @@ export const styles = StyleSheet.create({
     borderColor: EFACT_THEME.colors.border,
     borderRadius: EFACT_THEME.radius.card,
     borderWidth: 1,
-    flexBasis: '31%',
+    flexBasis: '30%',
     flexGrow: 1,
     gap: 5,
     minHeight: 104,
@@ -4234,6 +4235,21 @@ export const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 2,
   },
+  crudCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D6E6F1',
+    borderLeftColor: '#6847FF',
+    borderLeftWidth: 4,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 11,
+    padding: 14,
+    shadowColor: '#183B5A',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 3,
+  },
   clientBankSummary: {
     backgroundColor: '#06295A',
     borderRadius: 20,
@@ -4668,6 +4684,14 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
+  crudViewAction: {
+    backgroundColor: '#EAF5FC',
+    borderColor: '#B9D8EE',
+  },
+  crudEditAction: {
+    backgroundColor: '#F0EDFF',
+    borderColor: '#D8CEFF',
+  },
   smallDangerButton: {
     backgroundColor: '#FDEBEC',
     borderColor: '#F7D4D8',
@@ -4678,6 +4702,11 @@ export const styles = StyleSheet.create({
   },
   smallActionText: {
     color: '#00649D',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  crudEditText: {
+    color: '#6847FF',
     fontSize: 12,
     fontWeight: '900',
   },
@@ -4879,7 +4908,7 @@ export const styles = StyleSheet.create({
     borderColor: EFACT_THEME.colors.border,
     borderRadius: EFACT_THEME.radius.card,
     borderWidth: 1,
-    flexBasis: '48%',
+    flexBasis: '46%',
     flexGrow: 1,
     flexDirection: 'row',
     gap: EFACT_THEME.spacing.sm,
@@ -5213,6 +5242,8 @@ export const styles = StyleSheet.create({
     fontWeight: '900',
   },
   botScreen: { backgroundColor: '#F7FAFD', borderColor: '#B9D8EE', borderRadius: 18, borderWidth: 2, flex: 1, maxHeight: 660, minHeight: 560, overflow: 'hidden' },
+  botScreenInner: { flex: 1 },
+  botScreenKeyboard: { minHeight: 0 },
   botWidgetHeader: { alignItems: 'center', backgroundColor: '#0878C9', flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
   botWidgetAvatar: { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF', borderRadius: 18, borderWidth: 2, height: 36, width: 36 },
   botWidgetCopy: { flex: 1, minWidth: 0 },
@@ -5293,7 +5324,7 @@ export const styles = StyleSheet.create({
   firmaCard: { backgroundColor: '#FFFFFF', borderColor: '#D8EAF4', borderLeftColor: '#0072BD', borderLeftWidth: 5, borderRadius: 20, borderWidth: 1, gap: 16, padding: 18, shadowColor: '#123B58', shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.1, shadowRadius: 15, elevation: 3 },
   firmaCompactGrid: { flexWrap: 'wrap' },
   firmaDetailGrid: { flexWrap: 'wrap', gap: 10 },
-  firmaDetailItem: { flexBasis: '46%', flexGrow: 1, minWidth: 130 },
+  firmaDetailItem: { flexBasis: '45%', flexGrow: 1, minWidth: 130 },
 });
 
 

@@ -2,42 +2,48 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-type ThinkingStep = { label: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'] };
+type ThinkingStep = { label: string; detail: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'] };
 
 function getThinkingSteps(request: string): ThinkingStep[] {
   const normalized = request.toLowerCase();
+  const namedClient = request.match(/(?:cliente|nombre)\s*[:=]?\s*([\p{L}][\p{L}\s.'-]{1,30})/iu)?.[1]?.trim();
   if (normalized.includes('cliente') || normalized.includes('proveedor')) {
     return [
-      { label: 'Entendiendo tu solicitud', icon: 'brain' },
-      { label: 'Buscando cliente', icon: 'account-search-outline' },
-      { label: 'Preparando la respuesta', icon: 'lightbulb-on-outline' },
+      { label: 'Entendiendo tu solicitud', detail: 'Analizando nombre e identificación.', icon: 'brain' },
+      { label: namedClient ? `Buscando cliente: ${namedClient}` : 'Buscando cliente', detail: 'Comparando con tus registros para evitar duplicados.', icon: 'account-search-outline' },
+      { label: 'Validando identificación', detail: 'Revisando coincidencias y datos obligatorios.', icon: 'card-account-details-outline' },
+      { label: 'Preguntando solo lo necesario', detail: 'Preparando los datos que todavía faltan.', icon: 'message-question-outline' },
     ];
   }
   if (normalized.includes('producto') || normalized.includes('servicio')) {
     return [
-      { label: 'Entendiendo tu solicitud', icon: 'brain' },
-      { label: 'Buscando producto', icon: 'package-variant-closed' },
-      { label: 'Preparando la respuesta', icon: 'lightbulb-on-outline' },
+      { label: 'Entendiendo tu solicitud', detail: 'Separando nombre, código, precio e IVA.', icon: 'brain' },
+      { label: 'Buscando producto', detail: 'Revisando el catálogo y posibles coincidencias.', icon: 'package-variant-closed' },
+      { label: 'Validando precio e IVA', detail: 'Usando la configuración real del catálogo.', icon: 'calculator-variant-outline' },
+      { label: 'Preparando los datos faltantes', detail: 'Te pediré únicamente lo que no encuentre.', icon: 'message-question-outline' },
     ];
   }
   if (normalized.includes('factura') || normalized.includes('vender') || normalized.includes('venta')) {
     return [
-      { label: 'Entendiendo tu solicitud', icon: 'brain' },
-      { label: 'Revisando los datos de facturación', icon: 'file-search-outline' },
-      { label: 'Preparando la respuesta', icon: 'file-document-edit-outline' },
+      { label: 'Entendiendo tu solicitud', detail: 'Identificando cliente, productos y acción.', icon: 'brain' },
+      { label: 'Buscando cliente y productos', detail: 'Consultando tus datos reales.', icon: 'file-search-outline' },
+      { label: 'Calculando subtotal, IVA y total', detail: 'Aplicando cantidades, precios y descuentos.', icon: 'calculator-variant-outline' },
+      { label: 'Revisando qué falta', detail: 'No emitiré nada sin tu confirmación.', icon: 'file-document-edit-outline' },
     ];
   }
   if (normalized.includes('firma') || normalized.includes('rúbrica') || normalized.includes('rubrica')) {
     return [
-      { label: 'Entendiendo tu solicitud', icon: 'brain' },
-      { label: 'Revisando el proceso de firma', icon: 'file-document-check-outline' },
-      { label: 'Preparando la respuesta', icon: 'shield-check-outline' },
+      { label: 'Entendiendo tu solicitud', detail: 'Identificando documento y operación de firma.', icon: 'brain' },
+      { label: 'Revisando el proceso de firma', detail: 'Consultando las opciones disponibles.', icon: 'file-document-check-outline' },
+      { label: 'Validando requisitos', detail: 'Revisando certificado, archivo y firmantes.', icon: 'shield-check-outline' },
+      { label: 'Preparando el siguiente paso', detail: 'Te indicaré solo lo que falte completar.', icon: 'message-question-outline' },
     ];
   }
   return [
-    { label: 'Entendiendo tu solicitud', icon: 'brain' },
-    { label: 'Consultando la información', icon: 'database-search-outline' },
-    { label: 'Preparando la respuesta', icon: 'lightbulb-on-outline' },
+    { label: 'Entendiendo tu solicitud', detail: 'Detectando la operación que necesitas.', icon: 'brain' },
+    { label: 'Consultando la información', detail: 'Revisando el contexto de tu conversación.', icon: 'database-search-outline' },
+    { label: 'Validando datos disponibles', detail: 'Comprobando qué está completo y qué falta.', icon: 'clipboard-check-outline' },
+    { label: 'Preparando la respuesta', detail: 'Organizando el siguiente paso para ti.', icon: 'lightbulb-on-outline' },
   ];
 }
 
@@ -93,7 +99,7 @@ export function NumiThinkingIndicator({ request }: { request: string }) {
       </View>
       <View style={styles.copy}>
         <View style={styles.titleRow}><Text style={styles.title}>NUMI TRABAJANDO</Text><View style={styles.dots}><Text style={styles.dot}>•</Text><Text style={styles.dot}>•</Text><Text style={styles.dot}>•</Text></View></View>
-        <Text style={styles.subtitle}>Estoy procesando tu petición</Text>
+        <Text style={styles.subtitle}>{steps[activeStep].detail}</Text>
         <View style={styles.progressTrack}><Animated.View style={[styles.progressFill, { width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} /></View>
         <View style={styles.steps}>{steps.map((step, index) => <View key={step.label} style={[styles.step, index === activeStep && styles.stepActive]}><MaterialCommunityIcons name={index < activeStep ? 'check-circle' : step.icon} size={15} color={index <= activeStep ? '#0878C9' : '#9AB0C1'} /><Text style={[styles.stepText, index === activeStep && styles.stepTextActive]}>{step.label}</Text></View>)}</View>
       </View>

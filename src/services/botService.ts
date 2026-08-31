@@ -1,5 +1,6 @@
 import { BOT_CHAT_PATH, BOT_SESSION_ID } from '../config/bot';
 import { apiRequest } from './apiClient';
+import type { BotProgressStep } from '../types/bot';
 
 export type BotChatResponse = {
   respuesta?: string;
@@ -7,6 +8,8 @@ export type BotChatResponse = {
   mensaje?: string;
   message?: string;
   data?: { respuesta?: string; response?: string; mensaje?: string; message?: string };
+  progreso?: BotProgressStep[];
+  datosFaltantes?: string[];
 };
 
 export async function sendBotMessage(input: { message: string; sessionId?: string; contexto?: string }) {
@@ -23,5 +26,9 @@ export async function sendBotMessage(input: { message: string; sessionId?: strin
   const answer = typeof response === 'string' ? response : response.respuesta ?? response.response ?? response.mensaje ?? response.message
     ?? response.data?.respuesta ?? response.data?.response ?? response.data?.mensaje ?? response.data?.message;
   if (!answer?.trim()) throw new Error('El bot no devolvio una respuesta valida.');
-  return answer.trim();
+  return {
+    answer: answer.trim(),
+    progress: typeof response === 'string' ? [] : response.progreso ?? [],
+    missing: typeof response === 'string' ? [] : response.datosFaltantes ?? [],
+  };
 }

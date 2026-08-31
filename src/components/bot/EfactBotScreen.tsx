@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import * as Speech from 'expo-speech';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ApiError } from '../../services/apiClient';
@@ -30,8 +30,48 @@ export function EfactBotScreen({
   const [error, setError] = useState('');
   const [listening, setListening] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardTop, setKeyboardTop] = useState<number | null>(null);
+  const [chatTop, setChatTop] = useState<number | null>(null);
   const voiceRecognition = useRef<any>(null);
   const messagesScrollRef = useRef<ScrollView>(null);
+  const botContainerRef = useRef<View>(null);
+  const windowHeight = useWindowDimensions().height;
+  const windowHeightRef = useRef(windowHeight);
+
+  useEffect(() => {
+    windowHeightRef.current = windowHeight;
+  }, [windowHeight]);
+
+  const measureChatTop = () => {
+    requestAnimationFrame(() => {
+      const container = botContainerRef.current;
+      if (!container || typeof container.measureInWindow !== 'function') return;
+      container.measureInWindow((_x: number, y: number) => {
+        if (Number.isFinite(y)) setChatTop(y);
+      });
+    });
+  };
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardVisible(true);
+      const nextKeyboardTop = event.endCoordinates?.screenY ?? windowHeightRef.current - (event.endCoordinates?.height ?? 0);
+      setKeyboardTop(nextKeyboardTop);
+      measureChatTop();
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setKeyboardTop(null);
+      measureChatTop();
+    });
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   const scrollMessagesToEnd = (animated = true) => {
     requestAnimationFrame(() => messagesScrollRef.current?.scrollToEnd({ animated }));
@@ -56,12 +96,12 @@ export function EfactBotScreen({
     setThinkingRequest(text);
     setSending(true);
     try {
-      const answer = await sendBotMessage({
+      const botResult = await sendBotMessage({
         message: text,
         contexto: 'e-rúbrica: guía para crear solicitudes de firma, completar firmantes y documentos, firmar documentos y validar el estado y la autenticidad de las firmas. Explica los pasos según las opciones disponibles en e-rúbrica y no inventes funciones que no estén disponibles.',
       });
-      setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: 'assistant', text: answer }]);
-      Speech.speak(answer, { language: 'es-EC', rate: 0.96 });
+      setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: 'assistant', text: botResult.answer }]);
+      Speech.speak(botResult.answer, { language: 'es-EC', rate: 0.96 });
     } catch (err) {
       setError(err instanceof ApiError || err instanceof Error ? err.message : 'No se pudo contactar al bot.');
     } finally {
@@ -99,9 +139,10 @@ export function EfactBotScreen({
   };
 
   return (
-    <KeyboardAvoidingView style={styles.botScreen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
+    <View ref={botContainerRef} onLayout={measureChatTop} style={[styles.botScreen, keyboardVisible && styles.botScreenKeyboard, keyboardVisible && keyboardTop !== null && chatTop !== null ? { height: Math.max(1, keyboardTop - chatTop - 36) } : null]}>
+      <KeyboardAvoidingView style={styles.botScreenInner} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
       <View style={styles.botWidgetHeader}>
-        <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botWidgetAvatar} />
+        <Image source={require('../../../assets/numi-chat-avatar.jpg')} style={styles.botWidgetAvatar} />
         <View style={styles.botWidgetCopy}>
           <Text style={styles.botWidgetKicker}>Chat con</Text>
           <Text style={styles.botWidgetTitle}>Númi</Text>
@@ -119,13 +160,12 @@ export function EfactBotScreen({
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
         nestedScrollEnabled
-        automaticallyAdjustKeyboardInsets
         showsVerticalScrollIndicator
         onContentSizeChange={() => scrollMessagesToEnd()}
       >
         {messages.map((message) => (
           <View key={message.id} style={message.role === 'user' ? styles.botUserRow : styles.botAssistantRow}>
-            {message.role === 'assistant' ? <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} /> : null}
+            {message.role === 'assistant' ? <Image source={require('../../../assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} /> : null}
             <View style={[styles.botBubble, message.role === 'user' ? styles.botUserBubble : styles.botAssistantBubble]}>
               <View style={styles.botMessageRow}>
                 <Text style={[styles.botBubbleText, message.role === 'user' && styles.botUserBubbleText]}>{message.text}</Text>
@@ -156,7 +196,7 @@ export function EfactBotScreen({
         ))}
         {sending ? (
           <View style={styles.botAssistantRow}>
-            <Image source={require('./assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} />
+            <Image source={require('../../../assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} />
             <NumiThinkingIndicator request={thinkingRequest} />
           </View>
         ) : null}
@@ -183,7 +223,8 @@ export function EfactBotScreen({
           <Text style={styles.botSendText}>➤</Text>
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 

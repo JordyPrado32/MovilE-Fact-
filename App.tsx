@@ -21,6 +21,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   Text,
   TextInput,
@@ -66,10 +67,22 @@ import { ExternalLink, Field, InlineSwitch, LoginActionTiles, MessageBox, Primar
 import type { BotFeedbackState, BotMessage } from './src/types/bot';
 import { GlobalSearchModal as ExtractedGlobalSearchModal } from './src/components/search/GlobalSearchModal';
 import type { GlobalSearchResult as ExtractedGlobalSearchResult } from './src/types/globalSearch';
-import { InvoiceProgressSteps as SharedInvoiceProgressSteps, InvoiceSummaryRow as SharedInvoiceSummaryRow } from './src/components/facturacion/InvoiceShared';
+import { InvoiceProgressSteps as SharedInvoiceProgressSteps, InvoiceSummaryRow } from './src/components/facturacion/InvoiceShared';
 import { styles } from './src/styles/appStyles';
+import { DocumentActionsMenu } from './src/components/documents/DocumentActionsMenu';
 import { EfactBotScreen } from './src/components/bot/EfactBotScreen';
+import { EmptyState, MetricBox } from './src/components/ui/FeedbackStates';
+import { PortalServiceCard } from './src/components/portal/PortalServiceCard';
+import { DirectoryTabButton, DropdownField, FormTopBar, ToggleRow } from './src/components/ui/FormShared';
+import { DashboardActivityItem, DashboardChartCard, DashboardFavorite, DashboardMetric, DashboardPrimaryAction, DashboardQuickAction, DashboardServiceRow, DashboardStatCard } from './src/components/dashboard/DashboardWidgets';
+import { ModuleCard, NavButton, PortalBottomNav, PortalHeaderAvatar } from './src/components/portal/PortalNavigation';
+import { CatalogCard, SubcategoriaCard } from './src/components/catalog/CatalogCards';
+import { InitialsAvatar, MenuItem } from './src/components/ui/MenuItem';
+import { OperationalForm, OperationalMobileItemCard } from './src/components/operational/OperationalWidgets';
+import { BiometricSetupModal, BrandLockup, BrandMark, LoadingScreen, ScreenFrame } from './src/components/auth/AuthWidgets';
 import { EFACT_THEME, ERUBRICA_COLORS } from './src/styles/theme';
+import type { NuevaFacturaFormState, NuevaFacturaLinea } from './src/types/invoices';
+import { formatDocumentDate, formatMoney, listItemKey } from './src/utils/documentFormatting';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'change';
 
@@ -201,29 +214,6 @@ type OperationalFormState = {
   descripcion: string;
   valor: string;
   observacion: string;
-};
-type NuevaFacturaLinea = {
-  producto: FacturaProducto;
-  cantidad: string;
-  precio: string;
-  descuento: string;
-  tarifa: string;
-};
-type NuevaFacturaFormState = {
-  clienteBusqueda: string;
-  productoBusqueda: string;
-  serie: string;
-  numeroFactura: string;
-  formaPago: string;
-  tipoIdentificacion: string;
-  tipoCliente: string;
-  obligadoContabilidad: string;
-  direccion: string;
-  telefono: string;
-  correoPrincipal: string;
-  referencia: string;
-  correoAdicional: string;
-  detalleLinea: string;
 };
 type NotaCreditoFormState = NuevaFacturaFormState & {
   facturaBusqueda: string;
@@ -852,22 +842,6 @@ function getServiceDisplayName(service: Pick<ServiceAccess, 'codigo' | 'nombre'>
 function isERubricaService(service: Pick<ServiceAccess, 'codigo' | 'nombre' | 'ruta'>) {
   const source = normalizeText(`${service.codigo ?? ''} ${service.nombre ?? ''} ${service.ruta ?? ''}`);
   return source.includes('e-rubrica') || source.includes('erubrica') || source.includes('e-sign') || source.includes('rubrica');
-}
-
-function getPortalServiceVisual(title: string, index: number) {
-  const normalized = normalizeText(title);
-  if (normalized.includes('fact')) return { kind: 'efact', accent: EFACT_THEME.colors.primary, surface: '#EAF7FF' };
-  if (normalized.includes('cont')) return { kind: 'orange', accent: '#F97316', surface: '#FFF3E8' };
-  if (normalized.includes('declara')) return { kind: 'green', accent: '#08A889', surface: '#E8FBF7' };
-  if (normalized.includes('rubrica') || normalized.includes('sign')) return { kind: 'rubrica', accent: ERUBRICA_COLORS.primary, surface: '#EAFBF4' };
-  if (normalized.includes('back')) return { kind: 'purple', accent: '#6847FF', surface: '#F0EDFF' };
-
-  const palette = [
-    { kind: 'purple', accent: '#6847FF', surface: '#F0EDFF' },
-    { kind: 'orange', accent: '#F97316', surface: '#FFF3E8' },
-    { kind: 'green', accent: '#08A889', surface: '#E8FBF7' },
-  ];
-  return palette[index % palette.length];
 }
 
 function getNotificationTone(notification: NotificacionItem) {
@@ -5169,7 +5143,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.workspaceSafeArea, activeView === 'portal' && styles.portalSafeArea]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.workspaceCanvasWithBottomNav, { paddingBottom: 88 + insets.bottom }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" nestedScrollEnabled automaticallyAdjustKeyboardInsets>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.workspaceCanvasWithBottomNav, { paddingBottom: 88 + insets.bottom }]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        nestedScrollEnabled
+        automaticallyAdjustKeyboardInsets={activeView !== 'bot'}
+        refreshControl={<RefreshControl refreshing={loadingMenus} onRefresh={() => setReloadKey((value) => value + 1)} tintColor={EFACT_THEME.colors.primary} colors={[EFACT_THEME.colors.primary]} />}
+      >
         {activeView === 'portal' ? (
           <View style={styles.dashboardHeader}>
             <View style={styles.dashboardBrandBlock}>
@@ -6862,28 +6844,6 @@ function getFirmaDetailValues(emisor: Emisor, estado?: FirmaEstado) {
   ].filter(Boolean);
 }
 
-function formatMoney(value?: number | null) {
-  return `$ ${Number(value ?? 0).toFixed(2)}`;
-}
-
-function formatDocumentDate(value?: string | number | null) {
-  if (value === null || value === undefined || value === '') return '-';
-  const source = String(value);
-  const dotNetMatch = /\/Date\((\d+)\)\//.exec(source);
-  const date = dotNetMatch ? new Date(Number(dotNetMatch[1])) : new Date(source);
-  if (!Number.isNaN(date.getTime())) return date.toLocaleDateString('es-EC');
-  return source.slice(0, 10);
-}
-
-function listItemKey(prefix: string, parts: Array<string | number | null | undefined>, index: number) {
-  const stable = parts
-    .filter((part) => part !== null && part !== undefined && String(part).trim() !== '' && String(part).trim() !== '0')
-    .map((part) => String(part).trim().replace(/\s+/g, '-'))
-    .join('-');
-
-  return `${prefix}-${stable || 'item'}-${index}`;
-}
-
 function NuevaFacturaMobileScreen({
   form,
   preparacion,
@@ -6992,16 +6952,7 @@ function NuevaFacturaMobileScreen({
            <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
-      <View style={styles.invoiceSteps}>
-        {['Cliente', 'Productos', 'Revisión'].map((label, index) => (
-          <Pressable key={label} style={styles.invoiceStepItem} onPress={() => index <= step && setStep(index)}>
-            <View style={[styles.invoiceStepNumber, index <= step && styles.invoiceStepNumberActive]}>
-              <Text style={[styles.invoiceStepNumberText, index <= step && styles.invoiceStepNumberTextActive]}>{index + 1}</Text>
-            </View>
-            <Text style={[styles.invoiceStepLabel, index === step && styles.invoiceStepLabelActive]}>{label}</Text>
-          </Pressable>
-        ))}
-      </View>
+      <SharedInvoiceProgressSteps labels={['Cliente', 'Productos', 'Revisión']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -7165,15 +7116,15 @@ function NuevaFacturaMobileScreen({
         <View style={[styles.formSectionBox, styles.invoiceSummaryBox]}>
           <Text style={styles.clientFormSubtitle}>Resumen</Text>
           <Text style={styles.invoiceSectionHelp}>Totales del comprobante</Text>
-          <SharedInvoiceSummaryRow label="Subtotal base gravada" value={totals.baseTaxed} />
-          <SharedInvoiceSummaryRow label="Subtotal base 0%" value={totals.baseZero} />
-          <SharedInvoiceSummaryRow label="Subtotal no objeto IVA" value={0} />
-          <SharedInvoiceSummaryRow label="Subtotal exento IVA" value={0} />
-          <SharedInvoiceSummaryRow label="Descuento" value={totals.discount} danger />
-          <SharedInvoiceSummaryRow label="Subtotal con descuento" value={totals.baseTaxed + totals.baseZero} />
-          <SharedInvoiceSummaryRow label="ICE" value={0} />
-          <SharedInvoiceSummaryRow label="Servicio 10%" value={0} />
-          <SharedInvoiceSummaryRow label="IRBPNR" value={0} />
+          <InvoiceSummaryRow label="Subtotal base gravada" value={totals.baseTaxed} />
+          <InvoiceSummaryRow label="Subtotal base 0%" value={totals.baseZero} />
+          <InvoiceSummaryRow label="Subtotal no objeto IVA" value={0} />
+          <InvoiceSummaryRow label="Subtotal exento IVA" value={0} />
+          <InvoiceSummaryRow label="Descuento" value={totals.discount} danger />
+          <InvoiceSummaryRow label="Subtotal con descuento" value={totals.baseTaxed + totals.baseZero} />
+          <InvoiceSummaryRow label="ICE" value={0} />
+          <InvoiceSummaryRow label="Servicio 10%" value={0} />
+          <InvoiceSummaryRow label="IRBPNR" value={0} />
           <View style={styles.invoiceTotalRow}>
             <Text style={styles.invoiceTotalLabel}>Total</Text>
             <Text style={styles.invoiceTotalValue}>{formatMoney(totals.total)}</Text>
@@ -7187,30 +7138,6 @@ function NuevaFacturaMobileScreen({
       </View>
       </> : null}
     </>
-  );
-}
-
-function InvoiceSummaryRow({ label, value, danger = false }: { label: string; value: number; danger?: boolean }) {
-  return (
-    <View style={styles.invoiceSummaryRow}>
-      <Text style={styles.invoiceSummaryLabel}>{label}</Text>
-      <Text style={[styles.invoiceSummaryValue, danger && styles.invoiceSummaryDanger]}>{formatMoney(value)}</Text>
-    </View>
-  );
-}
-
-function InvoiceProgressSteps({ labels, activeIndex }: { labels: string[]; activeIndex: number }) {
-  return (
-    <View style={styles.invoiceSteps}>
-      {labels.map((label, index) => (
-        <View key={label} style={styles.invoiceStepItem}>
-          <View style={[styles.invoiceStepNumber, index <= activeIndex && styles.invoiceStepNumberActive]}>
-            <Text style={[styles.invoiceStepNumberText, index <= activeIndex && styles.invoiceStepNumberTextActive]}>{index + 1}</Text>
-          </View>
-          <Text style={[styles.invoiceStepLabel, index === activeIndex && styles.invoiceStepLabelActive]}>{label}</Text>
-        </View>
-      ))}
-    </View>
   );
 }
 
@@ -7310,7 +7237,7 @@ function NuevaNotaCreditoMobileScreen({
           <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
-      <InvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} activeIndex={step} />
+      <SharedInvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -7447,58 +7374,6 @@ function NuevaNotaCreditoMobileScreen({
       </View>
       </> : null}
     </>
-  );
-}
-
-type DocumentAction = {
-  label: string;
-  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-  tone: 'primary' | 'success' | 'danger' | 'warning' | 'purple';
-  onPress: () => void;
-};
-
-function DocumentActionsMenu({ actions }: { actions: DocumentAction[] }) {
-  const [open, setOpen] = useState(false);
-  const toneColor = (tone: DocumentAction['tone']) => {
-    if (tone === 'success') return '#0F6B32';
-    if (tone === 'danger') return '#8A1B1B';
-    if (tone === 'warning') return '#8A4B12';
-    if (tone === 'purple') return '#5630A8';
-    return '#004F88';
-  };
-
-  return (
-    <View style={styles.documentActionWrap}>
-      <Pressable style={styles.documentActionTrigger} onPress={() => setOpen((value) => !value)} accessibilityLabel="Ver acciones">
-        <MaterialCommunityIcons name="dots-horizontal" size={21} color="#294D69" />
-      </Pressable>
-      {open ? (
-        <Modal transparent visible={open} animationType="fade" onRequestClose={() => setOpen(false)}>
-          <Pressable style={styles.documentActionOverlay} onPress={() => setOpen(false)}>
-            <View style={styles.documentActionMenu}>
-              {actions.map((action) => {
-                const color = toneColor(action.tone);
-                return (
-                  <Pressable
-                    key={action.label}
-                    style={styles.documentActionItem}
-                    onPress={() => {
-                      setOpen(false);
-                      action.onPress();
-                    }}
-                  >
-                    <View style={styles.documentActionIcon}>
-                      <MaterialCommunityIcons name={action.icon} size={16} color={color} />
-                    </View>
-                    <Text style={[styles.documentActionText, { color }]}>{action.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </Pressable>
-        </Modal>
-      ) : null}
-    </View>
   );
 }
 
@@ -7704,7 +7579,7 @@ function NuevaNotaDebitoMobileScreen({
           <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
-      <InvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} activeIndex={step} />
+      <SharedInvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -8023,7 +7898,7 @@ function NuevaLiquidacionCompraMobileScreen({
           <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
-      <InvoiceProgressSteps labels={['Proveedor', 'Detalle', 'Revision']} activeIndex={step} />
+      <SharedInvoiceProgressSteps labels={['Proveedor', 'Detalle', 'Revision']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -8354,7 +8229,7 @@ function NuevaGuiaRemisionMobileScreen({
           <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
-      <InvoiceProgressSteps labels={['Transporte', 'Destino', 'Detalle']} activeIndex={step} />
+      <SharedInvoiceProgressSteps labels={['Transporte', 'Destino', 'Detalle']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -8977,7 +8852,7 @@ function AdminMobileItemCard({
   onDelete: () => void;
 }) {
   return (
-    <View style={styles.clientCard}>
+    <View style={styles.crudCard}>
       <View style={styles.clientCardHeader}>
         <View style={styles.clientAvatar}>
           <Text style={styles.clientAvatarText}>{(item.title || item.id || 'A').charAt(0).toUpperCase()}</Text>
@@ -9007,13 +8882,16 @@ function AdminMobileItemCard({
         ) : null}
       </View>
       <View style={styles.clientActions}>
-        <Pressable style={styles.smallActionButton} onPress={onView}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Ver ${item.title || item.id}`} style={[styles.smallActionButton, styles.crudViewAction]} onPress={onView}>
+          <MaterialCommunityIcons name="eye-outline" size={16} color="#00649D" />
           <Text style={styles.smallActionText}>Ver</Text>
         </Pressable>
-        <Pressable style={styles.smallActionButton} onPress={onEdit}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Editar ${item.title || item.id}`} style={[styles.smallActionButton, styles.crudEditAction]} onPress={onEdit}>
+          <MaterialCommunityIcons name="pencil-outline" size={16} color="#6847FF" />
           <Text style={styles.smallActionText}>Editar</Text>
         </Pressable>
-        <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={onDelete}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Eliminar ${item.title || item.id}`} style={[styles.smallActionButton, styles.smallDangerButton]} onPress={onDelete}>
+          <MaterialCommunityIcons name="trash-can-outline" size={16} color="#B4232D" />
           <Text style={[styles.smallActionText, styles.smallDangerText]}>Eliminar</Text>
         </Pressable>
       </View>
@@ -9293,200 +9171,6 @@ function getOperationalCapabilities(view: WorkspaceView, tab: string) {
   }
 
   return { canCreate: false, canEdit: false, canDelete: false };
-}
-
-function OperationalForm({
-  title,
-  form,
-  saving,
-  onCancel,
-  onChange,
-  onSave,
-}: {
-  title: string;
-  form: OperationalFormState;
-  saving: boolean;
-  onCancel: () => void;
-  onChange: (field: keyof OperationalFormState, value: string) => void;
-  onSave: () => void;
-}) {
-  return (
-    <View style={styles.formSectionBox}>
-      <Text style={styles.clientFormSubtitle}>Operacion</Text>
-      <Text style={styles.clientFormTitle}>{title}</Text>
-      <Field label="Codigo (opcional)" value={form.codigo} onChangeText={(value) => onChange('codigo', value)} autoCapitalize="characters" />
-      <Field label="Descripcion *" value={form.descripcion} onChangeText={(value) => onChange('descripcion', value)} />
-      <Field label="Valor / cantidad (opcional)" value={form.valor} onChangeText={(value) => onChange('valor', value)} keyboardType="decimal-pad" />
-      <Field label="Observacion (opcional)" value={form.observacion} onChangeText={(value) => onChange('observacion', value)} />
-      <View style={styles.formActions}>
-        <PrimaryButton label="Guardar" loading={saving} onPress={onSave} />
-        <SecondaryButton label="Cancelar" onPress={onCancel} />
-      </View>
-    </View>
-  );
-}
-
-function OperationalMobileItemCard({
-  item,
-  canEdit,
-  canDelete,
-  onView,
-  onEdit,
-  onDelete,
-}: {
-  item: OperationalMobileItem;
-  canEdit: boolean;
-  canDelete: boolean;
-  onView: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <View style={styles.clientCard}>
-      <View style={styles.clientCardHeader}>
-        <View style={styles.clientAvatar}>
-          <Text style={styles.clientAvatarText}>{(item.title || item.id || 'O').charAt(0).toUpperCase()}</Text>
-        </View>
-        <View style={styles.clientInfo}>
-          <Text style={styles.clientName}>{item.title || item.id}</Text>
-          {item.subtitle ? <Text style={styles.clientMeta}>{item.subtitle}</Text> : null}
-        </View>
-        {item.status ? (
-          <View style={styles.systemPill}>
-            <Text style={styles.systemPillText}>{item.status}</Text>
-          </View>
-        ) : null}
-      </View>
-      <View style={styles.clientDetailGrid}>
-        {item.meta ? (
-          <View style={styles.clientDetailItem}>
-            <Text style={styles.clientDetailLabel}>Dato</Text>
-            <Text style={styles.clientDetailValue}>{item.meta}</Text>
-          </View>
-        ) : null}
-        {item.detail ? (
-          <View style={styles.clientDetailItem}>
-            <Text style={styles.clientDetailLabel}>Detalle</Text>
-            <Text style={styles.clientDetailValue}>{item.detail}</Text>
-          </View>
-        ) : null}
-      </View>
-      <View style={styles.clientActions}>
-        <Pressable style={styles.smallActionButton} onPress={onView}>
-          <Text style={styles.smallActionText}>Ver</Text>
-        </Pressable>
-        {canEdit ? (
-          <Pressable style={styles.smallActionButton} onPress={onEdit}>
-            <Text style={styles.smallActionText}>Editar</Text>
-          </Pressable>
-        ) : null}
-        {canDelete ? (
-          <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={onDelete}>
-            <Text style={[styles.smallActionText, styles.smallDangerText]}>Eliminar</Text>
-          </Pressable>
-        ) : null}
-      </View>
-    </View>
-  );
-}
-
-function MetricBox({ value, label }: { value: string | number; label: string }) {
-  return (
-    <View style={styles.metricBox}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function PortalServiceCard({
-  title,
-  description,
-  enabled,
-  onPress,
-  index,
-}: {
-  title: string;
-  description: string;
-  enabled: boolean;
-  onPress: () => void;
-  index: number;
-}) {
-  const visual = getPortalServiceVisual(title, index);
-
-  return (
-    <Pressable
-      disabled={!enabled}
-      style={[styles.portalServiceCard, { borderColor: visual.accent }, !enabled && styles.portalServiceCardDisabled]}
-      onPress={onPress}
-    >
-      <View style={[styles.portalServiceIcon, { backgroundColor: visual.surface, borderColor: visual.accent }]}>
-        {visual.kind === 'efact' ? <Image source={require('./assets/logo-numerica.png')} style={styles.portalServiceLogo} /> : null}
-        {visual.kind === 'orange' ? <Image source={require('./assets/logo-numerica-naranja.png')} style={styles.portalServiceLogo} /> : null}
-        {visual.kind === 'green' ? <Image source={require('./assets/logo-numerica-verde.png')} style={styles.portalServiceLogo} /> : null}
-        {visual.kind === 'purple' ? <Image source={require('./assets/logo-numerica-morado.png')} style={styles.portalServiceLogo} /> : null}
-        {visual.kind === 'rubrica' ? <Image source={require('./assets/logo-numerica-rubrica.png')} style={styles.portalServiceLogoWide} /> : null}
-        {['document', 'calculator', 'pencil', 'briefcase'].includes(visual.kind) ? <PortalServiceGlyph kind={visual.kind} /> : null}
-      </View>
-      <View style={styles.portalServiceCopy}>
-        <Text style={styles.portalServiceTitle}>{title}</Text>
-        <Text style={styles.portalServiceDescription}>{description}</Text>
-      </View>
-      <View style={styles.portalServiceActionWrap}>
-        <Text
-          style={[styles.portalServicePill, { borderColor: visual.accent, color: visual.accent }]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.62}
-        >
-          {enabled ? 'ABRIR' : 'PRÓXIMAMENTE'}
-        </Text>
-        <View style={[styles.portalServiceArrow, { borderColor: visual.accent }]}>
-          <Text style={[styles.portalServiceArrowText, { color: visual.accent }]}>›</Text>
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
-function PortalServiceGlyph({ kind }: { kind: string }) {
-  if (kind === 'calculator') {
-    return (
-      <View style={styles.portalGlyphCalculator}>
-        <View style={styles.portalGlyphCalculatorScreen} />
-        <View style={styles.portalGlyphCalculatorGrid}>
-          {Array.from({ length: 9 }).map((_, index) => <View key={`calc-dot-${index}`} style={styles.portalGlyphCalculatorDot} />)}
-        </View>
-      </View>
-    );
-  }
-
-  if (kind === 'pencil') {
-    return (
-      <View style={styles.portalGlyphPencilWrap}>
-        <Text style={styles.portalGlyphPencil}>✎</Text>
-        <View style={styles.portalGlyphPencilLine} />
-      </View>
-    );
-  }
-
-  if (kind === 'briefcase') {
-    return (
-      <View style={styles.portalGlyphBriefcase}>
-        <View style={styles.portalGlyphBriefcaseHandle} />
-        <View style={styles.portalGlyphBriefcaseBody} />
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.portalGlyphDocument}>
-      <View style={styles.portalGlyphDocumentFold} />
-      <View style={styles.portalGlyphDocumentLine} />
-      <View style={styles.portalGlyphDocumentLine} />
-      <Text style={styles.portalGlyphDocumentMoney}>$</Text>
-    </View>
-  );
 }
 
 function DirectoryHero({
@@ -10008,451 +9692,6 @@ function DashboardHomeScreen({
           />
         ))}
       </View>
-    </View>
-  );
-}
-
-type GlobalSearchResult = { id: string; title: string; subtitle: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; view: WorkspaceView };
-
-function GlobalSearchModal({
-  visible,
-  query,
-  results,
-  onChangeQuery,
-  onClose,
-  onOpenResult,
-}: {
-  visible: boolean;
-  query: string;
-  results: GlobalSearchResult[];
-  onChangeQuery: (value: string) => void;
-  onClose: () => void;
-  onOpenResult: (result: GlobalSearchResult) => void;
-}) {
-  return (
-    <Modal visible={visible} animationType="fade" transparent statusBarTranslucent onRequestClose={onClose}>
-      <View style={styles.globalSearchOverlay}>
-        <Pressable style={styles.globalSearchBackdrop} onPress={onClose} />
-        <View style={styles.globalSearchPanel}>
-          <View style={styles.globalSearchHeader}>
-            <View style={styles.globalSearchTitleBlock}>
-              <Text style={styles.globalSearchEyebrow}>BUSCADOR INTELIGENTE</Text>
-              <Text style={styles.globalSearchTitle}>¿Qué necesitas encontrar?</Text>
-            </View>
-            <Pressable style={styles.menuCloseButton} onPress={onClose} accessibilityLabel="Cerrar búsqueda"><Text style={styles.menuCloseText}>×</Text></Pressable>
-          </View>
-          <View style={styles.globalSearchInputShell}>
-            <MaterialCommunityIcons name="magnify" size={22} color="#0878C9" />
-            <TextInput autoFocus value={query} onChangeText={onChangeQuery} placeholder="Cliente, producto, factura o RUC..." placeholderTextColor="#8DA1B4" style={styles.globalSearchInput} returnKeyType="search" />
-            {query ? <Pressable onPress={() => onChangeQuery('')} hitSlop={8}><MaterialCommunityIcons name="close-circle" size={19} color="#9AB0C1" /></Pressable> : null}
-          </View>
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.globalSearchResults}>
-            {!query.trim() ? (
-              <View style={styles.globalSearchEmpty}><MaterialCommunityIcons name="text-search" size={38} color="#9DDCF3" /><Text style={styles.globalSearchEmptyTitle}>Busca en toda tu operación</Text><Text style={styles.globalSearchEmptyText}>Clientes, productos y comprobantes desde un solo lugar.</Text></View>
-            ) : results.length ? results.map((result) => (
-              <Pressable key={result.id} style={({ pressed }) => [styles.globalSearchResult, pressed && styles.globalSearchResultPressed]} onPress={() => onOpenResult(result)}>
-                <View style={styles.globalSearchResultIcon}><MaterialCommunityIcons name={result.icon} size={21} color="#0878C9" /></View>
-                <View style={styles.globalSearchResultCopy}><Text style={styles.globalSearchResultTitle} numberOfLines={1}>{result.title}</Text><Text style={styles.globalSearchResultSubtitle} numberOfLines={1}>{result.subtitle}</Text></View>
-                <MaterialCommunityIcons name="chevron-right" size={20} color="#9AB0C1" />
-              </Pressable>
-            )) : (
-              <View style={styles.globalSearchEmpty}><MaterialCommunityIcons name="magnify-close" size={38} color="#9AB0C1" /><Text style={styles.globalSearchEmptyTitle}>Sin resultados</Text><Text style={styles.globalSearchEmptyText}>Prueba con otro nombre, número o identificación.</Text></View>
-            )}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-function DashboardMetric({ value, label }: { value: string | number; label: string }) {
-  return (
-    <View style={styles.dashboardMetric}>
-      <Text style={styles.dashboardMetricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{value}</Text>
-      <Text style={styles.dashboardMetricLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function DashboardPrimaryAction({
-  icon,
-  label,
-  text,
-  primary,
-  onPress,
-}: {
-  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-  label: string;
-  text: string;
-  primary?: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable style={({ pressed }) => [styles.dashboardPrimaryAction, primary && styles.dashboardPrimaryActionMain, pressed && styles.dashboardFavoritePressed]} onPress={onPress}>
-      <View style={[styles.dashboardPrimaryActionIcon, primary && styles.dashboardPrimaryActionIconMain]}>
-        <MaterialCommunityIcons name={icon} size={22} color={primary ? '#FFFFFF' : EFACT_THEME.colors.primary} />
-      </View>
-      <Text style={[styles.dashboardPrimaryActionLabel, primary && styles.dashboardPrimaryActionLabelMain]} numberOfLines={1}>{label}</Text>
-      <Text style={[styles.dashboardPrimaryActionText, primary && styles.dashboardPrimaryActionTextMain]} numberOfLines={2}>{text}</Text>
-    </Pressable>
-  );
-}
-
-function DashboardFavorite({ icon, label, color, onPress }: { icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; label: string; color: string; onPress: () => void }) {
-  return (
-    <Pressable style={({ pressed }) => [styles.dashboardFavorite, pressed && styles.dashboardFavoritePressed]} onPress={onPress}>
-      <View style={[styles.dashboardFavoriteIcon, { backgroundColor: `${color}16` }]}>
-        <MaterialCommunityIcons name={icon} size={22} color={color} />
-      </View>
-      <Text style={styles.dashboardFavoriteLabel} numberOfLines={2}>{label}</Text>
-      <Text style={[styles.dashboardFavoriteArrow, { color }]}>›</Text>
-    </Pressable>
-  );
-}
-
-function DashboardStatCard({ accent, compact, kind, value, label, trend }: { accent: string; compact?: boolean; kind: string; value: string | number; label: string; trend: string }) {
-  return (
-    <View style={[styles.dashboardStatCard, compact && styles.dashboardStatCardCompact]}>
-      <View style={[styles.dashboardStatIcon, { backgroundColor: `${accent}18` }]}>
-        <Text style={[styles.dashboardStatIconText, { color: accent }]}>{kind === 'money' ? '$' : kind === 'people' ? '••' : kind === 'box' ? '+' : '▤'}</Text>
-      </View>
-      <Text style={styles.dashboardStatValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{value}</Text>
-      <Text style={styles.dashboardStatLabel} numberOfLines={2}>{label}</Text>
-      <Text style={styles.dashboardStatTrend} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>↗ {trend} vs mes anterior</Text>
-    </View>
-  );
-}
-
-function DashboardChartCard({ facturas }: { facturas: FacturaListItem[] }) {
-  const values = [500, 1200, 720, 1350, 1680, 1640, 2450].map((fallback, index) => Number(facturas[index]?.total ?? fallback));
-  const max = Math.max(...values, 1);
-  const days = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
-  const [selectedIndex, setSelectedIndex] = useState(values.length - 1);
-  const selectedValue = values[selectedIndex] ?? 0;
-
-  return (
-    <View style={styles.dashboardChartCard}>
-      <View style={styles.dashboardChartHeader}>
-        <Text style={styles.dashboardPanelTitle} numberOfLines={1} adjustsFontSizeToFit>Ventas de los ultimos 7 dias</Text>
-        <View style={styles.dashboardChartValuePill}>
-          <Text style={styles.dashboardChartValueDay}>{days[selectedIndex]}</Text>
-          <Text style={styles.dashboardChartValueText}>{formatMoney(selectedValue)}</Text>
-        </View>
-      </View>
-      <View style={styles.dashboardChartArea}>
-        {values.map((value, index) => (
-          <Pressable key={`chart-${index}`} style={styles.dashboardChartColumn} onPress={() => setSelectedIndex(index)}>
-            <View style={[styles.dashboardChartBar, index === selectedIndex && styles.dashboardChartBarActive, { height: `${Math.max(12, (value / max) * 86)}%` }]} />
-            <View style={[styles.dashboardChartPoint, index === selectedIndex && styles.dashboardChartPointActive, { bottom: `${Math.max(8, (value / max) * 78)}%` }]} />
-          </Pressable>
-        ))}
-      </View>
-      <View style={styles.dashboardChartLabels}>
-        {days.map((day, index) => <Text key={day} style={[styles.dashboardChartLabel, index === selectedIndex && styles.dashboardChartLabelActive]}>{day}</Text>)}
-      </View>
-    </View>
-  );
-}
-
-function DashboardQuickAction({ color, label, onPress }: { color: string; label: string; onPress: () => void }) {
-  return (
-    <Pressable style={styles.dashboardQuickAction} onPress={onPress}>
-      <View style={[styles.dashboardQuickIcon, { backgroundColor: color }]}>
-        <Text style={styles.dashboardQuickIconText}>+</Text>
-      </View>
-      <Text style={styles.dashboardQuickLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{label}</Text>
-      <Text style={styles.dashboardQuickArrow}>›</Text>
-    </Pressable>
-  );
-}
-
-function DashboardServiceRow({ module, index, onPress }: { module: MobileModule; index: number; onPress: () => void }) {
-  const colors = [EFACT_THEME.colors.primary, EFACT_THEME.colors.secondary, EFACT_THEME.colors.info, EFACT_THEME.colors.warning, EFACT_THEME.colors.primaryDark];
-  const color = colors[index % colors.length];
-  return (
-    <Pressable style={({ pressed }) => [styles.dashboardServiceRow, pressed && styles.dashboardFavoritePressed]} onPress={onPress}>
-      <View style={[styles.dashboardServiceIcon, { backgroundColor: `${color}16` }]}>
-        <MaterialCommunityIcons name="chevron-right-circle-outline" size={22} color={color} />
-      </View>
-      <View style={styles.dashboardServiceCopy}>
-        <Text style={styles.dashboardServiceTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{module.title}</Text>
-        <Text style={styles.dashboardServiceText} numberOfLines={2}>{module.description}</Text>
-      </View>
-      <MaterialCommunityIcons name="chevron-right" size={22} color={EFACT_THEME.colors.textMuted} />
-    </Pressable>
-  );
-}
-
-function DashboardActivityItem({ color, title, subtitle, amount, status }: { color: string; title: string; subtitle: string; amount?: string; status?: string }) {
-  return (
-    <View style={styles.dashboardActivityItem}>
-      <View style={[styles.dashboardActivityIcon, { backgroundColor: `${color}28` }]}>
-        <Text style={[styles.dashboardActivityIconText, { color }]}>✓</Text>
-      </View>
-      <View style={styles.dashboardActivityCopy}>
-        <Text style={styles.dashboardActivityTitle} numberOfLines={2}>{title}</Text>
-        <Text style={styles.dashboardActivityText} numberOfLines={2}>{subtitle}</Text>
-      </View>
-      {amount ? <Text style={styles.dashboardActivityAmount} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{amount}</Text> : null}
-      {status ? <Text style={styles.dashboardActivityStatus} numberOfLines={1}>{status}</Text> : null}
-    </View>
-  );
-}
-
-function PortalHeaderAvatar() {
-  return (
-    <Image source={require('./assets/logo-numerica.png')} style={styles.portalHeaderLogo} />
-  );
-}
-
-function PortalBottomNav({
-  bottomInset,
-  activeView,
-  onHome,
-  onServices,
-  onBot,
-  onNewInvoice,
-  onProfile,
-}: {
-  bottomInset: number;
-  activeView: WorkspaceView;
-  onHome: () => void;
-  onServices: () => void;
-  onBot: () => void;
-  onNewInvoice: () => void;
-  onProfile: () => void;
-}) {
-  return (
-    <View style={[styles.portalBottomNav, { bottom: Math.max(8, bottomInset + 4) }]}>
-      <PortalTabButton active={activeView === 'dashboard'} icon="home" label="Inicio" onPress={onHome} />
-      <PortalTabButton active={activeView === 'portal'} icon="grid" label="Servicios" onPress={onServices} />
-      <PortalTabButton active={activeView === 'bot'} icon="bot" label="Númi" onPress={onBot} />
-      <PortalTabButton active={activeView === 'nueva-factura'} icon="invoice" label="Factura" onPress={onNewInvoice} />
-      <PortalTabButton active={activeView === 'perfil'} icon="profile" label="Perfil" onPress={onProfile} />
-    </View>
-  );
-}
-
-function PortalTabButton({ active, icon, label, onPress }: { active: boolean; icon: 'home' | 'grid' | 'document' | 'profile' | 'settings' | 'bot' | 'invoice'; label: string; onPress: () => void }) {
-  const iconName: React.ComponentProps<typeof MaterialCommunityIcons>['name'] =
-    icon === 'home' ? 'home-variant-outline'
-      : icon === 'grid' ? 'view-grid-outline'
-        : icon === 'document' ? 'file-document-outline'
-          : icon === 'invoice' ? 'file-plus-outline'
-            : icon === 'profile' ? 'account-circle-outline'
-              : icon === 'settings' ? 'cog-outline'
-                : 'robot-outline';
-
-  return (
-    <Pressable hitSlop={6} accessibilityRole="button" accessibilityLabel={label} style={[styles.portalTabButton, active && styles.portalTabButtonActive]} onPress={onPress}>
-      <View style={[styles.portalTabIcon, active && styles.portalTabIconBubble]}>
-        <MaterialCommunityIcons name={iconName} size={22} color={active ? '#FFFFFF' : EFACT_THEME.colors.textMuted} />
-      </View>
-      <Text style={[styles.portalTabText, active && styles.portalTabTextActive]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function ModuleCard({
-  title,
-  description,
-  count,
-  enabled,
-  onPress,
-}: {
-  title: string;
-  description: string;
-  count?: number;
-  enabled: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <SmoothPressable accessibilityHint={enabled ? `Abre ${title}` : 'Esta opcion aun no esta disponible'} disabled={!enabled} style={[styles.moduleCard, !enabled && styles.moduleCardDisabled]} onPress={onPress}>
-      <View style={styles.moduleTopRow}>
-        <Text style={styles.moduleTitle}>{title}</Text>
-        {typeof count === 'number' ? <Text style={styles.moduleCount}>{count}</Text> : null}
-      </View>
-      <Text style={styles.moduleDescription}>{description}</Text>
-      <Text style={styles.moduleAction}>{enabled ? 'Abrir' : 'Proximamente'}</Text>
-    </SmoothPressable>
-  );
-}
-
-function NavButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
-  return (
-    <Pressable style={[styles.navButton, active && styles.navButtonActive]} onPress={onPress}>
-      <Text style={[styles.navButtonText, active && styles.navButtonTextActive]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function MenuItem({
-  active,
-  count,
-  disabled,
-  expanded,
-  hasChildren,
-  inset,
-  label,
-  onPress,
-  onToggle,
-}: {
-  active: boolean;
-  count?: number;
-  disabled?: boolean;
-  expanded?: boolean;
-  hasChildren?: boolean;
-  inset?: boolean;
-  label: string;
-  onPress: () => void;
-  onToggle?: () => void;
-}) {
-  return (
-    <SmoothPressable
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: Boolean(disabled), expanded: hasChildren ? Boolean(expanded) : undefined, selected: active }}
-      disabled={disabled}
-      style={[styles.menuItem, inset && styles.menuItemInset, active && styles.menuItemActive, disabled && styles.menuItemDisabled]}
-      onPress={onPress}
-    >
-      <Text style={[styles.menuItemText, active && styles.menuItemTextActive]} numberOfLines={1}>{label}</Text>
-      {typeof count === 'number' ? <Text style={[styles.menuItemCount, active && styles.menuItemCountActive]}>{count}</Text> : null}
-      {hasChildren ? (
-        <Pressable
-          accessibilityLabel={`${expanded ? 'Contraer' : 'Expandir'} ${label}`}
-          accessibilityRole="button"
-          hitSlop={10}
-          onPress={(event) => {
-            event.stopPropagation();
-            onToggle?.();
-          }}
-        >
-          <Text style={[styles.menuItemChevron, expanded && styles.menuItemChevronExpanded, active && styles.menuItemTextActive]}>⌄</Text>
-        </Pressable>
-      ) : null}
-    </SmoothPressable>
-  );
-}
-
-function InitialsAvatar({ initials, size }: { initials: string; size: number }) {
-  return (
-    <View style={[styles.initialsAvatar, { backgroundColor: getInitialsColor(initials), borderRadius: Math.round(size * 0.22), height: size, width: size }]}>
-      <Text style={[styles.initialsAvatarText, { fontSize: Math.max(16, Math.round(size * 0.42)) }]}>{initials}</Text>
-    </View>
-  );
-}
-
-function DirectoryTabButton({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
-  return (
-    <Pressable style={[styles.directoryTab, active && styles.directoryTabActive]} onPress={onPress}>
-      <Text style={[styles.directoryTabText, active && styles.directoryTabTextActive]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function DropdownField({
-  label,
-  options,
-  value,
-  onChange,
-  placeholder,
-  allowClear,
-}: {
-  label: string;
-  options: { label: string; value: number }[];
-  value: number | null;
-  onChange: (value: number | null) => void;
-  placeholder?: string;
-  allowClear?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const selected = options.find((option) => option.value === value);
-
-  return (
-    <View style={styles.dropdownField}>
-      <Text style={styles.label}>{label}</Text>
-      <Pressable style={styles.dropdownButton} onPress={() => setOpen(true)}>
-        <Text style={[styles.dropdownButtonText, !selected && styles.dropdownPlaceholder]} numberOfLines={1}>
-          {selected?.label ?? placeholder ?? `Seleccione ${label.toLowerCase()}`}
-        </Text>
-        <Text style={styles.dropdownChevron}>v</Text>
-      </Pressable>
-
-      <Modal transparent visible={open} animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.dropdownOverlay} onPress={() => setOpen(false)}>
-          <View style={styles.dropdownSheet}>
-            <Text style={styles.dropdownTitle}>{label}</Text>
-            <ScrollView style={styles.dropdownList} contentContainerStyle={styles.dropdownListContent}>
-              {allowClear ? (
-                <Pressable
-                  style={[styles.dropdownOption, value === null && styles.dropdownOptionActive]}
-                  onPress={() => {
-                    onChange(null);
-                    setOpen(false);
-                  }}
-                >
-                  <Text style={[styles.dropdownOptionText, value === null && styles.dropdownOptionTextActive]}>
-                    {placeholder ?? '-- Sin seleccionar --'}
-                  </Text>
-                </Pressable>
-              ) : null}
-              {options.map((option, index) => (
-                <Pressable
-                  key={`${label}-${option.value}-${option.label}-${index}`}
-                  style={[styles.dropdownOption, value === option.value && styles.dropdownOptionActive]}
-                  onPress={() => {
-                    onChange(option.value);
-                    setOpen(false);
-                  }}
-                >
-                  <Text style={[styles.dropdownOptionText, value === option.value && styles.dropdownOptionTextActive]}>
-                    {option.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
-    </View>
-  );
-}
-
-function ToggleRow({
-  label,
-  text,
-  value,
-  onChange,
-}: {
-  label: string;
-  text: string;
-  value: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <Pressable style={styles.toggleRow} onPress={() => onChange(!value)}>
-      <View style={[styles.toggleBox, value && styles.toggleBoxActive]}>
-        {value ? <Text style={styles.toggleCheck}>OK</Text> : null}
-      </View>
-      <View style={styles.toggleTextBlock}>
-        <Text style={styles.toggleLabel}>{label}</Text>
-        <Text style={styles.toggleHelp}>{text}</Text>
-      </View>
-    </Pressable>
-  );
-}
-
-function FormTopBar({ onBack, onDiscard }: { onBack: () => void; onDiscard: () => void }) {
-  return (
-    <View style={styles.clientFormTopBar}>
-      <Pressable accessibilityLabel="Volver" style={styles.clientFormBackButton} onPress={onBack}>
-        <MaterialCommunityIcons name="arrow-left" size={19} color="#00649D" />
-        <Text style={styles.clientFormBackText}>Volver</Text>
-      </Pressable>
-      <Pressable accessibilityLabel="Descartar cambios" style={styles.clientFormDiscardButton} onPress={onDiscard}>
-        <MaterialCommunityIcons name="close" size={17} color="#6B7D8C" />
-        <Text style={styles.clientFormDiscardText}>Descartar</Text>
-      </Pressable>
     </View>
   );
 }
@@ -11049,75 +10288,6 @@ function CategoriaCard({ categoria, onView, onEdit, onDelete }: { categoria: Cat
   );
 }
 
-function SubcategoriaCard({
-  subcategoria,
-  categoriaDescripcion,
-  onView,
-  onEdit,
-  onDelete,
-}: {
-  subcategoria: SubcategoriaCatalogo;
-  categoriaDescripcion?: string | null;
-  onView: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <CatalogCard
-      initials="S"
-      title={subcategoria.descripcion || 'Subcategoria sin descripcion'}
-      subtitle={categoriaDescripcion || 'Sin categoria asociada'}
-      onView={onView}
-      onEdit={onEdit}
-      onDelete={onDelete}
-    />
-  );
-}
-
-function CatalogCard({
-  initials,
-  title,
-  subtitle,
-  onView,
-  onEdit,
-  onDelete,
-}: {
-  initials: string;
-  title: string;
-  subtitle: string;
-  onView: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <View style={styles.clientCard}>
-      <View style={styles.clientCardHeader}>
-        <View style={styles.clientAvatar}>
-          <Text style={styles.clientAvatarText}>{initials}</Text>
-        </View>
-        <View style={styles.clientInfo}>
-          <Text style={styles.clientName}>{title}</Text>
-          <Text style={styles.clientMeta}>{subtitle}</Text>
-        </View>
-      </View>
-      <View style={styles.clientActions}>
-        <Pressable style={styles.smallActionButton} onPress={onView}>
-          <MaterialCommunityIcons name="eye-outline" size={16} color="#00649D" />
-          <Text style={styles.smallActionText}>Ver</Text>
-        </Pressable>
-        <Pressable style={styles.smallActionButton} onPress={onEdit}>
-          <MaterialCommunityIcons name="pencil-outline" size={16} color="#00649D" />
-          <Text style={styles.smallActionText}>Editar</Text>
-        </Pressable>
-        <Pressable style={[styles.smallActionButton, styles.smallDangerButton]} onPress={onDelete}>
-          <MaterialCommunityIcons name="trash-can-outline" size={16} color="#B4232D" />
-          <Text style={[styles.smallActionText, styles.smallDangerText]}>Eliminar</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
 function EmisorForm({
   form,
   mode,
@@ -11429,7 +10599,6 @@ function PerfilForm({
             <Text style={styles.profileSecurityText}>Tu clave no se muestra. Puedes cambiarla desde editar perfil.</Text>
           </View>
         </View>
-
         <View style={styles.infoNotice}>
           <View style={styles.infoNoticeIcon}>
             <Text style={styles.infoNoticeIconText}>i</Text>
@@ -11442,7 +10611,6 @@ function PerfilForm({
       </View>
     );
   }
-
   return (
     <View style={styles.clientFormCard}>
       <View style={styles.profileEditHeader}>
@@ -11454,7 +10622,6 @@ function PerfilForm({
           <MaterialCommunityIcons name="close" size={20} color={EFACT_THEME.colors.primary} />
         </Pressable>
       </View>
-
       <View style={styles.profileAvatarPanel}>
         {usesInitials ? (
           <InitialsAvatar initials={initials} size={82} />
@@ -11487,7 +10654,6 @@ function PerfilForm({
           </Pressable>
         ))}
       </ScrollView>
-
       <View style={styles.infoNotice}>
         <View style={styles.infoNoticeIcon}>
           <Text style={styles.infoNoticeIconText}>i</Text>
@@ -11497,7 +10663,6 @@ function PerfilForm({
           <Text style={styles.infoNoticeText}>Esta informacion se utilizara para emitir correctamente tus comprobantes.</Text>
         </View>
       </View>
-
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Cuenta</Text>
         <Field label="Correo Electronico" value={form.email} onChangeText={(value) => onChange('email', value)} autoCapitalize="none" keyboardType="email-address" />
@@ -11519,7 +10684,6 @@ function PerfilForm({
         />
         <Field label="Identificacion *" value={form.identificacion} onChangeText={(value) => onChange('identificacion', value)} />
       </View>
-
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Datos personales</Text>
         {esEmpresa ? (
@@ -11531,13 +10695,11 @@ function PerfilForm({
           </>
         )}
       </View>
-
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Contacto</Text>
         <Field label="Celular" value={form.celular} onChangeText={(value) => onChange('celular', value)} keyboardType="phone-pad" />
         <Field label="Direccion *" value={form.direccionEmpresa} onChangeText={(value) => onChange('direccionEmpresa', value)} />
       </View>
-
       <View style={styles.formSectionBox}>
         <View style={styles.securityHeaderRow}>
           <View style={styles.securityTitleBlock}>
@@ -11576,7 +10738,6 @@ function PerfilForm({
           </View>
         )}
       </View>
-
       <View style={styles.formActions}>
         <SecondaryButton label="Cancelar" onPress={() => {
           onReset();
@@ -11587,7 +10748,6 @@ function PerfilForm({
     </View>
   );
 }
-
 function ProfileInfoTile({
   icon,
   label,
@@ -11611,7 +10771,6 @@ function ProfileInfoTile({
     </View>
   );
 }
-
 function PuntoEmisionForm({
   form,
   mode,
@@ -11632,7 +10791,6 @@ function PuntoEmisionForm({
   onSave: () => void;
 }) {
   const punto = normalizeSerieCode(form.puntoEmision);
-
   return (
     <View style={styles.clientFormCard}>
       <Text style={styles.clientFormTitle}>{mode === 'edit' ? 'Editar punto de emision' : 'Nuevo punto de emision'}</Text>
@@ -11663,7 +10821,6 @@ function PuntoEmisionForm({
     </View>
   );
 }
-
 function PuntoEmisionCard({
   punto,
   canDelete,
@@ -11679,7 +10836,6 @@ function PuntoEmisionCard({
 }) {
   const serie = getPuntoSerie(punto);
   const sequences = getPuntoDocumentSequences(punto);
-
   return (
     <View style={[styles.clientCard, punto.esPrincipal && styles.puntoCardPrincipal]}>
       <View style={styles.clientCardHeader}>
@@ -11696,7 +10852,6 @@ function PuntoEmisionCard({
           </View>
         ) : null}
       </View>
-
       <View style={styles.puntoSequencePanel}>
         <View style={styles.puntoSequenceHeader}>
           <Text style={styles.puntoSequenceTitle}>Secuencias por documento</Text>
@@ -11712,7 +10867,6 @@ function PuntoEmisionCard({
           ))}
         </View>
       </View>
-
       <View style={styles.clientActions}>
         {!punto.esPrincipal ? (
           <Pressable style={styles.smallActionButton} onPress={onMakePrincipal}>
@@ -11731,22 +10885,10 @@ function PuntoEmisionCard({
     </View>
   );
 }
-
-function EmptyState({ title, text }: { title: string; text: string }) {
-  return (
-    <View style={styles.emptyState}>
-      <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptyText}>{text}</Text>
-    </View>
-  );
-}
-
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
 function SmoothPressable({ children, style, ...props }: React.ComponentProps<typeof Pressable>) {
   const scale = useRef(new Animated.Value(1)).current;
   const reduceMotion = useReducedMotion();
-
   const animateScale = (toValue: number) => {
     Animated.spring(scale, {
       toValue: reduceMotion ? 1 : toValue,
@@ -11755,7 +10897,6 @@ function SmoothPressable({ children, style, ...props }: React.ComponentProps<typ
       useNativeDriver: true,
     }).start();
   };
-
   return (
     <AnimatedPressable
       accessibilityRole="button"
@@ -11774,12 +10915,10 @@ function SmoothPressable({ children, style, ...props }: React.ComponentProps<typ
     </AnimatedPressable>
   );
 }
-
 function ScreenTransition({ children }: { children: React.ReactNode }) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(10)).current;
   const reduceMotion = useReducedMotion();
-
   useEffect(() => {
     Animated.parallel([
       Animated.timing(opacity, {
@@ -11796,22 +10935,22 @@ function ScreenTransition({ children }: { children: React.ReactNode }) {
       }),
     ]).start();
   }, [opacity, reduceMotion, translateY]);
-
   return <Animated.View style={{ opacity, transform: [{ translateY }] }}>{children}</Animated.View>;
 }
 
+function AuthCard({ children, wide, login }: { children: React.ReactNode; wide?: boolean; login?: boolean }) {
+  return <ScreenTransition><View style={[styles.card, login && styles.loginCard, wide && styles.cardWide]}>{children}</View></ScreenTransition>;
+}
 function AppLaunchScreen() {
   const wave = useRef(new Animated.Value(0)).current;
   const progress = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReducedMotion();
-
   useEffect(() => {
     if (reduceMotion) {
       wave.setValue(0);
       progress.setValue(1);
       return;
     }
-
     const waveLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(wave, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
@@ -11824,22 +10963,18 @@ function AppLaunchScreen() {
       easing: Easing.linear,
       useNativeDriver: false,
     });
-
     waveLoop.start();
     progressAnimation.start();
-
     return () => {
       waveLoop.stop();
       progressAnimation.stop();
     };
   }, [progress, reduceMotion, wave]);
-
   const handRotate = wave.interpolate({ inputRange: [0, 0.5, 1], outputRange: ['-5deg', '6deg', '-5deg'] });
   const handTranslateY = wave.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, -2, 1] });
   const waveOpacity = wave.interpolate({ inputRange: [0, 1], outputRange: [0.2, 0.7] });
   const waveScale = wave.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.05] });
   const progressWidth = progress.interpolate({ inputRange: [0, 1], outputRange: ['4%', '100%'] });
-
   return (
     <SafeAreaView style={styles.launchScreen}>
       <View style={styles.launchOrbTop} />
@@ -11879,78 +11014,3 @@ function AppLaunchScreen() {
     </SafeAreaView>
   );
 }
-function LoadingScreen() {
-  return (
-    <SafeAreaView style={styles.loadingScreen}>
-      <View style={styles.loadingCard}>
-        <View style={styles.loadingIcon}>
-          <Text style={styles.loadingDigits}>= 4 =</Text>
-          <Text style={styles.loadingDigitsSmall}>7 · =</Text>
-        </View>
-        <Text style={styles.loadingTitle}>Validando Credenciales</Text>
-        <Text style={styles.loadingSubtitle}>Iniciando entorno seguro de Numérica...</Text>
-        <ActivityIndicator color="#6E94B4" style={styles.loadingSpinner} />
-      </View>
-      <StatusBar style="light" />
-    </SafeAreaView>
-  );
-}
-
-function ScreenFrame({ children, centered }: { children: React.ReactNode; centered?: boolean }) {
-  return (
-    <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0} style={styles.flex}>
-        <ScrollView
-          automaticallyAdjustKeyboardInsets
-          contentContainerStyle={[styles.canvas, centered && styles.canvasCentered, styles.authScrollContent]}
-          keyboardDismissMode="none"
-          keyboardShouldPersistTaps="handled"
-          nestedScrollEnabled
-          showsVerticalScrollIndicator
-        >
-          <View style={styles.blueGlow} />
-          {children}
-        </ScrollView>
-      </KeyboardAvoidingView>
-      <StatusBar style="light" backgroundColor="#07305E" translucent={false} />
-    </SafeAreaView>
-  );
-}
-
-function AuthCard({ children, wide, login }: { children: React.ReactNode; wide?: boolean; login?: boolean }) {
-  return <ScreenTransition><View style={[styles.card, login && styles.loginCard, wide && styles.cardWide]}>{children}</View></ScreenTransition>;
-}
-
-function BrandMark() {
-  return (
-    <View style={styles.logoBadge}>
-      <Image source={require('./assets/logo-numerica.png')} style={styles.logoImage} />
-    </View>
-  );
-}
-
-function BrandLockup() {
-  return (
-    <View style={styles.brandLockup}>
-      <BrandMark />
-      <Text style={styles.brandText}>Numérica{'\n'}software</Text>
-    </View>
-  );
-}
-
-function BiometricSetupModal({ label, onChoose }: { label: string; onChoose: (enable: boolean) => void }) {
-  return (
-    <Modal transparent animationType="fade" statusBarTranslucent>
-      <View style={styles.biometricModalBackdrop}>
-        <View style={styles.biometricModalCard}>
-          <View style={styles.biometricModalIcon}><Text style={styles.biometricModalGlyph}>⌁</Text></View>
-          <Text style={styles.biometricModalTitle}>Acceso más rápido y seguro</Text>
-          <Text style={styles.biometricModalText}>Activa {label} para entrar a e-fact sin escribir tu contraseña la próxima vez.</Text>
-          <PrimaryButton label={`Activar ${label}`} loading={false} onPress={() => onChoose(true)} />
-          <Pressable style={styles.biometricLaterButton} onPress={() => onChoose(false)}><Text style={styles.biometricLaterText}>Más tarde</Text></Pressable>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-

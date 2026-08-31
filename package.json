@@ -27,9 +27,10 @@
     "typescript": "~5.9.2"
   },
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "start": "expo start --go --lan",
+    "start:tunnel": "expo start --go --tunnel",
+    "android": "expo start --go --lan --android",
+    "ios": "expo start --go --lan --ios",
     "web": "expo start --web"
   },
   "private": true
