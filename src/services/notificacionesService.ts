@@ -43,6 +43,45 @@ export async function getNotificaciones(userId: number, top = 20) {
   throw new ApiError(404, 'No existe una ruta de notificaciones configurada en el backend.');
 }
 
+export async function dismissNotificacion(userId: number, notificationId: string) {
+  const id = encodeURIComponent(notificationId);
+  return requestFirst([
+    { path: `/api/notificaciones/${id}/descartar?idUsuario=${userId}`, method: 'PUT' },
+    { path: `/api/notificaciones/${id}?idUsuario=${userId}`, method: 'DELETE' },
+    { path: `/api/notificaciones/descartar?idUsuario=${userId}`, method: 'POST', body: JSON.stringify({ id: notificationId }) },
+    { path: `/api/notifications/${id}/dismiss?userId=${userId}`, method: 'PUT' },
+    { path: `/api/usuarios/${userId}/notificaciones/${id}`, method: 'DELETE' },
+  ]);
+}
+
+export async function clearNotificaciones(userId: number) {
+  return requestFirst([
+    { path: `/api/notificaciones/descartar-todas?idUsuario=${userId}`, method: 'PUT' },
+    { path: `/api/notificaciones?idUsuario=${userId}`, method: 'DELETE' },
+    { path: `/api/notificaciones/clear?idUsuario=${userId}`, method: 'POST' },
+    { path: `/api/notifications/clear?userId=${userId}`, method: 'POST' },
+    { path: `/api/usuarios/${userId}/notificaciones`, method: 'DELETE' },
+  ]);
+}
+
+async function requestFirst(requests: { path: string; method: string; body?: string }[]) {
+  const errors: unknown[] = [];
+  for (const request of requests) {
+    try {
+      await apiRequest<void>(request.path, {
+        method: request.method,
+        body: request.body,
+      });
+      return;
+    } catch (error) {
+      errors.push(error);
+      if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 405 && error.status !== 0)) throw error;
+    }
+  }
+
+  throw errors.find((error) => error instanceof ApiError) ?? new ApiError(404, 'No existe una ruta para actualizar notificaciones en el backend.');
+}
+
 function normalizeNotificationRows(response: ApiRow[] | ApiRow): ApiRow[] {
   if (Array.isArray(response)) return response;
 

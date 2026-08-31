@@ -44,7 +44,7 @@ import { getMenusByRol, hasMenusByRolEndpoint } from './src/services/menuService
 import { buscarLiquidacionProductos, buscarLiquidacionProveedores, enviarLiquidacionCompraCorreo, getLiquidacionCompraPdf, getLiquidacionCompraPreparacion, getLiquidacionesCompra, getLiquidacionCompraXml, guardarLiquidacionCompra, LiquidacionCompraListItem } from './src/services/liquidacionesCompraMobileService';
 import { buscarNotaCreditoFacturas, enviarNotaCreditoCorreo, getNotaCreditoPdf, getNotaCreditoPreparacion, getNotasCredito, getNotaCreditoXml, guardarNotaCredito, NotaCreditoListItem } from './src/services/notasCreditoMobileService';
 import { buscarNotaDebitoFacturas, enviarNotaDebitoCorreo, getNotaDebitoPdf, getNotaDebitoPreparacion, getNotasDebito, getNotaDebitoXml, guardarNotaDebito, NotaDebitoListItem } from './src/services/notasDebitoMobileService';
-import { getNotificaciones, NotificacionItem } from './src/services/notificacionesService';
+import { clearNotificaciones, dismissNotificacion, getNotificaciones, NotificacionItem } from './src/services/notificacionesService';
 import { syncDeviceNotifications } from './src/services/deviceNotificationsService';
 import { createOperationalItem, deleteOperationalItem, getOperationalMobileModule, getOperationalModuleConfig, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, updateOperationalItem } from './src/services/operationalMobileService';
 import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
@@ -859,9 +859,10 @@ function isERubricaService(service: Pick<ServiceAccess, 'codigo' | 'nombre' | 'r
 function getPortalServiceVisual(title: string, index: number) {
   const normalized = normalizeText(title);
   if (normalized.includes('fact')) return { kind: 'efact', accent: EFACT_THEME.colors.primary, surface: '#EAF7FF' };
-  if (normalized.includes('cont')) return { kind: 'orange', accent: '#F97316', surface: '#FFF3E8' };
-  if (normalized.includes('declara')) return { kind: 'green', accent: '#08A889', surface: '#E8FBF7' };
   if (normalized.includes('rubrica') || normalized.includes('sign')) return { kind: 'rubrica', accent: ERUBRICA_COLORS.primary, surface: '#EAFBF4' };
+  if (normalized.includes('cont')) return { kind: 'green', accent: '#08A889', surface: '#E8FBF7' };
+  if (normalized.includes('declara')) return { kind: 'purple', accent: '#6847FF', surface: '#F0EDFF' };
+  if (normalized.includes('people') || normalized.includes('talento') || normalized.includes('rrhh')) return { kind: 'orange', accent: '#F97316', surface: '#FFF3E8' };
   if (normalized.includes('back')) return { kind: 'purple', accent: '#6847FF', surface: '#F0EDFF' };
 
   const palette = [
@@ -2108,6 +2109,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const canUseERubrica = isSuperAdmin(currentUser) || authorizedViews.has('e-rubrica') || services.some(isERubricaService);
   const canUsePortal = isSuperAdmin(currentUser) || services.length > 0;
   const portalFirstName = getDisplayFirstName(currentUser, perfilData?.perfil);
+  const portalAvatarUrl = getProfileAvatarUrl(currentUser, perfilData?.perfil);
   const visibleNotifications = useMemo(() => notifications.filter((notification) => !dismissedNotificationIds.has(notification.id)), [dismissedNotificationIds, notifications]);
   const unreadNotifications = visibleNotifications.filter((notification) => !notification.read).length;
 
@@ -4960,7 +4962,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setActiveView('no-autorizado');
   };
 
-  const dismissNotification = (notificationId: string) => {
+  const dismissNotificationLocal = (notificationId: string) => {
     setDismissedNotificationIds((current) => {
       const next = new Set(current);
       next.add(notificationId);
@@ -4968,7 +4970,25 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     });
   };
 
-  const clearVisibleNotifications = () => {
+  const dismissNotification = async (notificationId: string) => {
+    if (catalogUserId) {
+      try {
+        await dismissNotificacion(catalogUserId, notificationId);
+      } catch (error) {
+        setNotificationsMessage({ type: 'info', text: error instanceof ApiError ? `${error.message} Se oculto solo en el movil.` : 'No se pudo actualizar el backend. Se oculto solo en el movil.' });
+      }
+    }
+    dismissNotificationLocal(notificationId);
+  };
+
+  const clearVisibleNotifications = async () => {
+    if (catalogUserId) {
+      try {
+        await clearNotificaciones(catalogUserId);
+      } catch (error) {
+        setNotificationsMessage({ type: 'info', text: error instanceof ApiError ? `${error.message} Se ocultaron solo en el movil.` : 'No se pudo actualizar el backend. Se ocultaron solo en el movil.' });
+      }
+    }
     setDismissedNotificationIds((current) => {
       const next = new Set(current);
       visibleNotifications.forEach((notification) => next.add(notification.id));
@@ -4978,7 +4998,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   const openNotificationTarget = (notification: NotificacionItem) => {
     const targetView = getNotificationView(notification);
-    dismissNotification(notification.id);
+    dismissNotificationLocal(notification.id);
     setNotificationsOpen(false);
     if (targetView) openView(targetView);
   };
@@ -5250,26 +5270,41 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
         {!loadingMenus && activeView === 'portal' ? (
           <View style={styles.portalStack}>
-            <View style={styles.portalShowcase}>
-              <View style={styles.portalShowcaseIcon}>
-                <Image source={require('./assets/logo-numerica.png')} style={styles.portalShowcaseLogo} />
+            <View style={styles.portalWebHero}>
+              <View style={styles.portalWebTitleRow}>
+                <View style={styles.portalWebLogoShell}>
+                  <Image source={require('./assets/logo-numerica.png')} style={styles.portalWebLogo} />
+                </View>
+                <View style={styles.portalWebTitleCopy}>
+                  <Text style={styles.portalWebTitle}>Servicios Disponibles</Text>
+                  <Text style={styles.portalWebSubtitle}>Selecciona el modulo al que deseas ingresar</Text>
+                </View>
               </View>
-              <View style={styles.portalShowcaseCopy}>
-                <Text style={styles.portalShowcaseTitle}>Servicios Numerica</Text>
-                <Text style={styles.portalShowcaseText}>Elige tu herramienta y continua tu operacion sin cambiar de entorno.</Text>
-                <View style={styles.portalShowcaseBadges}>
-                  <Text style={styles.portalShowcaseBadge}>Facturacion</Text>
-                  <Text style={styles.portalShowcaseBadge}>Firma electronica</Text>
+              <View style={styles.portalWebSessionCard}>
+                <Image source={{ uri: resolveImageUrl(portalAvatarUrl) }} style={styles.portalWebSessionAvatar} />
+                <View style={styles.portalWebSessionCopy}>
+                  <Text style={styles.portalWebSessionName}>{portalFirstName}</Text>
+                  <View style={styles.portalWebSessionStatusRow}>
+                    <View style={styles.portalWebStatusDot} />
+                    <Text style={styles.portalWebSessionStatus}>Sesion activa</Text>
+                  </View>
+                </View>
+              </View>
+              <View style={styles.portalWelcomePanel}>
+                <View style={styles.portalWelcomeCopy}>
+                  <Text style={styles.portalWelcomeEyebrow}>Numerica Software</Text>
+                  <Text style={styles.portalWelcomeTitle}>Bienvenido, {portalFirstName}</Text>
+                  <Text style={styles.portalWelcomeText}>Tus servicios activos estan listos para usarse</Text>
+                </View>
+                <View style={styles.portalWelcomePills}>
+                  <PortalStatusPill icon="check-decagram-outline" label="Disponible" />
+                  <PortalStatusPill icon="pulse" label="Actual" />
+                  <PortalStatusPill icon="shield-check-outline" label="Suscripcion activa" />
                 </View>
               </View>
             </View>
-            <View style={styles.portalSectionHeader}>
-              <View style={styles.portalSectionTitleWrap}>
-                <Text style={styles.portalSectionTitle}>Mis servicios</Text>
-              </View>
-            </View>
 
-            <View style={styles.portalServiceList}>
+            <View style={styles.portalServiceGrid}>
               <PortalServiceCard
                 title="E-FACT"
                 description="Facturacion electronica movil segun menus asignados."
@@ -9254,6 +9289,15 @@ function MetricBox({ value, label }: { value: string | number; label: string }) 
   );
 }
 
+function PortalStatusPill({ icon, label }: { icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; label: string }) {
+  return (
+    <View style={styles.portalStatusPill}>
+      <MaterialCommunityIcons name={icon} size={15} color={EFACT_THEME.colors.primary} />
+      <Text style={styles.portalStatusPillText}>{label}</Text>
+    </View>
+  );
+}
+
 function PortalServiceCard({
   title,
   description,
@@ -9275,29 +9319,28 @@ function PortalServiceCard({
       style={[styles.portalServiceCard, { borderColor: visual.accent }, !enabled && styles.portalServiceCardDisabled]}
       onPress={onPress}
     >
-      <View style={[styles.portalServiceIcon, { backgroundColor: visual.surface, borderColor: visual.accent }]}>
-        {visual.kind === 'efact' ? <Image source={require('./assets/logo-numerica.png')} style={styles.portalServiceLogo} /> : null}
-        {visual.kind === 'orange' ? <Image source={require('./assets/logo-numerica-naranja.png')} style={styles.portalServiceLogo} /> : null}
-        {visual.kind === 'green' ? <Image source={require('./assets/logo-numerica-verde.png')} style={styles.portalServiceLogo} /> : null}
-        {visual.kind === 'purple' ? <Image source={require('./assets/logo-numerica-morado.png')} style={styles.portalServiceLogo} /> : null}
-        {visual.kind === 'rubrica' ? <Image source={require('./assets/logo-numerica-rubrica.png')} style={styles.portalServiceLogoWide} /> : null}
-        {['document', 'calculator', 'pencil', 'briefcase'].includes(visual.kind) ? <PortalServiceGlyph kind={visual.kind} /> : null}
+      <View style={[styles.portalServiceTop, { backgroundColor: visual.accent }]}>
+        <View style={[styles.portalServiceLogoPlate, { backgroundColor: visual.surface }]}>
+          {visual.kind === 'efact' ? <Image source={require('./assets/logo-numerica.png')} style={styles.portalServiceLogo} /> : null}
+          {visual.kind === 'orange' ? <Image source={require('./assets/logo-numerica-naranja.png')} style={styles.portalServiceLogo} /> : null}
+          {visual.kind === 'green' ? <Image source={require('./assets/logo-numerica-verde.png')} style={styles.portalServiceLogo} /> : null}
+          {visual.kind === 'purple' ? <Image source={require('./assets/logo-numerica-morado.png')} style={styles.portalServiceLogo} /> : null}
+          {visual.kind === 'rubrica' ? <Image source={require('./assets/logo-numerica-rubrica.png')} style={styles.portalServiceLogoWide} /> : null}
+          {['document', 'calculator', 'pencil', 'briefcase'].includes(visual.kind) ? <PortalServiceGlyph kind={visual.kind} /> : null}
+        </View>
       </View>
       <View style={styles.portalServiceCopy}>
+        <View style={[styles.portalServiceAccentLine, { backgroundColor: visual.accent }]} />
         <Text style={styles.portalServiceTitle}>{title}</Text>
         <Text style={styles.portalServiceDescription}>{description}</Text>
-      </View>
-      <View style={styles.portalServiceActionWrap}>
-        <Text
-          style={[styles.portalServicePill, { borderColor: visual.accent, color: visual.accent }]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.62}
-        >
-          {enabled ? 'ABRIR' : 'PRÓXIMAMENTE'}
-        </Text>
-        <View style={[styles.portalServiceArrow, { borderColor: visual.accent }]}>
-          <Text style={[styles.portalServiceArrowText, { color: visual.accent }]}>›</Text>
+        <View style={styles.portalServiceBadges}>
+          <Text style={[styles.portalServicePill, { borderColor: visual.accent, color: visual.accent }]}>
+            {enabled ? 'Disponible' : 'No disponible'}
+          </Text>
+          <Text style={styles.portalServiceSubscription}>Suscripcion activa</Text>
+        </View>
+        <View style={[styles.portalServiceButton, { backgroundColor: enabled ? visual.accent : '#B8C5D2' }]}>
+          <Text style={styles.portalServiceButtonText}>Ingresar</Text>
         </View>
       </View>
     </Pressable>
