@@ -80,13 +80,9 @@ import { CatalogCard, SubcategoriaCard } from './src/components/catalog/CatalogC
 import { InitialsAvatar, MenuItem } from './src/components/ui/MenuItem';
 import { BiometricSetupModal, BrandLockup, BrandMark, LoadingScreen, ScreenFrame } from './src/components/auth/AuthWidgets';
 import { EFACT_THEME, ERUBRICA_COLORS } from './src/styles/theme';
-<<<<<<< HEAD
-import { getDocumentSerieOptions, getNextSequence, getNextSequenceFromOptions, getPuntoDocumentSequences, getPuntoSerie, getSerieCodemisorFromOptions, getSerieLabel, getSerieLabelFromOptions, getSerieValue, normalizeSerieCode, serieNeedsInitialSequence, usePreferredDocumentSerie } from './src/utils/documentSeries';
+import { getDocumentSerieOptions, getNextSequence, getNextSequenceFromOptions, getPuntoDocumentSequences, getPuntoSerie, getSelectedDocumentSerieOption, getSerieCodemisorFromOptions, getSerieLabel, getSerieLabelFromOptions, getSerieValue, normalizeSerieCode, serieNeedsInitialSequence, usePreferredDocumentSerie } from './src/utils/documentSeries';
 import type { NuevaFacturaFormState, NuevaFacturaLinea } from './src/types/invoices';
 import { formatDocumentDate, formatMoney, listItemKey } from './src/utils/documentFormatting';
-=======
-import { getDocumentSerieOptions, getNextSequence, getNextSequenceFromOptions, getPuntoSerie, getSelectedDocumentSerieOption, getSerieCodemisorFromOptions, getSerieLabel, getSerieLabelFromOptions, getSerieValue, normalizeSerieCode, serieNeedsInitialSequence, usePreferredDocumentSerie } from './src/utils/documentSeries';
->>>>>>> 900e6b1 (Secuencias funcional)
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'change';
 
