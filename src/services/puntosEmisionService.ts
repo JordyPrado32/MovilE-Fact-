@@ -70,17 +70,23 @@ function mergeSecuencias(data: PuntosEmisionData, secuencias: ApiRow[]): PuntosE
 }
 
 function sameCaja(caja: PuntoEmision, row: ApiRow) {
-  const cajaSerie = normalizeSerie(caja.serieFactura || `${caja.establecimiento ?? ''}${caja.puntoEmision ?? ''}`);
+  const cajaSerie = normalizeSerie(caja.serieFactura || (caja.establecimiento && caja.puntoEmision ? `${caja.establecimiento}${caja.puntoEmision}` : ''));
   const rowSerie = normalizeSerie(pickValue(row, ['serieFactura', 'SerieFactura', 'serie', 'Serie']));
   if (cajaSerie && rowSerie && cajaSerie === rowSerie) return true;
+
+  const cajaEstablecimiento = normalizeSeriePart(caja.establecimiento);
+  const rowEstablecimiento = normalizeSeriePart(pickValue(row, ['establecimiento', 'Establecimiento', 'codEstablecimiento', 'CodEstablecimiento', 'codigoEstablecimiento', 'CodigoEstablecimiento']));
+  const cajaPunto = normalizeSeriePart(caja.puntoEmision);
+  const rowPunto = normalizeSeriePart(pickValue(row, ['puntoEmision', 'PuntoEmision', 'punto', 'Punto', 'ptoEmision', 'PtoEmision']));
+  if (cajaEstablecimiento && rowEstablecimiento && cajaPunto && rowPunto) {
+    return cajaEstablecimiento === rowEstablecimiento && cajaPunto === rowPunto;
+  }
 
   const cajaNum = text(caja.numCaja);
   const rowNum = text(pickValue(row, ['numCaja', 'NumCaja', 'caja', 'Caja']));
   if (cajaNum && rowNum && cajaNum === rowNum) return true;
 
-  const cajaPunto = text(caja.puntoEmision);
-  const rowPunto = text(pickValue(row, ['puntoEmision', 'PuntoEmision', 'punto', 'Punto']));
-  return Boolean(cajaPunto && rowPunto && cajaPunto === rowPunto);
+  return false;
 }
 
 function normalizeRows(response: ApiRow[] | ApiRow): ApiRow[] {
@@ -113,6 +119,11 @@ function normalizeKey(value: string) {
 
 function normalizeSerie(value: unknown) {
   return text(value).replace(/\D/g, '').slice(0, 6);
+}
+
+function normalizeSeriePart(value: unknown) {
+  const digits = text(value).replace(/\D/g, '');
+  return digits ? digits.padStart(3, '0').slice(-3) : '';
 }
 
 function isRecord(value: unknown): value is ApiRow {

@@ -158,8 +158,8 @@ export function getDocumentSerieOptions(preparacion: FacturaPreparacion | null, 
   const prepared = (preparacion?.series ?? []).map((item, index) => {
     const value = normalizeSerieDisplay(getSerieValue(item));
     if (value && !value.toLowerCase().startsWith('serie ')) return { ...item, serieRaw: value, serieVisual: value };
-    return puntos[index] ?? item;
-  });
+    return puntos.length > 0 ? null : item;
+  }).filter((item): item is DocumentSerieOption => Boolean(item));
   const source = puntos.length > 0 ? [...puntos, ...prepared] : prepared;
   const unique = new Map<string, DocumentSerieOption>();
   source.forEach((item) => {
@@ -193,6 +193,7 @@ export function getNextSequenceFromOptions(options: DocumentSerieOption[], serie
   const selected = options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
   const row = selected as (DocumentSerieOption & Record<string, unknown>) | undefined;
   const candidate = numberValue(row?.siguiente ?? row?.proximo ?? row?.secuencial ?? row?.numeroSecuencia ?? row?.sec);
+  if (selected && candidate <= 0) return '';
   if (candidate <= 0) return fallback;
   const alreadyNext = row?.siguiente || row?.proximo;
   return String(alreadyNext ? candidate : candidate + 1).padStart(9, '0');

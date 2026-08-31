@@ -4974,9 +4974,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     if (catalogUserId) {
       try {
         await dismissNotificacion(catalogUserId, notificationId);
-      } catch (error) {
-        setNotificationsMessage({ type: 'info', text: error instanceof ApiError ? `${error.message} Se oculto solo en el movil.` : 'No se pudo actualizar el backend. Se oculto solo en el movil.' });
-      }
+      } catch {}
     }
     dismissNotificationLocal(notificationId);
   };
@@ -4985,9 +4983,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     if (catalogUserId) {
       try {
         await clearNotificaciones(catalogUserId);
-      } catch (error) {
-        setNotificationsMessage({ type: 'info', text: error instanceof ApiError ? `${error.message} Se ocultaron solo en el movil.` : 'No se pudo actualizar el backend. Se ocultaron solo en el movil.' });
-      }
+      } catch {}
     }
     setDismissedNotificationIds((current) => {
       const next = new Set(current);
