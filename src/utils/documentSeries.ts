@@ -238,7 +238,8 @@ export function usePreferredDocumentSerie(serieOptions: DocumentSerieOption[], c
     if (!preferred) return;
     const key = `${preferred}:${preferredOption?.esPrincipal ? 'principal' : 'fallback'}`;
     if (appliedKey === key) return;
-    if (preferredOption?.esPrincipal || !currentSerie) onSelectSerie(preferred);
+    const hasCurrentSerie = Boolean(getSelectedDocumentSerieOption(serieOptions, currentSerie));
+    if (preferredOption?.esPrincipal || !currentSerie || !hasCurrentSerie) onSelectSerie(preferred);
     setAppliedKey(key);
   }, [appliedKey, currentSerie, serieOptions]);
 }

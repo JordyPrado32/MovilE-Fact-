@@ -41,8 +41,8 @@ export function InitialSequenceModal({
           <View style={styles.header}>
             <View style={styles.headerCopy}>
               <Text style={styles.eyebrow}>CONFIGURACION DEL DOCUMENTO</Text>
-              <Text style={styles.title}>Configuración inicial de secuencia</Text>
-              <Text style={styles.help}>Antes de emitir tu primera {documentLabel} en este sistema, indícanos si ya habías generado documentos anteriormente.</Text>
+              <Text style={styles.title}>Configurar secuencia</Text>
+              <Text style={styles.help}>Esta serie no tiene secuencia. Indica si ya emitiste {documentLabel} antes.</Text>
             </View>
             <View style={styles.serieBox}>
               <Text style={styles.serieValue}>{serie || '---'}</Text>
@@ -68,7 +68,7 @@ export function InitialSequenceModal({
                   <Text style={[styles.choiceText, habiaGenerado === false && styles.choiceTextActive]}>No</Text>
                 </Pressable>
               </View>
-              <Text style={styles.note}>Si ya emitías este documento antes, puedes continuar la numeración desde la secuencia donde te quedaste.</Text>
+              <Text style={styles.note}>Si respondes “Si”, continuamos desde el último número usado.</Text>
             </View>
 
             {habiaGenerado ? (
@@ -93,7 +93,7 @@ export function InitialSequenceModal({
             {habiaGenerado === false ? (
               <View style={styles.section}>
                 <Text style={styles.question}>Se iniciará la numeración normal.</Text>
-                <Text style={styles.note}>La siguiente emisión comenzará desde la secuencia inicial configurada para este documento.</Text>
+                <Text style={styles.note}>La siguiente emisión iniciará desde la numeración normal.</Text>
               </View>
             ) : null}
 
@@ -103,7 +103,7 @@ export function InitialSequenceModal({
           <View style={styles.footer}>
             <View style={styles.footerCopy}>
               <Text style={styles.footerTitle}>Configuracion unica</Text>
-              <Text style={styles.note}>Este ajuste solo se solicita la primera vez para cada tipo de documento.</Text>
+              <Text style={styles.note}>Solo se pide una vez por serie y documento.</Text>
             </View>
             <Pressable style={[styles.saveButton, (!canSave || saving) && styles.saveButtonDisabled]} onPress={handleSave}>
               <Text style={styles.saveButtonText}>{saving ? 'Guardando...' : 'Guardar y continuar'}</Text>
@@ -120,72 +120,73 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(8, 25, 42, 0.55)',
     justifyContent: 'center',
-    padding: 18,
+    padding: 14,
   },
   card: {
-    maxHeight: '88%',
-    borderRadius: 24,
+    maxHeight: '82%',
+    borderRadius: 22,
     backgroundColor: '#F8FCFF',
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#CBE1F3',
   },
   header: {
-    padding: 22,
+    padding: 16,
     backgroundColor: '#EEF8FF',
     borderBottomWidth: 1,
     borderBottomColor: '#D5E6F4',
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
-  headerCopy: { flex: 1, gap: 8 },
+  headerCopy: { flex: 1, gap: 6, paddingRight: 4 },
   eyebrow: {
     alignSelf: 'flex-start',
     borderRadius: 999,
     backgroundColor: '#D6ECFA',
     color: '#006AAE',
     fontWeight: '900',
-    letterSpacing: 1.5,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    fontSize: 12,
+    letterSpacing: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    fontSize: 10,
   },
-  title: { color: '#132D45', fontSize: 23, fontWeight: '900' },
-  help: { color: '#5C7186', fontSize: 16, lineHeight: 24 },
+  title: { color: '#132D45', fontSize: 22, fontWeight: '900' },
+  help: { color: '#5C7186', fontSize: 13, lineHeight: 19 },
   serieBox: {
-    minWidth: 96,
-    height: 96,
-    borderRadius: 22,
+    minWidth: 82,
+    height: 82,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: '#B8D8F0',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#E8F5FE',
+    marginTop: 18,
   },
-  serieValue: { color: '#006AAE', fontSize: 18, fontWeight: '900' },
-  serieLabel: { color: '#4C6D8B', fontSize: 12, fontWeight: '900', marginTop: 6 },
+  serieValue: { color: '#006AAE', fontSize: 16, fontWeight: '900' },
+  serieLabel: { color: '#4C6D8B', fontSize: 10, fontWeight: '900', marginTop: 5 },
   closeButton: {
     position: 'absolute',
-    right: 12,
-    top: 12,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    right: 10,
+    top: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#CBE1F3',
   },
-  body: { maxHeight: 430 },
-  bodyContent: { padding: 20, gap: 16 },
+  body: { maxHeight: 360 },
+  bodyContent: { padding: 14, gap: 12 },
   section: {
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: '#CBE1F3',
     backgroundColor: '#FFFFFF',
-    padding: 16,
-    gap: 12,
+    padding: 13,
+    gap: 10,
   },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   step: {
@@ -194,43 +195,43 @@ const styles = StyleSheet.create({
     color: '#006AAE',
     fontWeight: '900',
     letterSpacing: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    fontSize: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 11,
   },
   badge: {
     borderRadius: 999,
     backgroundColor: '#E6F4FD',
     color: '#006AAE',
     fontWeight: '900',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    fontSize: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 11,
   },
-  question: { color: '#17324D', fontSize: 15, fontWeight: '900' },
+  question: { color: '#17324D', fontSize: 13, fontWeight: '900' },
   choiceRow: { flexDirection: 'row', gap: 10 },
   choice: {
     flex: 1,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#CBE1F3',
-    paddingVertical: 15,
+    paddingVertical: 12,
     alignItems: 'center',
     backgroundColor: '#F5FAFE',
   },
   choiceActive: { borderColor: '#0781C8', backgroundColor: '#E8F6FF' },
-  choiceText: { color: '#52687D', fontWeight: '900', fontSize: 16 },
+  choiceText: { color: '#52687D', fontWeight: '900', fontSize: 15 },
   choiceTextActive: { color: '#006AAE' },
-  note: { color: '#5C7186', fontSize: 14, lineHeight: 21 },
+  note: { color: '#5C7186', fontSize: 12, lineHeight: 18 },
   input: {
-    height: 58,
+    height: 50,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#8BC7F0',
     backgroundColor: '#FFFFFF',
     color: '#132D45',
     paddingHorizontal: 16,
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: '800',
   },
   nextHint: {
@@ -238,27 +239,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#DDF0FC',
     color: '#006AAE',
     fontWeight: '800',
-    padding: 12,
+    padding: 10,
+    fontSize: 12,
   },
   error: { color: '#9D1C1C', fontWeight: '800' },
   footer: {
     borderTopWidth: 1,
     borderTopColor: '#D5E6F4',
-    padding: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
+    padding: 14,
+    gap: 12,
   },
   footerCopy: { flex: 1, gap: 5 },
-  footerTitle: { color: '#132D45', fontWeight: '900', fontSize: 16 },
+  footerTitle: { color: '#132D45', fontWeight: '900', fontSize: 14 },
   saveButton: {
-    minWidth: 190,
+    width: '100%',
     borderRadius: 16,
     backgroundColor: '#168AD0',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     alignItems: 'center',
   },
   saveButtonDisabled: { opacity: 0.55 },
-  saveButtonText: { color: '#FFFFFF', fontWeight: '900', fontSize: 16 },
+  saveButtonText: { color: '#FFFFFF', fontWeight: '900', fontSize: 15 },
 });
