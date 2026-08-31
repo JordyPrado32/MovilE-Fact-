@@ -880,6 +880,26 @@ function getNotificationTone(notification: NotificacionItem) {
   return 'info';
 }
 
+function getNotificationView(notification: NotificacionItem): WorkspaceView | null {
+  const source = normalizeText(`${notification.view ?? ''} ${notification.route ?? ''} ${notification.module ?? ''} ${notification.type ?? ''} ${notification.title} ${notification.text}`);
+  const routeMap: Array<[WorkspaceView, string[]]> = [
+    ['mis-notas-credito', ['nota-credito', 'notas-credito', 'credito']],
+    ['mis-notas-debito', ['nota-debito', 'notas-debito', 'debito']],
+    ['mis-liquidaciones-compra', ['liquidacion', 'liquidaciones', 'compra']],
+    ['mis-guias-remision', ['guia-remision', 'guias-remision', 'remision']],
+    ['retenciones', ['retencion', 'retenciones']],
+    ['mis-facturas', ['factura', 'facturas']],
+    ['clientes', ['cliente', 'clientes', 'proveedor', 'proveedores']],
+    ['productos', ['producto', 'productos', 'categoria', 'subcategoria']],
+    ['firma', ['firma', 'certificado']],
+    ['punto-emision', ['punto-emision', 'puntos-emision', 'caja', 'serie', 'secuencia']],
+    ['cuentas-cobrar', ['cuentas-cobrar', 'cobrar', 'saldo']],
+    ['e-rubrica', ['rubrica', 'e-sign']],
+    ['bot', ['numi', 'bot', 'asistente']],
+  ];
+  return routeMap.find(([, terms]) => terms.some((term) => source.includes(term)))?.[0] ?? null;
+}
+
 function getDisplayFirstName(user: LoginResponse, perfil?: PerfilUsuario | null) {
   const value = perfil?.nombres || user.nombres || user.email || 'Usuario';
   return value.split(' ')[0].toLocaleUpperCase('es-EC');
@@ -1935,6 +1955,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [notifications, setNotifications] = useState<NotificacionItem[]>([]);
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState<Set<string>>(new Set());
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [notificationsMessage, setNotificationsMessage] = useState<MessageState>(null);
   const [menus, setMenus] = useState<DynamicMenu[]>(getInitialMenus(currentUser));
@@ -2087,7 +2108,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const canUseERubrica = isSuperAdmin(currentUser) || authorizedViews.has('e-rubrica') || services.some(isERubricaService);
   const canUsePortal = isSuperAdmin(currentUser) || services.length > 0;
   const portalFirstName = getDisplayFirstName(currentUser, perfilData?.perfil);
-  const unreadNotifications = notifications.filter((notification) => !notification.read).length;
+  const visibleNotifications = useMemo(() => notifications.filter((notification) => !dismissedNotificationIds.has(notification.id)), [dismissedNotificationIds, notifications]);
+  const unreadNotifications = visibleNotifications.filter((notification) => !notification.read).length;
 
   useEffect(() => {
     if (activeView !== 'nueva-factura' || !catalogUserId) return;
@@ -4938,6 +4960,29 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setActiveView('no-autorizado');
   };
 
+  const dismissNotification = (notificationId: string) => {
+    setDismissedNotificationIds((current) => {
+      const next = new Set(current);
+      next.add(notificationId);
+      return next;
+    });
+  };
+
+  const clearVisibleNotifications = () => {
+    setDismissedNotificationIds((current) => {
+      const next = new Set(current);
+      visibleNotifications.forEach((notification) => next.add(notification.id));
+      return next;
+    });
+  };
+
+  const openNotificationTarget = (notification: NotificacionItem) => {
+    const targetView = getNotificationView(notification);
+    dismissNotification(notification.id);
+    setNotificationsOpen(false);
+    if (targetView) openView(targetView);
+  };
+
   useEffect(() => {
     if (!menuOpen) {
       drawerProgress.setValue(0);
@@ -6237,11 +6282,18 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             <View style={styles.notificationsHeader}>
               <View>
                 <Text style={styles.notificationsTitle}>NOTIFICACIONES</Text>
-                <Text style={styles.notificationsSubtitle}>{loadingNotifications ? 'Cargando actividad...' : `${notifications.length} registros del sistema`}</Text>
+                <Text style={styles.notificationsSubtitle}>{loadingNotifications ? 'Cargando actividad...' : `${visibleNotifications.length} registros del sistema`}</Text>
               </View>
-              <Pressable style={styles.menuCloseButton} onPress={() => setNotificationsOpen(false)}>
-                <Text style={styles.menuCloseText}>×</Text>
-              </Pressable>
+              <View style={styles.notificationsHeaderActions}>
+                {visibleNotifications.length > 0 ? (
+                  <Pressable style={styles.notificationsClearButton} onPress={clearVisibleNotifications}>
+                    <Text style={styles.notificationsClearText}>Borrar todo</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable style={styles.menuCloseButton} onPress={() => setNotificationsOpen(false)}>
+                  <Text style={styles.menuCloseText}>×</Text>
+                </Pressable>
+              </View>
             </View>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.notificationsList}>
               {notificationsMessage ? <MessageBox message={notificationsMessage} /> : null}
@@ -6251,14 +6303,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   <Text style={styles.notificationText}>Cargando notificaciones...</Text>
                 </View>
               ) : null}
-              {!loadingNotifications && !notifications.length && !notificationsMessage ? (
+              {!loadingNotifications && !visibleNotifications.length && !notificationsMessage ? (
                 <View style={styles.notificationEmpty}>
                   <Text style={styles.notificationTitle}>Sin notificaciones</Text>
                   <Text style={styles.notificationText}>No hay actividad pendiente para mostrar.</Text>
                 </View>
               ) : null}
-              {!loadingNotifications ? notifications.map((notification) => {
+              {!loadingNotifications ? visibleNotifications.map((notification) => {
                 const tone = getNotificationTone(notification);
+                const targetView = getNotificationView(notification);
                 const itemToneStyle = tone === 'danger'
                   ? styles.notificationItemDanger
                   : tone === 'warning'
@@ -6280,6 +6333,16 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     <Text style={styles.notificationTitle}>{notification.title}</Text>
                     <Text style={styles.notificationText}>{notification.text}</Text>
                     {notification.date ? <Text style={styles.notificationMeta}>{notification.date}</Text> : null}
+                    <View style={styles.notificationActions}>
+                      {targetView ? (
+                        <Pressable style={styles.notificationActionPrimary} onPress={() => openNotificationTarget(notification)}>
+                          <Text style={styles.notificationActionPrimaryText}>Ir</Text>
+                        </Pressable>
+                      ) : null}
+                      <Pressable style={styles.notificationActionGhost} onPress={() => dismissNotification(notification.id)}>
+                        <Text style={styles.notificationActionGhostText}>Descartar</Text>
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
               );

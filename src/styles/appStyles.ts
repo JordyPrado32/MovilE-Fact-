@@ -3017,6 +3017,24 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  notificationsHeaderActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  notificationsClearButton: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.22)',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  notificationsClearText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900',
+  },
   notificationsTitle: {
     color: '#FFFFFF',
     flexShrink: 1,
@@ -3101,6 +3119,37 @@ export const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     marginTop: 2,
+  },
+  notificationActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  notificationActionPrimary: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  notificationActionPrimaryText: {
+    color: '#00649D',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  notificationActionGhost: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  notificationActionGhostText: {
+    color: '#E7F2FF',
+    fontSize: 11,
+    fontWeight: '900',
   },
   notificationsLoading: {
     alignItems: 'center',

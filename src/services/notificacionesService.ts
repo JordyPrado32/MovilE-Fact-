@@ -7,6 +7,9 @@ export type NotificacionItem = {
   date?: string | null;
   read?: boolean;
   type?: string | null;
+  route?: string | null;
+  view?: string | null;
+  module?: string | null;
 };
 
 type ApiRow = Record<string, unknown>;
@@ -85,6 +88,9 @@ function toNotificationItem(row: ApiRow): NotificacionItem {
     date,
     read: booleanValue(pickValue(row, ['leido', 'Leido', 'read', 'Read', 'visto', 'Visto'])),
     type: text(pickValue(row, ['tipo', 'Tipo', 'categoria', 'Categoria', 'nivel', 'Nivel'])) || null,
+    route: text(pickValue(row, ['ruta', 'Ruta', 'url', 'Url', 'path', 'Path', 'link', 'Link'])) || null,
+    view: text(pickValue(row, ['vista', 'Vista', 'view', 'View', 'pantalla', 'Pantalla'])) || null,
+    module: text(pickValue(row, ['modulo', 'Modulo', 'module', 'Module', 'servicio', 'Servicio'])) || null,
   };
 }
 
