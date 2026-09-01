@@ -177,6 +177,11 @@ export function getSelectedDocumentSerieOption(options: DocumentSerieOption[], s
   return options.find((item) => normalizeSerieDisplay(item.serieRaw) === normalized || normalizeSerieDisplay(item.serieVisual) === normalized);
 }
 
+export function getEffectiveDocumentSerie(options: DocumentSerieOption[], serie: string) {
+  const selected = getSelectedDocumentSerieOption(options, serie);
+  return getSerieValue(selected ?? options[0]);
+}
+
 export function serieNeedsInitialSequence(options: DocumentSerieOption[], serie: string) {
   const selected = getSelectedDocumentSerieOption(options, serie);
   if (!selected) return false;
@@ -245,12 +250,12 @@ export function usePreferredDocumentSerie(serieOptions: DocumentSerieOption[], c
 }
 
 export function getSerieLabelFromOptions(options: DocumentSerieOption[], serie: string, fallback: string) {
-  const selected = options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
+  const selected = getSelectedDocumentSerieOption(options, serie);
   return selected?.serieVisual || selected?.serieRaw || serie || fallback;
 }
 
 export function getNextSequenceFromOptions(options: DocumentSerieOption[], serie: string, fallback: string) {
-  const selected = options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
+  const selected = getSelectedDocumentSerieOption(options, serie);
   const row = selected as (DocumentSerieOption & Record<string, unknown>) | undefined;
   const candidate = sequenceCandidate(row);
   if (selected && candidate <= 0) return '';

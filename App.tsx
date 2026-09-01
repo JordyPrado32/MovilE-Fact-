@@ -80,7 +80,7 @@ import { CatalogCard, SubcategoriaCard } from './src/components/catalog/CatalogC
 import { InitialsAvatar, MenuItem } from './src/components/ui/MenuItem';
 import { BiometricSetupModal, BrandLockup, BrandMark, LoadingScreen, ScreenFrame } from './src/components/auth/AuthWidgets';
 import { EFACT_THEME, ERUBRICA_COLORS } from './src/styles/theme';
-import { getDocumentSerieOptions, getNextSequence, getNextSequenceFromOptions, getPuntoDocumentSequences, getPuntoSerie, getSelectedDocumentSerieOption, getSerieCodemisorFromOptions, getSerieLabel, getSerieLabelFromOptions, getSerieValue, normalizeSerieCode, serieNeedsInitialSequence, usePreferredDocumentSerie } from './src/utils/documentSeries';
+import { getDocumentSerieOptions, getEffectiveDocumentSerie, getNextSequence, getNextSequenceFromOptions, getPuntoDocumentSequences, getPuntoSerie, getSelectedDocumentSerieOption, getSerieCodemisorFromOptions, getSerieLabel, getSerieLabelFromOptions, getSerieValue, normalizeSerieCode, serieNeedsInitialSequence, usePreferredDocumentSerie } from './src/utils/documentSeries';
 import type { NuevaFacturaFormState, NuevaFacturaLinea } from './src/types/invoices';
 import { formatDocumentDate, formatMoney, listItemKey } from './src/utils/documentFormatting';
 
@@ -2121,33 +2121,38 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     preparacion: FacturaPreparacion | null,
     setForm: (updater: (current: any) => any) => void,
   ) => {
-    if (activeView !== expectedView || !catalogUserId || !serie || !puntosData?.cajas?.length) return () => undefined;
+    if (activeView !== expectedView || !catalogUserId || !puntosData?.cajas?.length) return () => undefined;
 
     let mounted = true;
     const serieOptions = getDocumentSerieOptions(preparacion, puntosData, kind);
-    const codemisor = getSerieCodemisorFromOptions(serieOptions, serie, preparacion);
+    const effectiveSerie = getEffectiveDocumentSerie(serieOptions, serie) || serie;
+    if (!effectiveSerie) return () => undefined;
+    if (effectiveSerie !== serie) {
+      setForm((current) => current.serie === effectiveSerie ? current : { ...current, serie: effectiveSerie });
+    }
+    const codemisor = getSerieCodemisorFromOptions(serieOptions, effectiveSerie, preparacion);
     const openInitialPrompt = () => {
-      setForm((current) => current.serie === serie && current.numeroFactura ? { ...current, numeroFactura: '' } : current);
+      setForm((current) => current.serie === effectiveSerie && current.numeroFactura ? { ...current, numeroFactura: '' } : current);
       setSequencePrompt((current) => (
-        current?.documento === documento && current?.serie === serie
+        current?.documento === documento && current?.serie === effectiveSerie
           ? current
-          : { documento, documentLabel, serie, codemisor, form: kind }
+          : { documento, documentLabel, serie: effectiveSerie, codemisor, form: kind }
       ));
     };
 
-    getPuntoEmisionSiguienteSecuencial(catalogUserId, documento, serie, codemisor)
+    getPuntoEmisionSiguienteSecuencial(catalogUserId, documento, effectiveSerie, codemisor)
       .then((response) => {
         if (!mounted) return;
         const proximo = response.inicializada ? response.proximo?.trim() ?? '' : '';
-        setForm((current) => current.serie === serie && current.numeroFactura !== proximo ? { ...current, numeroFactura: proximo } : current);
+        setForm((current) => current.serie === effectiveSerie && current.numeroFactura !== proximo ? { ...current, numeroFactura: proximo } : current);
         if (!response.inicializada) {
           openInitialPrompt();
         } else {
-          setSequencePrompt((current) => current?.documento === documento && current?.serie === serie ? null : current);
+          setSequencePrompt((current) => current?.documento === documento && current?.serie === effectiveSerie ? null : current);
         }
       })
       .catch(() => {
-        if (mounted && serieNeedsInitialSequence(serieOptions, serie)) openInitialPrompt();
+        if (mounted && serieNeedsInitialSequence(serieOptions, effectiveSerie)) openInitialPrompt();
       });
 
     return () => {
@@ -6928,10 +6933,11 @@ function NuevaFacturaMobileScreen({
   );
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'factura');
   usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
+  const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
   const formaPagoOptions = preparacion?.formasPago ?? [];
   const ivaOptions = preparacion?.porcentajesIva ?? [];
-  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-001'));
-  const invoiceNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, form.serie, 1));
+  const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-001'));
+  const invoiceNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, effectiveSerie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie, 1));
   const referenciaWords = form.referencia.trim().split(/\s+/).filter(Boolean).length;
   const displayProductos = productos.length > 0 ? productos.slice(0, 2) : lineas.map((item) => item.producto).slice(0, 2);
   const [step, setStep] = useState(0);
@@ -6960,9 +6966,8 @@ function NuevaFacturaMobileScreen({
             <DropdownField
               label="Serie"
               options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, form.serie)) + 1, 0) || null}
-              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-              allowClear
+              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
             />
           </View>
           <View style={styles.invoiceHeaderBox}>
@@ -7110,9 +7115,8 @@ function NuevaFacturaMobileScreen({
         <DropdownField
           label="Serie"
           options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-          value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, form.serie)) + 1, 0) || null}
-          onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-          allowClear
+          value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
+          onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
         />
         <Field label="Correo adicional (opcional)" value={form.correoAdicional} onChangeText={(value) => onChange('correoAdicional', value)} autoCapitalize="none" keyboardType="email-address" />
         <View style={styles.invoiceReferenceHeader}>
@@ -7217,8 +7221,9 @@ function NuevaNotaCreditoMobileScreen({
   );
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'notaCredito');
   usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
-  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
-  const notaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, form.serie));
+  const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
+  const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
+  const notaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, effectiveSerie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie));
   const addDefaultLine = () => onAddLinea({
     codproducto: 0,
     codprincipal: 'NC',
@@ -7245,9 +7250,8 @@ function NuevaNotaCreditoMobileScreen({
             <DropdownField
               label="Serie"
               options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, form.serie)) + 1, 0) || null}
-              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-              allowClear
+              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
             />
           </View>
           <View style={styles.invoiceHeaderBox}>
@@ -7567,8 +7571,9 @@ function NuevaNotaDebitoMobileScreen({
   );
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'notaDebito');
   usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
-  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
-  const notaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, form.serie, 1158));
+  const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
+  const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
+  const notaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, effectiveSerie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie, 1158));
   const [step, setStep] = useState(0);
   const handleClear = () => {
     onClear();
@@ -7588,9 +7593,8 @@ function NuevaNotaDebitoMobileScreen({
             <DropdownField
               label="Serie"
               options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, form.serie)) + 1, 0) || null}
-              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-              allowClear
+              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
             />
           </View>
           <View style={styles.invoiceHeaderBox}>
@@ -7887,8 +7891,9 @@ function NuevaLiquidacionCompraMobileScreen({
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'liquidacion');
   usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
   const formaPagoOptions = preparacion?.formasPago ?? [];
-  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
-  const liquidacionNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, form.serie));
+  const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
+  const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
+  const liquidacionNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, effectiveSerie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie));
   const [step, setStep] = useState(0);
   const handleClear = () => {
     onClear();
@@ -7908,9 +7913,8 @@ function NuevaLiquidacionCompraMobileScreen({
             <DropdownField
               label="Serie"
               options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, form.serie)) + 1, 0) || null}
-              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-              allowClear
+              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
             />
           </View>
           <View style={styles.invoiceHeaderBox}>
@@ -8218,8 +8222,9 @@ function NuevaGuiaRemisionMobileScreen({
 }) {
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'guia');
   usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
-  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
-  const guiaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, form.serie));
+  const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
+  const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
+  const guiaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, effectiveSerie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie));
   const totalCantidad = detalles.reduce((sum, item) => sum + (Number(item.cantidad.replace(',', '.')) || 0), 0);
   const [step, setStep] = useState(0);
   const handleClear = () => {
@@ -8240,9 +8245,8 @@ function NuevaGuiaRemisionMobileScreen({
             <DropdownField
               label="Serie guia"
               options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, form.serie)) + 1, 0) || null}
-              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-              allowClear
+              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
             />
           </View>
           <View style={styles.invoiceHeaderBox}>
@@ -8311,9 +8315,8 @@ function NuevaGuiaRemisionMobileScreen({
           <DropdownField
             label="Punto de emision"
             options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-            value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, form.serie)) + 1, 0) || null}
-            onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-            allowClear
+            value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
+            onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
           />
           <Field label="Placa" value={form.placa} onChangeText={(value) => onChange('placa', value)} autoCapitalize="characters" />
         </View>
