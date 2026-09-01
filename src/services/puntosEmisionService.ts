@@ -3,6 +3,15 @@ import { PuntoEmision, PuntosEmisionData } from '../types/business';
 
 export type PuntoDocumentoKey = 'factura' | 'nota-credito' | 'nota-debito' | 'liquidacion-compra' | 'guia-remision' | 'retencion';
 
+type PuntoSecuencialResponse = {
+  documento: string;
+  serie: string;
+  inicializada: boolean;
+  secuenciaAnterior?: string | null;
+  proximo?: string | null;
+  requiereConfiguracionInicial?: boolean;
+};
+
 export async function getPuntosEmision(userId: number) {
   const data = await apiRequest<PuntosEmisionData>(`/api/cajas?idUsuario=${userId}`);
   return enrichPuntosEmisionSequences(userId, data);
@@ -17,13 +26,11 @@ export async function getPuntoEmisionSiguienteSecuencial(userId: number, documen
   if (codemisor) params.set('codEmisor', String(codemisor));
 
   try {
-    return await apiRequest<{
-      documento: string;
-      serie: string;
-      inicializada: boolean;
-      secuenciaAnterior?: string | null;
-      proximo?: string | null;
-    }>(`/api/cajas/siguiente-secuencial?${params.toString()}`);
+    const response = await apiRequest<PuntoSecuencialResponse>(`/api/cajas/siguiente-secuencial?${params.toString()}`);
+    return {
+      ...response,
+      requiereConfiguracionInicial: response.inicializada === false,
+    };
   } catch (error) {
     if (!isFallbackStatus(error)) throw error;
     return getLegacySiguienteSecuencial(userId, documento, serie, codemisor);
@@ -31,6 +38,17 @@ export async function getPuntoEmisionSiguienteSecuencial(userId: number, documen
 }
 
 async function getLegacySiguienteSecuencial(userId: number, documento: PuntoDocumentoKey, serie: string, codemisor?: number | null) {
+  if (documento !== 'factura') {
+    return {
+      documento,
+      serie,
+      inicializada: false,
+      secuenciaAnterior: null,
+      proximo: null,
+      requiereConfiguracionInicial: true,
+    };
+  }
+
   const rawSerie = serie.replace(/\D/g, '');
   const common = new URLSearchParams({ idUsuario: String(userId), serie: rawSerie || serie });
   if (codemisor) common.set('codEmisor', String(codemisor));
@@ -41,12 +59,14 @@ async function getLegacySiguienteSecuencial(userId: number, documento: PuntoDocu
       const response = await apiRequest<unknown>(path);
       const direct = response as { proximo?: string | number | null; siguiente?: string | number | null };
       const proximo = normalizeSequence(direct.proximo ?? direct.siguiente) || getNextSequenceFromLegacyRows(response, serie);
+      const hasInitializedSequence = Boolean(proximo && proximo !== '000000001');
       return {
         documento,
         serie,
-        inicializada: Boolean(proximo && proximo !== '000000001'),
+        inicializada: hasInitializedSequence,
         secuenciaAnterior: null,
-        proximo: proximo && proximo !== '000000001' ? proximo : null,
+        proximo: hasInitializedSequence ? proximo : null,
+        requiereConfiguracionInicial: !hasInitializedSequence,
       };
     } catch (error) {
       if (!isFallbackStatus(error)) throw error;
@@ -59,16 +79,13 @@ async function getLegacySiguienteSecuencial(userId: number, documento: PuntoDocu
     inicializada: false,
     secuenciaAnterior: null,
     proximo: null,
+    requiereConfiguracionInicial: true,
   };
 }
 
 function legacySequencePaths(documento: PuntoDocumentoKey, params: URLSearchParams) {
   const query = params.toString();
   if (documento === 'factura') return [`/api/facturas/siguiente-secuencial?${query}`];
-  if (documento === 'nota-credito') return [`/api/facturas/nc/next-secuencial?${query}`];
-  if (documento === 'nota-debito') return [`/api/facturas/nd/next-secuencial?${query}`];
-  if (documento === 'guia-remision') return [`/api/guias-remision/preparacion?${query}`, `/api/guia-remision/preparacion?${query}`];
-  if (documento === 'liquidacion-compra') return [`/api/liquidaciones-compra?idUsuario=${params.get('idUsuario') ?? ''}&top=0`];
   return [];
 }
 
@@ -93,6 +110,8 @@ async function enrichPuntosEmisionSequences(userId: number, data: PuntosEmisionD
         if (response.inicializada && proximo) {
           (enriched as Record<string, unknown>)[item.secKey] = proximo;
           (enriched as Record<string, unknown>)[item.initializedKey] = true;
+        } else if (response.requiereConfiguracionInicial) {
+          (enriched as Record<string, unknown>)[item.initializedKey] = false;
         }
       } catch {
         (enriched as Record<string, unknown>)[item.initializedKey] = undefined;

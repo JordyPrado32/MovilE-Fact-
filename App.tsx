@@ -2147,7 +2147,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         if (!mounted) return;
         const proximo = response.inicializada ? response.proximo?.trim() ?? '' : '';
         setForm((current) => sameSerie(current.serie) && current.numeroFactura !== proximo ? { ...current, serie: effectiveSerie, numeroFactura: proximo } : current);
-        if (!response.inicializada && !knownSequence) {
+        if (response.requiereConfiguracionInicial && !knownSequence) {
           openInitialPrompt();
         } else {
           setSequencePrompt((current) => current?.documento === documento && current?.serie === effectiveSerie ? null : current);
@@ -6940,7 +6940,7 @@ function NuevaFacturaMobileScreen({
   const ivaOptions = preparacion?.porcentajesIva ?? [];
   const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-001'));
   const optionInvoiceNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
-  const invoiceNumber = optionInvoiceNumber || form.numeroFactura || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie, 1));
+  const invoiceNumber = effectiveSerie ? optionInvoiceNumber || (puntosData?.cajas?.length ? '' : form.numeroFactura || getNextSequence(preparacion, effectiveSerie, 1)) : '';
   const referenciaWords = form.referencia.trim().split(/\s+/).filter(Boolean).length;
   const displayProductos = productos.length > 0 ? productos.slice(0, 2) : lineas.map((item) => item.producto).slice(0, 2);
   const [step, setStep] = useState(0);
@@ -7227,7 +7227,7 @@ function NuevaNotaCreditoMobileScreen({
   const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
   const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
   const optionNotaNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
-  const notaNumber = optionNotaNumber || form.numeroFactura || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie));
+  const notaNumber = effectiveSerie ? optionNotaNumber || (puntosData?.cajas?.length ? '' : form.numeroFactura || getNextSequence(preparacion, effectiveSerie)) : '';
   const addDefaultLine = () => onAddLinea({
     codproducto: 0,
     codprincipal: 'NC',
@@ -7578,7 +7578,7 @@ function NuevaNotaDebitoMobileScreen({
   const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
   const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
   const optionNotaNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
-  const notaNumber = optionNotaNumber || form.numeroFactura || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie, 1158));
+  const notaNumber = effectiveSerie ? optionNotaNumber || (puntosData?.cajas?.length ? '' : form.numeroFactura || getNextSequence(preparacion, effectiveSerie, 1158)) : '';
   const [step, setStep] = useState(0);
   const handleClear = () => {
     onClear();
@@ -7899,7 +7899,7 @@ function NuevaLiquidacionCompraMobileScreen({
   const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
   const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
   const optionLiquidacionNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
-  const liquidacionNumber = optionLiquidacionNumber || form.numeroFactura || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie));
+  const liquidacionNumber = effectiveSerie ? optionLiquidacionNumber || (puntosData?.cajas?.length ? '' : form.numeroFactura || getNextSequence(preparacion, effectiveSerie)) : '';
   const [step, setStep] = useState(0);
   const handleClear = () => {
     onClear();
@@ -8231,7 +8231,7 @@ function NuevaGuiaRemisionMobileScreen({
   const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
   const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
   const optionGuiaNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
-  const guiaNumber = optionGuiaNumber || form.numeroFactura || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie));
+  const guiaNumber = effectiveSerie ? optionGuiaNumber || (puntosData?.cajas?.length ? '' : form.numeroFactura || getNextSequence(preparacion, effectiveSerie)) : '';
   const totalCantidad = detalles.reduce((sum, item) => sum + (Number(item.cantidad.replace(',', '.')) || 0), 0);
   const [step, setStep] = useState(0);
   const handleClear = () => {

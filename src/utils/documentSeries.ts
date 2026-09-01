@@ -23,7 +23,8 @@ function numberValue(value: unknown) {
 
 function sequenceCandidate(item?: Record<string, unknown> | null) {
   if (!item) return 0;
-  return numberValue(item.siguiente ?? item.proximo ?? item.secuencial ?? item.numeroSecuencia ?? item.previousSequence);
+  const value = numberValue(item.siguiente ?? item.proximo ?? item.secuencial ?? item.numeroSecuencia ?? item.previousSequence);
+  return value > 1 ? value : 0;
 }
 
 function hasSequenceCandidate(item?: DocumentSerieOption | null) {
