@@ -198,9 +198,7 @@ export function getEffectiveDocumentSerie(options: DocumentSerieOption[], serie:
 export function serieNeedsInitialSequence(options: DocumentSerieOption[], serie: string) {
   const selected = getSelectedDocumentSerieOption(options, serie);
   if (!selected) return false;
-  if (selected.sequenceInitialized === false) return true;
-  const candidate = sequenceCandidate(selected as Record<string, unknown>);
-  return selected.sequenceInitialized !== true && candidate <= 0 && !selected.previousSequence;
+  return selected.sequenceInitialized === false;
 }
 
 export function getDocumentSerieOptions(preparacion: FacturaPreparacion | null, puntosData: PuntosEmisionData | null, kind: DocumentSeriesKind) {

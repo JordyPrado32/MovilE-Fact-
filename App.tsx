@@ -2128,6 +2128,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     const effectiveSerie = getEffectiveDocumentSerie(serieOptions, serie) || serie;
     if (!effectiveSerie) return () => undefined;
     const sameSerie = (value?: string) => normalizeSerieDisplay(value) === normalizeSerieDisplay(effectiveSerie);
+    const knownSequence = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
     if (!sameSerie(serie)) {
       setForm((current) => sameSerie(current.serie) ? current : { ...current, serie: effectiveSerie });
     }
@@ -2146,14 +2147,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         if (!mounted) return;
         const proximo = response.inicializada ? response.proximo?.trim() ?? '' : '';
         setForm((current) => sameSerie(current.serie) && current.numeroFactura !== proximo ? { ...current, serie: effectiveSerie, numeroFactura: proximo } : current);
-        if (!response.inicializada) {
+        if (!response.inicializada && !knownSequence) {
           openInitialPrompt();
         } else {
           setSequencePrompt((current) => current?.documento === documento && current?.serie === effectiveSerie ? null : current);
         }
       })
       .catch(() => {
-        if (mounted && serieNeedsInitialSequence(serieOptions, effectiveSerie)) openInitialPrompt();
+        if (mounted && !knownSequence && serieNeedsInitialSequence(serieOptions, effectiveSerie)) openInitialPrompt();
       });
 
     return () => {

@@ -95,7 +95,7 @@ async function enrichPuntosEmisionSequences(userId: number, data: PuntosEmisionD
           (enriched as Record<string, unknown>)[item.initializedKey] = true;
         }
       } catch {
-        (enriched as Record<string, unknown>)[item.initializedKey] = false;
+        (enriched as Record<string, unknown>)[item.initializedKey] = undefined;
       }
     }));
 
