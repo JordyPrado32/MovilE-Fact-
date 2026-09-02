@@ -25,6 +25,9 @@ export async function getPuntoEmisionSiguienteSecuencial(userId: number, documen
   });
   if (codemisor) params.set('codEmisor', String(codemisor));
 
+  const notaResponse = await getNotaDedicatedSiguienteSecuencial(userId, documento, serie);
+  if (notaResponse) return notaResponse;
+
   try {
     const response = await apiRequest<PuntoSecuencialResponse>(`/api/cajas/siguiente-secuencial?${params.toString()}`);
     return {
@@ -37,18 +40,34 @@ export async function getPuntoEmisionSiguienteSecuencial(userId: number, documen
   }
 }
 
-async function getLegacySiguienteSecuencial(userId: number, documento: PuntoDocumentoKey, serie: string, codemisor?: number | null) {
-  if (documento !== 'factura') {
+async function getNotaDedicatedSiguienteSecuencial(userId: number, documento: PuntoDocumentoKey, serie: string) {
+  if (documento !== 'nota-credito' && documento !== 'nota-debito') return null;
+
+  const rawSerie = serie.replace(/\D/g, '');
+  const path = documento === 'nota-credito'
+    ? `/api/facturas/nc/next-secuencial?idUsuario=${userId}&serie=${encodeURIComponent(rawSerie || serie)}`
+    : `/api/facturas/nd/next-secuencial?idUsuario=${userId}&serie=${encodeURIComponent(rawSerie || serie)}`;
+
+  try {
+    const response = await apiRequest<{ proximo?: string | number | null }>(path, { suppressErrorLog: true });
+    const proximo = normalizeSequence(response.proximo);
+    if (!proximo) return null;
+
     return {
       documento,
       serie,
-      inicializada: false,
+      inicializada: true,
       secuenciaAnterior: null,
-      proximo: null,
-      requiereConfiguracionInicial: true,
+      proximo,
+      requiereConfiguracionInicial: false,
     };
+  } catch (error) {
+    if (!isFallbackStatus(error)) throw error;
+    return null;
   }
+}
 
+async function getLegacySiguienteSecuencial(userId: number, documento: PuntoDocumentoKey, serie: string, codemisor?: number | null) {
   const rawSerie = serie.replace(/\D/g, '');
   const common = new URLSearchParams({ idUsuario: String(userId), serie: rawSerie || serie });
   if (codemisor) common.set('codEmisor', String(codemisor));
@@ -59,7 +78,7 @@ async function getLegacySiguienteSecuencial(userId: number, documento: PuntoDocu
       const response = await apiRequest<unknown>(path);
       const direct = response as { proximo?: string | number | null; siguiente?: string | number | null };
       const proximo = normalizeSequence(direct.proximo ?? direct.siguiente) || getNextSequenceFromLegacyRows(response, serie);
-      const hasInitializedSequence = Boolean(proximo && proximo !== '000000001');
+      const hasInitializedSequence = Boolean(proximo);
       return {
         documento,
         serie,
@@ -86,6 +105,20 @@ async function getLegacySiguienteSecuencial(userId: number, documento: PuntoDocu
 function legacySequencePaths(documento: PuntoDocumentoKey, params: URLSearchParams) {
   const query = params.toString();
   if (documento === 'factura') return [`/api/facturas/siguiente-secuencial?${query}`];
+  if (documento === 'liquidacion-compra') {
+    return [
+      `/api/liquidaciones-compra?${query}&top=0`,
+      `/api/liquidacion-compra?${query}&top=0`,
+      `/api/compras/liquidaciones?${query}&top=0`,
+    ];
+  }
+  if (documento === 'guia-remision') {
+    return [
+      `/api/guias-remision?${query}&top=0`,
+      `/api/guia-remision?${query}&top=0`,
+      `/api/guiasremision?${query}&top=0`,
+    ];
+  }
   return [];
 }
 
@@ -104,6 +137,7 @@ async function enrichPuntosEmisionSequences(userId: number, data: PuntosEmisionD
 
     await Promise.all(documents.map(async (item) => {
       if (hasRealSequence(enriched[item.secKey]) || !item.serie) return;
+      if (enriched[item.initializedKey] === false) return;
       try {
         const response = await getPuntoEmisionSiguienteSecuencial(userId, item.key, item.serie, data.emisor?.codigo ?? null);
         const proximo = normalizeSequence(response.proximo);

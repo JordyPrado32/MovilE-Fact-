@@ -7238,7 +7238,7 @@ function NuevaNotaCreditoMobileScreen({
   const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
   const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
   const optionNotaNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
-  const notaNumber = effectiveSerie ? optionNotaNumber || (puntosData?.cajas?.length ? '' : form.numeroFactura || getNextSequence(preparacion, effectiveSerie)) : '';
+  const notaNumber = effectiveSerie ? form.numeroFactura || optionNotaNumber || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie)) : '';
   const addDefaultLine = () => onAddLinea({
     codproducto: 0,
     codprincipal: 'NC',
@@ -7589,7 +7589,7 @@ function NuevaNotaDebitoMobileScreen({
   const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
   const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
   const optionNotaNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
-  const notaNumber = effectiveSerie ? optionNotaNumber || (puntosData?.cajas?.length ? '' : form.numeroFactura || getNextSequence(preparacion, effectiveSerie, 1158)) : '';
+  const notaNumber = effectiveSerie ? form.numeroFactura || optionNotaNumber || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie, 1158)) : '';
   const [step, setStep] = useState(0);
   const handleClear = () => {
     onClear();
@@ -7910,7 +7910,7 @@ function NuevaLiquidacionCompraMobileScreen({
   const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
   const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
   const optionLiquidacionNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
-  const liquidacionNumber = effectiveSerie ? optionLiquidacionNumber || (puntosData?.cajas?.length ? '' : form.numeroFactura || getNextSequence(preparacion, effectiveSerie)) : '';
+  const liquidacionNumber = effectiveSerie ? form.numeroFactura || optionLiquidacionNumber || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie)) : '';
   const [step, setStep] = useState(0);
   const handleClear = () => {
     onClear();

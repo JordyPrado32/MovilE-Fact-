@@ -24,11 +24,12 @@ function numberValue(value: unknown) {
 function sequenceCandidate(item?: Record<string, unknown> | null) {
   if (!item) return 0;
   const value = numberValue(item.siguiente ?? item.proximo ?? item.secuencial ?? item.numeroSecuencia ?? item.previousSequence);
-  return value > 1 ? value : 0;
+  return value > 0 ? value : 0;
 }
 
 function hasSequenceCandidate(item?: DocumentSerieOption | null) {
   if (!item) return false;
+  if (item.sequenceInitialized === false) return false;
   return sequenceCandidate(item as Record<string, unknown>) > 0 || item.sequenceInitialized === true || Boolean(item.previousSequence);
 }
 
@@ -40,7 +41,7 @@ function mergeSerieOption(existing: DocumentSerieOption, incoming: DocumentSerie
     merged.secuencial = incoming.secuencial;
     merged.numeroSecuencia = incoming.numeroSecuencia;
     merged.previousSequence = incoming.previousSequence;
-    merged.sequenceInitialized = incoming.sequenceInitialized;
+    if (incoming.sequenceInitialized !== undefined) merged.sequenceInitialized = incoming.sequenceInitialized;
   }
   if (merged.sequenceInitialized === undefined && incoming.sequenceInitialized !== undefined) merged.sequenceInitialized = incoming.sequenceInitialized;
   if (!merged.codemisor && incoming.codemisor) merged.codemisor = incoming.codemisor;
@@ -175,6 +176,9 @@ function getPuntoSequenceForDocument(punto: PuntoEmision, kind: DocumentSeriesKi
 }
 
 function compareDocumentSerieOptions(a: DocumentSerieOption, b: DocumentSerieOption) {
+  const initialized = Number(hasSequenceCandidate(b)) - Number(hasSequenceCandidate(a));
+  if (initialized !== 0) return initialized;
+
   const principal = Number(Boolean(b.esPrincipal)) - Number(Boolean(a.esPrincipal));
   if (principal !== 0) return principal;
 
