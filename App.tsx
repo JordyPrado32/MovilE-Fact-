@@ -8744,16 +8744,20 @@ function MisFacturasMobileScreen({
           return (
           <View key={facturaKey} style={styles.invoiceHistoryCard}>
             <View style={styles.invoiceHistoryCardHeader}>
-              <View style={styles.invoiceHistoryDocIcon}>
-                <MaterialCommunityIcons name="file-document-outline" size={23} color="#0072BD" />
+              <View style={styles.invoiceHistoryIdentityRow}>
+                <View style={styles.invoiceHistoryDocIcon}>
+                  <MaterialCommunityIcons name="file-document-outline" size={21} color="#0072BD" />
+                </View>
+                <View style={styles.invoiceHistoryCardInfo}>
+                  <Text style={styles.invoiceHistoryNumber} numberOfLines={1} adjustsFontSizeToFit>{factura.numeroCompleto ?? factura.numfactura ?? `Factura ${factura.codfactura}`}</Text>
+                  <View style={[styles.invoiceHistoryStatusPill, getInvoiceStatusStyle(status)]}>
+                    <Text style={[styles.invoiceHistoryStatusText, getInvoiceStatusTextStyle(status)]}>{status}</Text>
+                  </View>
+                </View>
               </View>
-              <View style={styles.invoiceHistoryCardInfo}>
-                <Text style={styles.invoiceHistoryNumber}>{factura.numeroCompleto ?? factura.numfactura ?? `Factura ${factura.codfactura}`}</Text>
-                <Text style={styles.invoiceHistoryClient}>{factura.cliente ?? 'Consumidor final'}</Text>
+              <View style={styles.invoiceHistoryClientBlock}>
+                <Text style={styles.invoiceHistoryClient} numberOfLines={1}>{factura.cliente ?? 'Consumidor final'}</Text>
                 <Text style={styles.invoiceHistoryId}>{factura.identificacionCliente ?? 'Sin identificacion'}</Text>
-              </View>
-              <View style={[styles.invoiceHistoryStatusPill, getInvoiceStatusStyle(status)]}>
-                <Text style={[styles.invoiceHistoryStatusText, getInvoiceStatusTextStyle(status)]}>{status}</Text>
               </View>
             </View>
             <View style={styles.invoiceHistoryDetailGrid}>
@@ -8767,19 +8771,21 @@ function MisFacturasMobileScreen({
               </View>
             </View>
             <View style={styles.invoiceHistoryAuthorization}>
-              <Text style={styles.invoiceHistoryDetailLabel}>Autorizacion</Text>
-              <Text style={styles.invoiceHistoryAuthorizationText} numberOfLines={1}>
-                {factura.numeroAutorizacion || factura.mensajeSri || (factura.autorizado ? 'Autorizado sin numero registrado' : 'No disponible')}
-              </Text>
+              <View style={styles.invoiceHistoryAuthorizationTextBlock}>
+                <Text style={styles.invoiceHistoryDetailLabel}>Autorizacion</Text>
+                <Text style={styles.invoiceHistoryAuthorizationText} numberOfLines={2}>
+                  {factura.numeroAutorizacion || factura.mensajeSri || (factura.autorizado ? 'Autorizado sin numero registrado' : 'No disponible')}
+                </Text>
+              </View>
+              <DocumentActionsMenu actions={[
+                { label: 'Detalle', icon: 'information-outline', tone: 'primary', onPress: () => setSelectedFactura(factura) },
+                { label: 'Ver PDF', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(factura) },
+                { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(factura) },
+                { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(factura) },
+                { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(factura) },
+                { label: 'Anular factura', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(factura) },
+              ]} />
             </View>
-            <DocumentActionsMenu actions={[
-              { label: 'Detalle', icon: 'information-outline', tone: 'primary', onPress: () => setSelectedFactura(factura) },
-              { label: 'Ver PDF', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(factura) },
-              { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(factura) },
-              { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(factura) },
-              { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(factura) },
-              { label: 'Anular factura', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(factura) },
-            ]} />
           </View>
           );
         })}
