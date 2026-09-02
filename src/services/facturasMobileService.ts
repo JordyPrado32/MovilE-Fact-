@@ -38,6 +38,11 @@ export type FacturaPreparacion = {
   paises?: unknown[];
   caja?: {
     serieFactura?: string | null;
+    serieGuia?: string | null;
+    serieNotasCred?: string | null;
+    serieNotasDeb?: string | null;
+    serieLiquidacion?: string | null;
+    serieLiquidacionCompra?: string | null;
     numCaja?: number | null;
     sec?: number | null;
     secuencial?: number | null;

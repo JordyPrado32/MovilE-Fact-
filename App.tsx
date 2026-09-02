@@ -1092,6 +1092,17 @@ function findTokenValue(value: unknown, depth = 0): string | null {
   return null;
 }
 
+function getCajaSerieForDocument(preparacion: FacturaPreparacion | null, kind: 'factura' | 'notaCredito' | 'notaDebito' | 'liquidacion' | 'guia') {
+  const caja = preparacion?.caja;
+  if (!caja) return '';
+
+  if (kind === 'notaCredito') return caja.serieNotasCred || caja.serieFactura || '';
+  if (kind === 'notaDebito') return caja.serieNotasDeb || caja.serieFactura || '';
+  if (kind === 'liquidacion') return caja.serieLiquidacion || caja.serieLiquidacionCompra || caja.serieFactura || '';
+  if (kind === 'guia') return caja.serieGuia || caja.serieFactura || '';
+  return caja.serieFactura || '';
+}
+
 function clienteToForm(cliente: Cliente): ClienteFormState {
   return {
     tipoCliente: cliente.tipoCliente ?? 0,
@@ -2121,7 +2132,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     preparacion: FacturaPreparacion | null,
     setForm: (updater: (current: any) => any) => void,
   ) => {
-    if (activeView !== expectedView || !catalogUserId || !puntosData?.cajas?.length) return () => undefined;
+    if (activeView !== expectedView || !catalogUserId) return () => undefined;
 
     let mounted = true;
     const serieOptions = getDocumentSerieOptions(preparacion, puntosData, kind);
@@ -2481,7 +2492,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getLiquidacionCompraPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setLiquidacionPreparacion(data);
-          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
+          const serie = getSerieValue(data.series?.[0]) || getCajaSerieForDocument(data, 'liquidacion') || '';
           const formaPago = data.formasPago?.[0]?.codigo ?? '';
           setLiquidacionForm((current) => ({ ...current, serie, formaPago }));
         })
@@ -2515,7 +2526,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getNotaDebitoPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setNotaDebitoPreparacion(data);
-          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
+          const serie = getSerieValue(data.series?.[0]) || getCajaSerieForDocument(data, 'notaDebito') || '';
           setNotaDebitoForm((current) => ({ ...current, serie }));
         })
       : getNotasDebito(catalogUserId, 0).then((data) => {
@@ -2548,7 +2559,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getNotaCreditoPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setNotaCreditoPreparacion(data);
-          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
+          const serie = getSerieValue(data.series?.[0]) || getCajaSerieForDocument(data, 'notaCredito') || '';
           setNotaCreditoForm((current) => ({ ...current, serie }));
         })
       : getNotasCredito(catalogUserId, 0).then((data) => {

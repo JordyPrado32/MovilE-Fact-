@@ -155,7 +155,7 @@ async function requestWithFallback<T>(paths: string[]) {
 
   for (const path of paths) {
     try {
-      return await apiRequest<T>(path);
+      return await apiRequest<T>(path, { suppressErrorLog: true });
     } catch (error) {
       lastError = error;
       if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 0)) throw error;

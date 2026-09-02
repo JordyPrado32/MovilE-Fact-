@@ -3,6 +3,7 @@ import { API_BASE_URL } from '../config/api';
 type RequestOptions = RequestInit & {
   token?: string;
   timeoutMs?: number;
+  suppressErrorLog?: boolean;
 };
 
 const REQUEST_TIMEOUT_MS = 20000;
@@ -27,11 +28,13 @@ export class ApiError extends Error {
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { token, timeoutMs, headers, ...requestOptions } = options;
+  const { token, timeoutMs, suppressErrorLog, headers, ...requestOptions } = options;
   const authToken = token ?? sessionToken;
   const isFormData = typeof FormData !== 'undefined' && requestOptions.body instanceof FormData;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? REQUEST_TIMEOUT_MS);
+  const requestTimeoutMs = timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const startedAt = Date.now();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
 
   let response: Response;
 
@@ -49,6 +52,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       },
     });
   } catch (error) {
+    if (!suppressErrorLog) logApiNetworkError(path, requestOptions.method, Date.now() - startedAt, requestTimeoutMs, error);
+
     if (error instanceof Error && error.name === 'AbortError') {
       throw new ApiError(0, 'La conexion con el servidor tardo demasiado.');
     }
@@ -68,6 +73,14 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
   if (!response.ok) {
     const message = getErrorMessage(response.status, body, path);
+    if (!suppressErrorLog) {
+      logApiError(path, response.status, body, {
+        contentType,
+        elapsedMs: Date.now() - startedAt,
+        method: requestOptions.method,
+        timeoutMs: requestTimeoutMs,
+      });
+    }
 
     throw new ApiError(response.status, message);
   }
@@ -76,10 +89,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 }
 
 export async function apiRequestBinary(path: string, options: RequestOptions = {}) {
-  const { token, timeoutMs, headers, ...requestOptions } = options;
+  const { token, timeoutMs, suppressErrorLog, headers, ...requestOptions } = options;
   const authToken = token ?? sessionToken;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? REQUEST_TIMEOUT_MS);
+  const requestTimeoutMs = timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const startedAt = Date.now();
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
   let response: Response;
 
   try {
@@ -95,6 +110,8 @@ export async function apiRequestBinary(path: string, options: RequestOptions = {
       },
     });
   } catch (error) {
+    if (!suppressErrorLog) logApiNetworkError(path, requestOptions.method, Date.now() - startedAt, requestTimeoutMs, error);
+
     if (error instanceof Error && error.name === 'AbortError') throw new ApiError(0, 'La conexion con el servidor tardo demasiado.');
     throw new ApiError(0, 'No se pudo conectar con el servidor.');
   } finally {
@@ -103,6 +120,14 @@ export async function apiRequestBinary(path: string, options: RequestOptions = {
 
   if (!response.ok) {
     const text = await response.text();
+    if (!suppressErrorLog) {
+      logApiError(path, response.status, text, {
+        contentType: response.headers.get('content-type') ?? '',
+        elapsedMs: Date.now() - startedAt,
+        method: requestOptions.method,
+        timeoutMs: requestTimeoutMs,
+      });
+    }
     throw new ApiError(response.status, text || `HTTP ${response.status}: ${DEFAULT_ERROR_MESSAGE}`);
   }
 
@@ -148,4 +173,85 @@ function getErrorMessage(status: number, body: unknown, path: string) {
 
 function looksLikeHtml(value: string) {
   return /^\s*<!doctype html/i.test(value) || /^\s*<html[\s>]/i.test(value);
+}
+
+function logApiError(
+  path: string,
+  status: number,
+  body: unknown,
+  context: { contentType?: string; elapsedMs?: number; method?: string; timeoutMs?: number } = {},
+) {
+  const bodyText = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+  const preview = bodyText.length > 4000 ? `${bodyText.slice(0, 4000)}... [truncado]` : bodyText;
+  console.error('[API ERROR]', {
+    baseUrl: API_BASE_URL,
+    path,
+    method: context.method ?? 'GET',
+    status,
+    elapsedMs: context.elapsedMs,
+    timeoutMs: context.timeoutMs,
+    contentType: context.contentType,
+    localDebug: getLocalApiErrorDebug(bodyText),
+    body: preview,
+  });
+
+  logLocalApiErrorDetails(path, status, bodyText, context);
+}
+
+function getLocalApiErrorDebug(bodyText: string) {
+  if (!looksLikeHtml(bodyText)) return undefined;
+
+  return {
+    requestId: extractHtmlText(bodyText, /<strong>\s*Request ID:\s*<\/strong>\s*<code>(.*?)<\/code>/is),
+    title: extractHtmlText(bodyText, /<title>(.*?)<\/title>/is),
+    heading: extractHtmlText(bodyText, /<h1[^>]*>(.*?)<\/h1>/is),
+    message: extractHtmlText(bodyText, /<h2[^>]*>(.*?)<\/h2>/is),
+  };
+}
+
+function logLocalApiErrorDetails(
+  path: string,
+  status: number,
+  bodyText: string,
+  context: { contentType?: string; elapsedMs?: number; method?: string; timeoutMs?: number } = {},
+) {
+  if (typeof __DEV__ === 'undefined' || !__DEV__) return;
+
+  const debug = getLocalApiErrorDebug(bodyText);
+  if (!debug) return;
+
+  console.error('[API LOCAL DEBUG]', {
+    url: `${API_BASE_URL}${path}`,
+    method: context.method ?? 'GET',
+    status,
+    elapsedMs: context.elapsedMs,
+    timeoutMs: context.timeoutMs,
+    contentType: context.contentType,
+    requestId: debug.requestId,
+    title: debug.title,
+    message: debug.message,
+    hint: 'Busca este requestId en los logs del backend ASP.NET para ver la excepcion exacta.',
+  });
+}
+
+function extractHtmlText(html: string, pattern: RegExp) {
+  const value = html.match(pattern)?.[1];
+  if (!value) return undefined;
+
+  return value
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function logApiNetworkError(path: string, method: string | undefined, elapsedMs: number, timeoutMs: number, error: unknown) {
+  if (typeof __DEV__ === 'undefined' || !__DEV__) return;
+
+  console.error('[API NETWORK ERROR]', {
+    url: `${API_BASE_URL}${path}`,
+    method: method ?? 'GET',
+    elapsedMs,
+    timeoutMs,
+    error: error instanceof Error ? error.message : String(error),
+  });
 }
