@@ -9148,32 +9148,69 @@ function PurchaseDocumentsScreen({
     onSave();
   };
   const total = amount;
+  const unlimited = form.descripcion.toLowerCase().includes('ilimit');
+  const selectedPlanKey = unlimited ? 'unlimited' : `${documents}:${amount}`;
 
   return (
     <View style={styles.rechargePage}>
+      <View style={styles.rechargeStatusBand}>
+        <View style={styles.rechargeStatusIcon}>
+          <MaterialCommunityIcons name="file-document-plus-outline" size={24} color="#0072BD" />
+        </View>
+        <View style={styles.rechargeStatusCopy}>
+          <Text style={styles.rechargeEyebrow}>Compra documentos por recarga</Text>
+          <Text style={styles.rechargeStatusTitle}>Saldo acreditado al aprobarse el pago</Text>
+        </View>
+        <View style={styles.rechargeStatusPill}>
+          <Text style={styles.rechargeStatusPillText}>IVA incluido</Text>
+        </View>
+      </View>
+
       <View style={styles.rechargeHero}>
-        <View style={styles.rechargeHeroCopy}>
+        <View style={styles.rechargeHeroHeader}>
+          <View style={styles.rechargeStepBadge}>
+            <Text style={styles.rechargeStepBadgeText}>1</Text>
+          </View>
           <Text style={styles.rechargeEyebrow}>Recarga personalizada</Text>
+        </View>
+        <View style={styles.rechargeHeroCopy}>
           <Text style={styles.rechargeTitle}>Compra por documentos o por dinero</Text>
           <Text style={styles.rechargeText}>Edita cualquiera de los dos valores y el sistema calcula automáticamente el otro.</Text>
         </View>
         <View style={styles.rechargeInputs}>
-          <Field label="¿Cuántos documentos deseas comprar?" value={form.codigo} onChangeText={(value) => onChange('codigo', value)} keyboardType="number-pad" />
-          <Text style={styles.rechargeHint}>Mínimo 11 documentos (equivalente a una recarga desde $5,00)</Text>
-          <Field label="Valor de la recarga" value={form.valor} onChangeText={(value) => onChange('valor', value)} keyboardType="decimal-pad" />
-          <Text style={styles.rechargeHint}>Monto mínimo de recarga: $5,00</Text>
+          <View style={styles.rechargeInputBlock}>
+            <Field label="¿Cuántos documentos deseas comprar?" value={form.codigo} onChangeText={(value) => onChange('codigo', value)} keyboardType="number-pad" />
+            <Text style={styles.rechargeHint}>Mínimo 11 documentos (equivalente a una recarga desde $5,00)</Text>
+          </View>
+          <View style={styles.rechargeInputBlock}>
+            <Field label="Valor de la recarga" value={form.valor} onChangeText={(value) => onChange('valor', value)} keyboardType="decimal-pad" />
+            <Text style={styles.rechargeHint}>Monto mínimo de recarga: $5,00</Text>
+          </View>
         </View>
       </View>
 
       <View style={styles.rechargeSummary}>
         <Text style={styles.rechargeEyebrow}>Resumen de compra</Text>
         <Text style={styles.rechargeSummaryTitle}>{documents || amount ? 'Tu recarga' : 'Selecciona una opción'}</Text>
-        <View style={styles.rechargeSummaryRow}><Text style={styles.rechargeSummaryLabel}>Documentos</Text><Text style={styles.rechargeSummaryValue}>{documents || 0}</Text></View>
-        <View style={styles.rechargeSummaryRow}><Text style={styles.rechargeSummaryLabel}>Total a pagar</Text><Text style={styles.rechargeSummaryTotal}>USD ${total.toFixed(2)}</Text></View>
+        <View style={styles.rechargeSummaryHero}>
+          <View>
+            <Text style={styles.rechargeSummaryLabel}>Total a pagar</Text>
+            <Text style={styles.rechargeSummaryTotal}>USD ${total.toFixed(2)}</Text>
+          </View>
+          <View style={styles.rechargeDocsPill}>
+            <Text style={styles.rechargeDocsPillValue}>{unlimited ? '∞' : documents || 0}</Text>
+            <Text style={styles.rechargeDocsPillLabel}>{unlimited ? 'documentos' : 'docs'}</Text>
+          </View>
+        </View>
+        <View style={styles.rechargeSummaryRow}><Text style={styles.rechargeSummaryLabel}>Documentos</Text><Text style={styles.rechargeSummaryValue}>{unlimited ? 'Ilimitados' : documents || 0}</Text></View>
+        <View style={styles.rechargeSummaryRow}><Text style={styles.rechargeSummaryLabel}>Vigencia</Text><Text style={styles.rechargeSummaryValue}>{unlimited ? '1 año' : 'Saldo disponible'}</Text></View>
         {localMessage ? <MessageBox message={localMessage} /> : null}
         {message ? <MessageBox message={message} /> : null}
         <PrimaryButton label="Confirmar recarga" loading={saving} onPress={confirm} />
-        <Text style={styles.rechargeSecure}>🔒 Pago 100% seguro{`\n`}El saldo se acredita automáticamente al aprobarse el pago.</Text>
+        <View style={styles.rechargeSecureRow}>
+          <MaterialCommunityIcons name="lock-check-outline" size={17} color="#7890A4" />
+          <Text style={styles.rechargeSecure}>Pago 100% seguro{`\n`}El saldo se acredita automáticamente al aprobarse el pago.</Text>
+        </View>
       </View>
 
       <View style={styles.rechargeSectionHeader}>
@@ -9184,10 +9221,20 @@ function PurchaseDocumentsScreen({
         <Text style={styles.rechargeVatHint}>Precios finales con IVA incluido</Text>
       </View>
 
-      <View style={styles.rechargePlanGrid}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.rechargePlanGrid}
+        decelerationRate="fast"
+      >
         {plans.map((plan) => (
-          <View key={plan.unlimited ? 'unlimited' : plan.documents} style={[styles.rechargePlan, { backgroundColor: plan.color }, documents === plan.documents && amount === plan.amount ? styles.rechargePlanSelected : null]}>
-            {plan.recommended ? <Text style={styles.rechargePlanBadge}>Recomendado</Text> : null}
+          <View key={plan.unlimited ? 'unlimited' : plan.documents} style={[styles.rechargePlan, { backgroundColor: plan.color }, selectedPlanKey === (plan.unlimited ? 'unlimited' : `${plan.documents}:${plan.amount}`) ? styles.rechargePlanSelected : null]}>
+            <View style={styles.rechargePlanTop}>
+              <View style={styles.rechargePlanIcon}>
+                <MaterialCommunityIcons name={plan.unlimited ? 'creation' : plan.recommended ? 'briefcase-check-outline' : 'file-document-multiple-outline'} size={19} color="#0072BD" />
+              </View>
+              {plan.recommended ? <Text style={styles.rechargePlanBadge}>Recomendado</Text> : null}
+            </View>
             {plan.unlimited ? <Text style={styles.rechargePlanDocuments}>Ilimitados</Text> : <Text style={styles.rechargePlanDocuments}>{plan.documents}</Text>}
             {!plan.unlimited ? <Text style={styles.rechargePlanUnit}>documentos</Text> : <Text style={styles.rechargePlanUnit}>durante 1 año</Text>}
             <Text style={styles.rechargePlanAmount}>USD ${plan.amount.toFixed(2)}</Text>
@@ -9195,7 +9242,7 @@ function PurchaseDocumentsScreen({
             <SecondaryButton label="Elegir plan  →" onPress={() => selectPlan(plan)} />
           </View>
         ))}
-      </View>
+      </ScrollView>
 
     </View>
   );
