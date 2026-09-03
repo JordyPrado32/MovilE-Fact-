@@ -23,11 +23,13 @@ function numberValue(value: unknown) {
 
 function sequenceCandidate(item?: Record<string, unknown> | null) {
   if (!item) return 0;
-  return numberValue(item.siguiente ?? item.proximo ?? item.secuencial ?? item.numeroSecuencia ?? item.previousSequence);
+  const value = numberValue(item.siguiente ?? item.proximo ?? item.secuencial ?? item.numeroSecuencia ?? item.previousSequence);
+  return value > 0 ? value : 0;
 }
 
 function hasSequenceCandidate(item?: DocumentSerieOption | null) {
   if (!item) return false;
+  if (item.sequenceInitialized === false) return false;
   return sequenceCandidate(item as Record<string, unknown>) > 0 || item.sequenceInitialized === true || Boolean(item.previousSequence);
 }
 
@@ -39,7 +41,7 @@ function mergeSerieOption(existing: DocumentSerieOption, incoming: DocumentSerie
     merged.secuencial = incoming.secuencial;
     merged.numeroSecuencia = incoming.numeroSecuencia;
     merged.previousSequence = incoming.previousSequence;
-    merged.sequenceInitialized = incoming.sequenceInitialized;
+    if (incoming.sequenceInitialized !== undefined) merged.sequenceInitialized = incoming.sequenceInitialized;
   }
   if (merged.sequenceInitialized === undefined && incoming.sequenceInitialized !== undefined) merged.sequenceInitialized = incoming.sequenceInitialized;
   if (!merged.codemisor && incoming.codemisor) merged.codemisor = incoming.codemisor;
@@ -107,7 +109,8 @@ export function getSerieValue(item?: DocumentSerieOption) {
 
 function getSelectedSerie(preparacion: FacturaPreparacion | null, serie: string) {
   const options = preparacion?.series ?? [];
-  return options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
+  const normalized = normalizeSerieDisplay(serie);
+  return options.find((item) => normalizeSerieDisplay(item.serieRaw) === normalized || normalizeSerieDisplay(item.serieVisual) === normalized);
 }
 
 export function getSerieLabel(preparacion: FacturaPreparacion | null, serie: string, fallback = '001-001') {
@@ -138,7 +141,7 @@ function getSerieCodemisor(preparacion: FacturaPreparacion | null, serie: string
 }
 
 export function getSerieCodemisorFromOptions(options: DocumentSerieOption[], serie: string, preparacion: FacturaPreparacion | null) {
-  const selected = options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
+  const selected = getSelectedDocumentSerieOption(options, serie);
   return selected?.codemisor ?? getSerieCodemisor(preparacion, serie);
 }
 
@@ -172,25 +175,39 @@ function getPuntoSequenceForDocument(punto: PuntoEmision, kind: DocumentSeriesKi
   return getPuntoSequenceValue(punto, ['secFactura', 'secuencialFactura', 'secuenciaFactura', 'siguienteFactura', 'proximoFactura', 'numFactura', 'numeroFactura']);
 }
 
+function compareDocumentSerieOptions(a: DocumentSerieOption, b: DocumentSerieOption) {
+  const initialized = Number(hasSequenceCandidate(b)) - Number(hasSequenceCandidate(a));
+  if (initialized !== 0) return initialized;
+
+  const principal = Number(Boolean(b.esPrincipal)) - Number(Boolean(a.esPrincipal));
+  if (principal !== 0) return principal;
+
+  const caja = Number(a.numCaja ?? 0) - Number(b.numCaja ?? 0);
+  if (caja !== 0) return caja;
+
+  const aSequence = sequenceCandidate(a as Record<string, unknown>);
+  const bSequence = sequenceCandidate(b as Record<string, unknown>);
+  return bSequence - aSequence;
+}
+
 export function getSelectedDocumentSerieOption(options: DocumentSerieOption[], serie: string) {
   const normalized = normalizeSerieDisplay(serie);
   return options.find((item) => normalizeSerieDisplay(item.serieRaw) === normalized || normalizeSerieDisplay(item.serieVisual) === normalized);
 }
 
+export function getEffectiveDocumentSerie(options: DocumentSerieOption[], serie: string) {
+  const selected = getSelectedDocumentSerieOption(options, serie);
+  return getSerieValue(selected ?? options[0]);
+}
+
 export function serieNeedsInitialSequence(options: DocumentSerieOption[], serie: string) {
   const selected = getSelectedDocumentSerieOption(options, serie);
   if (!selected) return false;
-  if (selected.sequenceInitialized === false) return true;
-  const candidate = sequenceCandidate(selected as Record<string, unknown>);
-  return selected.sequenceInitialized !== true && candidate <= 0 && !selected.previousSequence;
+  return selected.sequenceInitialized === false;
 }
 
 export function getDocumentSerieOptions(preparacion: FacturaPreparacion | null, puntosData: PuntosEmisionData | null, kind: DocumentSeriesKind) {
-  const orderedPuntos = [...(puntosData?.cajas ?? [])].sort((a, b) => {
-    const principal = Number(Boolean(b.esPrincipal)) - Number(Boolean(a.esPrincipal));
-    if (principal !== 0) return principal;
-    return Number(a.numCaja ?? 0) - Number(b.numCaja ?? 0);
-  });
+  const orderedPuntos = [...(puntosData?.cajas ?? [])].sort((a, b) => Number(a.numCaja ?? 0) - Number(b.numCaja ?? 0));
   const puntos = orderedPuntos
     .map((punto) => {
       const row = punto as PuntoEmision & Record<string, unknown>;
@@ -203,10 +220,11 @@ export function getDocumentSerieOptions(preparacion: FacturaPreparacion | null, 
         serieVisual: serie,
         codemisor: numberValue(row.codemisor ?? row.codEmisor ?? row.codigoEmisor ?? preparacion?.caja?.codemisor) || null,
         sec: secuencia === '-' ? null : numberValue(secuencia),
+        proximo: secuencia === '-' ? null : secuencia,
         numCaja: punto.numCaja,
         esPrincipal: punto.esPrincipal,
-        sequenceInitialized: initialized,
-        previousSequence: secuencia === '-' ? null : secuencia,
+        sequenceInitialized: initialized ?? secuencia !== '-',
+        previousSequence: null,
       } as DocumentSerieOption;
     })
     .filter(Boolean) as DocumentSerieOption[];
@@ -226,7 +244,7 @@ export function getDocumentSerieOptions(preparacion: FacturaPreparacion | null, 
     unique.set(key, existing ? mergeSerieOption(existing, normalized) : normalized);
   });
 
-  return Array.from(unique.values());
+  return Array.from(unique.values()).sort(compareDocumentSerieOptions);
 }
 
 export function usePreferredDocumentSerie(serieOptions: DocumentSerieOption[], currentSerie: string, onSelectSerie: (serie: string) => void) {
@@ -236,20 +254,21 @@ export function usePreferredDocumentSerie(serieOptions: DocumentSerieOption[], c
     const preferredOption = serieOptions[0];
     const preferred = getSerieValue(preferredOption);
     if (!preferred) return;
-    const key = `${preferred}:${preferredOption?.esPrincipal ? 'principal' : 'fallback'}`;
+    const key = `${preferred}:${sequenceCandidate(preferredOption as Record<string, unknown>)}:${preferredOption?.esPrincipal ? 'principal' : 'fallback'}`;
     if (appliedKey === key) return;
-    if (preferredOption?.esPrincipal || !currentSerie) onSelectSerie(preferred);
+    const hasCurrentSerie = Boolean(getSelectedDocumentSerieOption(serieOptions, currentSerie));
+    if (!currentSerie || !hasCurrentSerie || getSerieValue(getSelectedDocumentSerieOption(serieOptions, currentSerie)) !== preferred) onSelectSerie(preferred);
     setAppliedKey(key);
   }, [appliedKey, currentSerie, serieOptions]);
 }
 
 export function getSerieLabelFromOptions(options: DocumentSerieOption[], serie: string, fallback: string) {
-  const selected = options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
+  const selected = getSelectedDocumentSerieOption(options, serie);
   return selected?.serieVisual || selected?.serieRaw || serie || fallback;
 }
 
 export function getNextSequenceFromOptions(options: DocumentSerieOption[], serie: string, fallback: string) {
-  const selected = options.find((item) => item.serieRaw === serie || item.serieVisual === serie);
+  const selected = getSelectedDocumentSerieOption(options, serie);
   const row = selected as (DocumentSerieOption & Record<string, unknown>) | undefined;
   const candidate = sequenceCandidate(row);
   if (selected && candidate <= 0) return '';

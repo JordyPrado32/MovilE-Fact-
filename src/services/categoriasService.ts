@@ -118,7 +118,7 @@ async function requestFirstList<T>(paths: string[]) {
 
   for (const path of paths) {
     try {
-      const response = await apiRequest<ApiListResponse<T>>(path, { timeoutMs: CATALOG_TIMEOUT_MS });
+      const response = await apiRequest<ApiListResponse<T>>(path, { timeoutMs: CATALOG_TIMEOUT_MS, suppressErrorLog: true });
       return unwrapList(response);
     } catch (error) {
       lastError = error;

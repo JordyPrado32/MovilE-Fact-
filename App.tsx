@@ -80,7 +80,7 @@ import { CatalogCard, SubcategoriaCard } from './src/components/catalog/CatalogC
 import { InitialsAvatar, MenuItem } from './src/components/ui/MenuItem';
 import { BiometricSetupModal, BrandLockup, BrandMark, LoadingScreen, ScreenFrame } from './src/components/auth/AuthWidgets';
 import { EFACT_THEME, ERUBRICA_COLORS } from './src/styles/theme';
-import { getDocumentSerieOptions, getNextSequence, getNextSequenceFromOptions, getPuntoDocumentSequences, getPuntoSerie, getSerieCodemisorFromOptions, getSerieLabel, getSerieLabelFromOptions, getSerieValue, normalizeSerieCode, serieNeedsInitialSequence, usePreferredDocumentSerie } from './src/utils/documentSeries';
+import { getDocumentSerieOptions, getEffectiveDocumentSerie, getNextSequence, getNextSequenceFromOptions, getPuntoDocumentSequences, getPuntoSerie, getSelectedDocumentSerieOption, getSerieCodemisorFromOptions, getSerieLabel, getSerieLabelFromOptions, getSerieValue, normalizeSerieCode, normalizeSerieDisplay, serieNeedsInitialSequence, usePreferredDocumentSerie } from './src/utils/documentSeries';
 import type { NuevaFacturaFormState, NuevaFacturaLinea } from './src/types/invoices';
 import { formatDocumentDate, formatMoney, listItemKey } from './src/utils/documentFormatting';
 
@@ -1090,6 +1090,17 @@ function findTokenValue(value: unknown, depth = 0): string | null {
   }
 
   return null;
+}
+
+function getCajaSerieForDocument(preparacion: FacturaPreparacion | null, kind: 'factura' | 'notaCredito' | 'notaDebito' | 'liquidacion' | 'guia') {
+  const caja = preparacion?.caja;
+  if (!caja) return '';
+
+  if (kind === 'notaCredito') return caja.serieNotasCred || caja.serieFactura || '';
+  if (kind === 'notaDebito') return caja.serieNotasDeb || caja.serieFactura || '';
+  if (kind === 'liquidacion') return caja.serieLiquidacion || caja.serieLiquidacionCompra || caja.serieFactura || '';
+  if (kind === 'guia') return caja.serieGuia || caja.serieFactura || '';
+  return caja.serieFactura || '';
 }
 
 function clienteToForm(cliente: Cliente): ClienteFormState {
@@ -2121,33 +2132,40 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     preparacion: FacturaPreparacion | null,
     setForm: (updater: (current: any) => any) => void,
   ) => {
-    if (activeView !== expectedView || !catalogUserId || !serie || !puntosData?.cajas?.length) return () => undefined;
+    if (activeView !== expectedView || !catalogUserId) return () => undefined;
 
     let mounted = true;
     const serieOptions = getDocumentSerieOptions(preparacion, puntosData, kind);
-    const codemisor = getSerieCodemisorFromOptions(serieOptions, serie, preparacion);
+    const effectiveSerie = getEffectiveDocumentSerie(serieOptions, serie) || serie;
+    if (!effectiveSerie) return () => undefined;
+    const sameSerie = (value?: string) => normalizeSerieDisplay(value) === normalizeSerieDisplay(effectiveSerie);
+    const knownSequence = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
+    if (!sameSerie(serie)) {
+      setForm((current) => sameSerie(current.serie) ? current : { ...current, serie: effectiveSerie });
+    }
+    const codemisor = getSerieCodemisorFromOptions(serieOptions, effectiveSerie, preparacion);
     const openInitialPrompt = () => {
-      setForm((current) => current.serie === serie && current.numeroFactura ? { ...current, numeroFactura: '' } : current);
+      setForm((current) => sameSerie(current.serie) && current.numeroFactura ? { ...current, serie: effectiveSerie, numeroFactura: '' } : current);
       setSequencePrompt((current) => (
-        current?.documento === documento && current?.serie === serie
+        current?.documento === documento && current?.serie === effectiveSerie
           ? current
-          : { documento, documentLabel, serie, codemisor, form: kind }
+          : { documento, documentLabel, serie: effectiveSerie, codemisor, form: kind }
       ));
     };
 
-    getPuntoEmisionSiguienteSecuencial(catalogUserId, documento, serie, codemisor)
+    getPuntoEmisionSiguienteSecuencial(catalogUserId, documento, effectiveSerie, codemisor)
       .then((response) => {
         if (!mounted) return;
         const proximo = response.inicializada ? response.proximo?.trim() ?? '' : '';
-        setForm((current) => current.serie === serie && current.numeroFactura !== proximo ? { ...current, numeroFactura: proximo } : current);
-        if (!response.inicializada) {
+        setForm((current) => sameSerie(current.serie) && current.numeroFactura !== proximo ? { ...current, serie: effectiveSerie, numeroFactura: proximo } : current);
+        if (response.requiereConfiguracionInicial && !knownSequence) {
           openInitialPrompt();
         } else {
-          setSequencePrompt((current) => current?.documento === documento && current?.serie === serie ? null : current);
+          setSequencePrompt((current) => current?.documento === documento && current?.serie === effectiveSerie ? null : current);
         }
       })
       .catch(() => {
-        if (mounted && serieNeedsInitialSequence(serieOptions, serie)) openInitialPrompt();
+        if (mounted && !knownSequence && serieNeedsInitialSequence(serieOptions, effectiveSerie)) openInitialPrompt();
       });
 
     return () => {
@@ -2476,6 +2494,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           setLiquidacionPreparacion(data);
           const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
           const formaPago = data.formasPago?.[0]?.codigo == null ? '' : String(data.formasPago[0].codigo);
+          const serie = getSerieValue(data.series?.[0]) || getCajaSerieForDocument(data, 'liquidacion') || '';
+          const formaPago = data.formasPago?.[0]?.codigo ?? '';
           setLiquidacionForm((current) => ({ ...current, serie, formaPago }));
         })
       : getLiquidacionesCompra(catalogUserId, 0).then((data) => {
@@ -2508,7 +2528,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getNotaDebitoPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setNotaDebitoPreparacion(data);
-          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
+          const serie = getSerieValue(data.series?.[0]) || getCajaSerieForDocument(data, 'notaDebito') || '';
           setNotaDebitoForm((current) => ({ ...current, serie }));
         })
       : getNotasDebito(catalogUserId, 0).then((data) => {
@@ -2541,7 +2561,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getNotaCreditoPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setNotaCreditoPreparacion(data);
-          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
+          const serie = getSerieValue(data.series?.[0]) || getCajaSerieForDocument(data, 'notaCredito') || '';
           setNotaCreditoForm((current) => ({ ...current, serie }));
         })
       : getNotasCredito(catalogUserId, 0).then((data) => {
@@ -6937,10 +6957,12 @@ function NuevaFacturaMobileScreen({
   );
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'factura');
   usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
+  const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
   const formaPagoOptions = preparacion?.formasPago ?? [];
   const ivaOptions = preparacion?.porcentajesIva ?? [];
-  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-001'));
-  const invoiceNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, form.serie, 1));
+  const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-001'));
+  const optionInvoiceNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
+  const invoiceNumber = effectiveSerie ? optionInvoiceNumber || (puntosData?.cajas?.length ? '' : form.numeroFactura || getNextSequence(preparacion, effectiveSerie, 1)) : '';
   const referenciaWords = form.referencia.trim().split(/\s+/).filter(Boolean).length;
   const displayProductos = productos.length > 0 ? productos.slice(0, 2) : lineas.map((item) => item.producto).slice(0, 2);
   const [step, setStep] = useState(0);
@@ -6965,6 +6987,15 @@ function NuevaFacturaMobileScreen({
           {draftSaved ? <View style={styles.invoiceDraftStatus}><MaterialCommunityIcons name="cloud-check-outline" size={15} color="#0F8A4B" /><Text style={styles.invoiceDraftStatusText}>Borrador guardado automáticamente</Text></View> : null}
         </View>
         <View style={styles.invoiceHeaderActions}>
+          <View style={styles.invoiceHeaderBox}>
+            <DropdownField
+              label="Serie"
+              options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
+              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
+              allowClear
+            />
+          </View>
           <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Numero de factura</Text>
             <Text style={styles.invoiceHeaderValue}>{invoiceNumber}</Text>
@@ -7110,9 +7141,8 @@ function NuevaFacturaMobileScreen({
         <DropdownField
           label="Serie"
           options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-          value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
-          onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-          allowClear
+          value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
+          onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
         />
         <Field label="Correo adicional (opcional)" value={form.correoAdicional} onChangeText={(value) => onChange('correoAdicional', value)} autoCapitalize="none" keyboardType="email-address" />
         <View style={styles.invoiceReferenceHeader}>
@@ -7217,8 +7247,10 @@ function NuevaNotaCreditoMobileScreen({
   );
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'notaCredito');
   usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
-  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
-  const notaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, form.serie));
+  const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
+  const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
+  const optionNotaNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
+  const notaNumber = effectiveSerie ? form.numeroFactura || optionNotaNumber || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie)) : '';
   const addDefaultLine = () => onAddLinea({
     codproducto: 0,
     codprincipal: 'NC',
@@ -7245,9 +7277,8 @@ function NuevaNotaCreditoMobileScreen({
             <DropdownField
               label="Serie"
               options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
-              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-              allowClear
+              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
             />
           </View>
           <View style={styles.invoiceHeaderBox}>
@@ -7567,8 +7598,10 @@ function NuevaNotaDebitoMobileScreen({
   );
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'notaDebito');
   usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
-  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
-  const notaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, form.serie, 1158));
+  const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
+  const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
+  const optionNotaNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
+  const notaNumber = effectiveSerie ? form.numeroFactura || optionNotaNumber || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie, 1158)) : '';
   const [step, setStep] = useState(0);
   const handleClear = () => {
     onClear();
@@ -7588,9 +7621,8 @@ function NuevaNotaDebitoMobileScreen({
             <DropdownField
               label="Serie"
               options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
-              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-              allowClear
+              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
             />
           </View>
           <View style={styles.invoiceHeaderBox}>
@@ -7887,8 +7919,10 @@ function NuevaLiquidacionCompraMobileScreen({
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'liquidacion');
   usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
   const formaPagoOptions = preparacion?.formasPago ?? [];
-  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
-  const liquidacionNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, form.serie));
+  const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
+  const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
+  const optionLiquidacionNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
+  const liquidacionNumber = effectiveSerie ? form.numeroFactura || optionLiquidacionNumber || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie)) : '';
   const [step, setStep] = useState(0);
   const handleClear = () => {
     onClear();
@@ -7908,9 +7942,8 @@ function NuevaLiquidacionCompraMobileScreen({
             <DropdownField
               label="Serie"
               options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
-              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-              allowClear
+              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
             />
           </View>
           <View style={styles.invoiceHeaderBox}>
@@ -8218,8 +8251,10 @@ function NuevaGuiaRemisionMobileScreen({
 }) {
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'guia');
   usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
-  const serieLabel = getSerieLabelFromOptions(serieOptions, form.serie, getSerieLabel(preparacion, form.serie, '001-002'));
-  const guiaNumber = form.numeroFactura || getNextSequenceFromOptions(serieOptions, form.serie, puntosData?.cajas?.length ? '' : getNextSequence(preparacion, form.serie));
+  const effectiveSerie = getEffectiveDocumentSerie(serieOptions, form.serie) || form.serie;
+  const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
+  const optionGuiaNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
+  const guiaNumber = effectiveSerie ? optionGuiaNumber || (puntosData?.cajas?.length ? '' : form.numeroFactura || getNextSequence(preparacion, effectiveSerie)) : '';
   const totalCantidad = detalles.reduce((sum, item) => sum + (Number(item.cantidad.replace(',', '.')) || 0), 0);
   const [step, setStep] = useState(0);
   const handleClear = () => {
@@ -8240,9 +8275,8 @@ function NuevaGuiaRemisionMobileScreen({
             <DropdownField
               label="Serie guia"
               options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
-              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-              allowClear
+              value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
+              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
             />
           </View>
           <View style={styles.invoiceHeaderBox}>
@@ -8311,9 +8345,8 @@ function NuevaGuiaRemisionMobileScreen({
           <DropdownField
             label="Punto de emision"
             options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-            value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
-            onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-            allowClear
+            value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
+            onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
           />
           <Field label="Placa" value={form.placa} onChangeText={(value) => onChange('placa', value)} autoCapitalize="characters" />
         </View>
@@ -8665,18 +8698,33 @@ function MisFacturasMobileScreen({
 
   return (
     <>
-      <View style={styles.adminHeroCard}>
-        <Text style={styles.heroEyebrow}>Panel comercial</Text>
-        <Text style={styles.heroTitle}>Mis facturas</Text>
-        <Text style={styles.heroText}>Consulta tus facturas generadas y ejecuta acciones del comprobante.</Text>
+      <View style={styles.invoiceHistoryHeader}>
+        <View style={styles.invoiceHistoryHeaderTop}>
+          <View style={styles.invoiceHistoryHeaderIcon}>
+            <MaterialCommunityIcons name="file-document-multiple-outline" size={25} color="#FFFFFF" />
+          </View>
+          <View style={styles.invoiceHistoryHeaderCopy}>
+            <Text style={styles.invoiceHistoryEyebrow}>Panel comercial</Text>
+            <Text style={styles.invoiceHistoryTitle}>Mis facturas</Text>
+            <Text style={styles.invoiceHistoryText}>Consulta tus comprobantes emitidos y ejecuta acciones del documento.</Text>
+          </View>
+        </View>
+        <View style={styles.invoiceHistoryStats}>
+          <InvoiceHistoryMetric value={filteredFacturas.length} label="Filtradas" />
+          <InvoiceHistoryMetric value={formatMoney(total)} label="Monto" />
+          <InvoiceHistoryMetric value={autorizadas} label="Autorizadas" />
+        </View>
       </View>
-      <View style={styles.metricGrid}>
-        <MetricBox value={visibleFacturas.length} label="Facturas filtradas" />
-        <MetricBox value={formatMoney(total)} label="Monto" />
-        <MetricBox value={autorizadas} label="Autorizadas" />
-      </View>
-      <View style={styles.formSectionBox}>
-        <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
+      <View style={styles.invoiceHistoryFilterPanel}>
+        <View style={styles.adminSearchHeader}>
+          <View style={styles.adminSearchTitleBlock}>
+            <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
+            <Text style={styles.clientFormTitle}>Facturas generadas</Text>
+          </View>
+          <Pressable style={styles.adminActionPill} onPress={onRefresh}>
+            <Text style={styles.adminActionText}>Refrescar</Text>
+          </Pressable>
+        </View>
         <SearchField label="Buscar facturas" placeholder="Numero, cliente, identificacion o estado" value={filter} onChangeText={setFilter} resultCount={visibleFacturas.length} totalCount={facturas.length} />
         <DropdownField
           label="Estado SRI"
@@ -8690,7 +8738,6 @@ function MisFacturasMobileScreen({
         />
         <View style={styles.formActions}>
           <SecondaryButton label="Limpiar filtros" onPress={() => { setFilter(''); setStatusFilter(1); }} />
-          <PrimaryButton label="Refrescar" loading={loading} onPress={onRefresh} />
         </View>
       </View>
       {message ? <MessageBox message={message} /> : null}
@@ -8704,36 +8751,53 @@ function MisFacturasMobileScreen({
       <View style={styles.listStack}>
         {visibleFacturas.map((factura, index) => {
           const facturaKey = listItemKey('mis-facturas', [factura.codfactura, factura.numeroCompleto, factura.numfactura, factura.serie, factura.fechaEmision], index);
+          const status = factura.estadoSri ?? (factura.autorizado ? 'AUTORIZADO' : 'PENDIENTE');
 
           return (
-          <View key={facturaKey} style={styles.clientCard}>
-            <View style={styles.clientCardHeader}>
-              <View style={styles.clientInfo}>
-                <Text style={styles.clientName}>{factura.numeroCompleto ?? factura.numfactura ?? `Factura ${factura.codfactura}`}</Text>
-                <Text style={styles.clientMeta}>{factura.cliente ?? 'Consumidor final'} · {factura.identificacionCliente ?? 'Sin identificacion'}</Text>
+          <View key={facturaKey} style={styles.invoiceHistoryCard}>
+            <View style={styles.invoiceHistoryCardHeader}>
+              <View style={styles.invoiceHistoryIdentityRow}>
+                <View style={styles.invoiceHistoryDocIcon}>
+                  <MaterialCommunityIcons name="file-document-outline" size={21} color="#0072BD" />
+                </View>
+                <View style={styles.invoiceHistoryCardInfo}>
+                  <Text style={styles.invoiceHistoryNumber} numberOfLines={1} adjustsFontSizeToFit>{factura.numeroCompleto ?? factura.numfactura ?? `Factura ${factura.codfactura}`}</Text>
+                  <View style={[styles.invoiceHistoryStatusPill, getInvoiceStatusStyle(status)]}>
+                    <Text style={[styles.invoiceHistoryStatusText, getInvoiceStatusTextStyle(status)]}>{status}</Text>
+                  </View>
+                </View>
               </View>
-              <View style={styles.systemPill}>
-                <Text style={styles.systemPillText}>{factura.estadoSri ?? (factura.autorizado ? 'AUTORIZADO' : 'PENDIENTE')}</Text>
-              </View>
-            </View>
-            <View style={styles.clientDetailGrid}>
-              <View style={styles.clientDetailItem}>
-                <Text style={styles.clientDetailLabel}>Fecha</Text>
-                <Text style={styles.clientDetailValue}>{formatDocumentDate(factura.fechaEmision)}</Text>
-              </View>
-              <View style={styles.clientDetailItem}>
-                <Text style={styles.clientDetailLabel}>Total</Text>
-                <Text style={styles.clientDetailValue}>{formatMoney(factura.total)}</Text>
+              <View style={styles.invoiceHistoryClientBlock}>
+                <Text style={styles.invoiceHistoryClient} numberOfLines={1}>{factura.cliente ?? 'Consumidor final'}</Text>
+                <Text style={styles.invoiceHistoryId}>{factura.identificacionCliente ?? 'Sin identificacion'}</Text>
               </View>
             </View>
-            <DocumentActionsMenu actions={[
-              { label: 'Detalle', icon: 'information-outline', tone: 'primary', onPress: () => setSelectedFactura(factura) },
-              { label: 'Ver PDF', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(factura) },
-              { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(factura) },
-              { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(factura) },
-              { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(factura) },
-              { label: 'Anular factura', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(factura) },
-            ]} />
+            <View style={styles.invoiceHistoryDetailGrid}>
+              <View style={styles.invoiceHistoryDetailItem}>
+                <Text style={styles.invoiceHistoryDetailLabel}>Fecha</Text>
+                <Text style={styles.invoiceHistoryDetailValue}>{formatDocumentDate(factura.fechaEmision)}</Text>
+              </View>
+              <View style={styles.invoiceHistoryDetailItem}>
+                <Text style={styles.invoiceHistoryDetailLabel}>Total</Text>
+                <Text style={styles.invoiceHistoryAmount}>{formatMoney(factura.total)}</Text>
+              </View>
+            </View>
+            <View style={styles.invoiceHistoryAuthorization}>
+              <View style={styles.invoiceHistoryAuthorizationTextBlock}>
+                <Text style={styles.invoiceHistoryDetailLabel}>Autorizacion</Text>
+                <Text style={styles.invoiceHistoryAuthorizationText} numberOfLines={2}>
+                  {factura.numeroAutorizacion || factura.mensajeSri || (factura.autorizado ? 'Autorizado sin numero registrado' : 'No disponible')}
+                </Text>
+              </View>
+              <DocumentActionsMenu actions={[
+                { label: 'Detalle', icon: 'information-outline', tone: 'primary', onPress: () => setSelectedFactura(factura) },
+                { label: 'Ver PDF', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(factura) },
+                { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(factura) },
+                { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(factura) },
+                { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(factura) },
+                { label: 'Anular factura', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(factura) },
+              ]} />
+            </View>
           </View>
           );
         })}
@@ -8766,6 +8830,37 @@ function MisFacturasMobileScreen({
       />
     </>
   );
+}
+
+function InvoiceHistoryMetric({ value, label }: { value: string | number; label: string }) {
+  return (
+    <View style={styles.invoiceHistoryMetric}>
+      <Text style={styles.invoiceHistoryMetricValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+      <Text style={styles.invoiceHistoryMetricLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function getInvoiceStatusStyle(status: string) {
+  const normalized = status.toLowerCase();
+  if (isInvoiceStatusRejected(normalized)) return styles.invoiceHistoryStatusDanger;
+  if (normalized.includes('autoriz')) return styles.invoiceHistoryStatusOk;
+  return styles.invoiceHistoryStatusPending;
+}
+
+function getInvoiceStatusTextStyle(status: string) {
+  const normalized = status.toLowerCase();
+  if (isInvoiceStatusRejected(normalized)) return styles.invoiceHistoryStatusTextDanger;
+  if (normalized.includes('autoriz')) return styles.invoiceHistoryStatusTextOk;
+  return styles.invoiceHistoryStatusTextPending;
+}
+
+function isInvoiceStatusRejected(normalizedStatus: string) {
+  return normalizedStatus.includes('no autoriz')
+    || normalizedStatus.includes('sin autoriz')
+    || normalizedStatus.includes('anul')
+    || normalizedStatus.includes('rech')
+    || normalizedStatus.includes('error');
 }
 
 function AdminModuleScreen({
@@ -8972,6 +9067,21 @@ function OperationalModuleScreen({
 
   if (!config) return null;
 
+  if (view === 'recargas' && selectedTab === 'Historial') {
+    return (
+      <RechargeHistoryScreen
+        search={search}
+        items={items}
+        loading={loading}
+        message={message}
+        placeholder={config.placeholder}
+        onRefresh={onRefresh}
+        onSearch={onSearch}
+        onView={onView}
+      />
+    );
+  }
+
   return (
     <>
       <View style={styles.adminHeroCard}>
@@ -9043,6 +9153,170 @@ function OperationalModuleScreen({
       />
     </>
   );
+}
+
+function RechargeHistoryScreen({
+  search,
+  items,
+  loading,
+  message,
+  placeholder,
+  onRefresh,
+  onSearch,
+  onView,
+}: {
+  search: string;
+  items: OperationalMobileItem[];
+  loading: boolean;
+  message?: MessageState;
+  placeholder: string;
+  onRefresh: () => void;
+  onSearch: (value: string) => void;
+  onView: (item: OperationalMobileItem) => void;
+}) {
+  return (
+    <>
+      <View style={styles.rechargeHistoryHeader}>
+        <View style={styles.rechargeHistoryHeaderIcon}>
+          <MaterialCommunityIcons name="history" size={24} color="#FFFFFF" />
+        </View>
+        <View style={styles.rechargeHistoryHeaderCopy}>
+          <Text style={styles.rechargeHistoryHeaderEyebrow}>Mi historial de compras</Text>
+          <Text style={styles.rechargeHistoryHeaderTitle}>Ultimos movimientos</Text>
+          <Text style={styles.rechargeHistoryHeaderText}>Consulta tus recargas realizadas y el saldo aplicado.</Text>
+        </View>
+        <View style={styles.rechargeHistoryCountPill}>
+          <Text style={styles.rechargeHistoryCountValue}>{items.length}</Text>
+          <Text style={styles.rechargeHistoryCountLabel}>compras</Text>
+        </View>
+      </View>
+      <View style={styles.rechargeHistoryToolbar}>
+        <View style={styles.adminSearchHeader}>
+          <View style={styles.adminSearchTitleBlock}>
+            <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
+            <Text style={styles.clientFormTitle}>Historial</Text>
+          </View>
+          <Pressable style={styles.adminActionPill} onPress={onRefresh}>
+            <Text style={styles.adminActionText}>Refrescar</Text>
+          </Pressable>
+        </View>
+        <SearchField label="Buscar en Historial" placeholder={placeholder} value={search} onChangeText={onSearch} resultCount={items.length} loading={loading} />
+        {message ? <MessageBox message={message} /> : null}
+      </View>
+      {loading ? <EmptyState title="Cargando recargas" text="Consultando tu historial de compras..." /> : null}
+      {!loading && !message && items.length === 0 ? <EmptyState title="Sin recargas para mostrar" text="Cuando compres documentos, apareceran aqui." /> : null}
+      {!loading && items.length > 0 ? (
+        <ResultCollection
+          items={items}
+          resetKey={`recargas-historial-${search}`}
+          keyExtractor={(item, index) => `recarga-${item.id || 'item'}-${index}`}
+          renderItem={(item) => <RechargeHistoryItemCard item={item} onPress={() => onView(item)} />}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function RechargeHistoryItemCard({ item, onPress }: { item: OperationalMobileItem; onPress: () => void }) {
+  const dateSource = getRechargeValue(item, ['fecha', 'Fecha', 'fechaCompra', 'FechaCompra', 'fechaRegistro', 'FechaRegistro', 'createdAt', 'CreatedAt']) || item.subtitle;
+  const status = getRechargeStatus(item);
+
+  return (
+    <Pressable style={styles.rechargeHistoryCard} onPress={onPress}>
+      <View style={styles.rechargeHistoryCardTop}>
+        <View>
+          <Text style={styles.rechargeHistoryDate}>{formatRechargeDate(dateSource)}</Text>
+          <Text style={styles.rechargeHistoryTime}>{formatRechargeTime(dateSource)}</Text>
+        </View>
+        <View style={[styles.rechargeHistoryStatusPill, getRechargeStatusStyle(status)]}>
+          <Text style={getRechargeStatusTextStyle(status)}>{status}</Text>
+        </View>
+      </View>
+      <Text style={styles.rechargeHistoryTitle}>{item.title || 'Recarga documental'}</Text>
+      <Text style={styles.rechargeHistorySubtitle}>Recarga documental</Text>
+      <View style={styles.rechargeHistoryMetrics}>
+        <View style={styles.rechargeHistoryMetric}>
+          <Text style={styles.rechargeHistoryMetricLabel}>Documentos</Text>
+          <Text style={styles.rechargeHistoryMetricValue}>{getRechargeDocuments(item)}</Text>
+        </View>
+        <View style={styles.rechargeHistoryMetric}>
+          <Text style={styles.rechargeHistoryMetricLabel}>Total</Text>
+          <Text style={styles.rechargeHistoryMetricValue}>{getRechargeTotal(item)}</Text>
+        </View>
+      </View>
+      <View style={styles.rechargeHistoryFoot}>
+        <RechargeHistoryDetail label="Saldo aplicado" value={getRechargeValue(item, ['saldoAplicado', 'SaldoAplicado', 'aplicado', 'Aplicado']) || 'No'} />
+        <RechargeHistoryDetail label="Referencia" value={getRechargeValue(item, ['referencia', 'Referencia', 'comprobante', 'Comprobante']) || 'Sin referencia'} />
+        <RechargeHistoryDetail label="Autorizacion" value={getRechargeValue(item, ['autorizacion', 'Autorizacion', 'numeroAutorizacion', 'NumeroAutorizacion']) || item.detail || 'Sin autorizacion'} />
+      </View>
+    </Pressable>
+  );
+}
+
+function RechargeHistoryDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.rechargeHistoryFootRow}>
+      <Text style={styles.rechargeHistoryFootLabel}>{label}</Text>
+      <Text style={styles.rechargeHistoryFootValue} numberOfLines={1}>{value}</Text>
+    </View>
+  );
+}
+
+function getRechargeValue(item: OperationalMobileItem, keys: string[]) {
+  const row = item.raw ?? {};
+  const normalizedKeys = keys.map(normalizeRechargeKey);
+  const entry = Object.entries(row).find(([key, value]) => value !== null && value !== undefined && normalizedKeys.includes(normalizeRechargeKey(key)));
+  if (entry?.[1] !== null && entry?.[1] !== undefined) return String(entry[1]);
+  return '';
+}
+
+function normalizeRechargeKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function getRechargeDocuments(item: OperationalMobileItem) {
+  return getRechargeValue(item, ['documentos', 'Documentos', 'cantidadDocumentos', 'CantidadDocumentos', 'cantidad', 'Cantidad']) || item.meta || '-';
+}
+
+function getRechargeTotal(item: OperationalMobileItem) {
+  const total = getRechargeValue(item, ['total', 'Total', 'monto', 'Monto', 'valor', 'Valor', 'valorRecarga', 'ValorRecarga', 'montoTotal', 'MontoTotal']);
+  const parsed = Number(String(total || item.meta || '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(parsed) && parsed > 0 ? formatMoney(parsed) : total || item.meta || '-';
+}
+
+function getRechargeStatus(item: OperationalMobileItem) {
+  return getRechargeValue(item, ['estado', 'Estado', 'status', 'Status']) || item.status || 'Pendiente';
+}
+
+function getRechargeStatusStyle(status: string) {
+  const normalized = status.toLowerCase();
+  if (normalized.includes('apro') || normalized.includes('pag') || normalized.includes('aplic')) return styles.rechargeHistoryStatusOk;
+  if (normalized.includes('rech') || normalized.includes('anul') || normalized.includes('error')) return styles.rechargeHistoryStatusDanger;
+  return styles.rechargeHistoryStatusPending;
+}
+
+function getRechargeStatusTextStyle(status: string) {
+  const normalized = status.toLowerCase();
+  if (normalized.includes('apro') || normalized.includes('pag') || normalized.includes('aplic')) return styles.rechargeHistoryStatusTextOk;
+  if (normalized.includes('rech') || normalized.includes('anul') || normalized.includes('error')) return styles.rechargeHistoryStatusTextDanger;
+  return styles.rechargeHistoryStatusTextPending;
+}
+
+function formatRechargeDate(value?: string | null) {
+  if (!value) return '-';
+  return formatDocumentDate(value);
+}
+
+function formatRechargeTime(value?: string | null) {
+  if (!value) return '--:--';
+  const source = String(value);
+  const dotNetMatch = /\/Date\((\d+)\)\//.exec(source);
+  const date = dotNetMatch ? new Date(Number(dotNetMatch[1])) : new Date(source);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+  }
+  const timeMatch = /(\d{1,2}:\d{2})/.exec(source);
+  return timeMatch?.[1] ?? '--:--';
 }
 
 const MOBILE_DOCUMENT_PRICES = {
@@ -9127,32 +9401,69 @@ function PurchaseDocumentsScreen({
     onSave();
   };
   const total = amount;
+  const unlimited = form.descripcion.toLowerCase().includes('ilimit');
+  const selectedPlanKey = unlimited ? 'unlimited' : `${documents}:${amount}`;
 
   return (
     <View style={styles.rechargePage}>
+      <View style={styles.rechargeStatusBand}>
+        <View style={styles.rechargeStatusIcon}>
+          <MaterialCommunityIcons name="file-document-plus-outline" size={24} color="#0072BD" />
+        </View>
+        <View style={styles.rechargeStatusCopy}>
+          <Text style={styles.rechargeEyebrow}>Compra documentos por recarga</Text>
+          <Text style={styles.rechargeStatusTitle}>Saldo acreditado al aprobarse el pago</Text>
+        </View>
+        <View style={styles.rechargeStatusPill}>
+          <Text style={styles.rechargeStatusPillText}>IVA incluido</Text>
+        </View>
+      </View>
+
       <View style={styles.rechargeHero}>
-        <View style={styles.rechargeHeroCopy}>
+        <View style={styles.rechargeHeroHeader}>
+          <View style={styles.rechargeStepBadge}>
+            <Text style={styles.rechargeStepBadgeText}>1</Text>
+          </View>
           <Text style={styles.rechargeEyebrow}>Recarga personalizada</Text>
+        </View>
+        <View style={styles.rechargeHeroCopy}>
           <Text style={styles.rechargeTitle}>Compra por documentos o por dinero</Text>
           <Text style={styles.rechargeText}>Edita cualquiera de los dos valores y el sistema calcula automáticamente el otro.</Text>
         </View>
         <View style={styles.rechargeInputs}>
-          <Field label="¿Cuántos documentos deseas comprar?" value={form.codigo} onChangeText={(value) => onChange('codigo', value)} keyboardType="number-pad" />
-          <Text style={styles.rechargeHint}>Mínimo 11 documentos (equivalente a una recarga desde $5,00)</Text>
-          <Field label="Valor de la recarga" value={form.valor} onChangeText={(value) => onChange('valor', value)} keyboardType="decimal-pad" />
-          <Text style={styles.rechargeHint}>Monto mínimo de recarga: $5,00</Text>
+          <View style={styles.rechargeInputBlock}>
+            <Field label="¿Cuántos documentos deseas comprar?" value={form.codigo} onChangeText={(value) => onChange('codigo', value)} keyboardType="number-pad" />
+            <Text style={styles.rechargeHint}>Mínimo 11 documentos (equivalente a una recarga desde $5,00)</Text>
+          </View>
+          <View style={styles.rechargeInputBlock}>
+            <Field label="Valor de la recarga" value={form.valor} onChangeText={(value) => onChange('valor', value)} keyboardType="decimal-pad" />
+            <Text style={styles.rechargeHint}>Monto mínimo de recarga: $5,00</Text>
+          </View>
         </View>
       </View>
 
       <View style={styles.rechargeSummary}>
         <Text style={styles.rechargeEyebrow}>Resumen de compra</Text>
         <Text style={styles.rechargeSummaryTitle}>{documents || amount ? 'Tu recarga' : 'Selecciona una opción'}</Text>
-        <View style={styles.rechargeSummaryRow}><Text style={styles.rechargeSummaryLabel}>Documentos</Text><Text style={styles.rechargeSummaryValue}>{documents || 0}</Text></View>
-        <View style={styles.rechargeSummaryRow}><Text style={styles.rechargeSummaryLabel}>Total a pagar</Text><Text style={styles.rechargeSummaryTotal}>USD ${total.toFixed(2)}</Text></View>
+        <View style={styles.rechargeSummaryHero}>
+          <View>
+            <Text style={styles.rechargeSummaryLabel}>Total a pagar</Text>
+            <Text style={styles.rechargeSummaryTotal}>USD ${total.toFixed(2)}</Text>
+          </View>
+          <View style={styles.rechargeDocsPill}>
+            <Text style={styles.rechargeDocsPillValue}>{unlimited ? '∞' : documents || 0}</Text>
+            <Text style={styles.rechargeDocsPillLabel}>{unlimited ? 'documentos' : 'docs'}</Text>
+          </View>
+        </View>
+        <View style={styles.rechargeSummaryRow}><Text style={styles.rechargeSummaryLabel}>Documentos</Text><Text style={styles.rechargeSummaryValue}>{unlimited ? 'Ilimitados' : documents || 0}</Text></View>
+        <View style={styles.rechargeSummaryRow}><Text style={styles.rechargeSummaryLabel}>Vigencia</Text><Text style={styles.rechargeSummaryValue}>{unlimited ? '1 año' : 'Saldo disponible'}</Text></View>
         {localMessage ? <MessageBox message={localMessage} /> : null}
         {message ? <MessageBox message={message} /> : null}
         <PrimaryButton label="Confirmar recarga" loading={saving} onPress={confirm} />
-        <Text style={styles.rechargeSecure}>🔒 Pago 100% seguro{`\n`}El saldo se acredita automáticamente al aprobarse el pago.</Text>
+        <View style={styles.rechargeSecureRow}>
+          <MaterialCommunityIcons name="lock-check-outline" size={17} color="#7890A4" />
+          <Text style={styles.rechargeSecure}>Pago 100% seguro{`\n`}El saldo se acredita automáticamente al aprobarse el pago.</Text>
+        </View>
       </View>
 
       <View style={styles.rechargeSectionHeader}>
@@ -9163,10 +9474,20 @@ function PurchaseDocumentsScreen({
         <Text style={styles.rechargeVatHint}>Precios finales con IVA incluido</Text>
       </View>
 
-      <View style={styles.rechargePlanGrid}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.rechargePlanGrid}
+        decelerationRate="fast"
+      >
         {plans.map((plan) => (
-          <View key={plan.unlimited ? 'unlimited' : plan.documents} style={[styles.rechargePlan, { backgroundColor: plan.color }, documents === plan.documents && amount === plan.amount ? styles.rechargePlanSelected : null]}>
-            {plan.recommended ? <Text style={styles.rechargePlanBadge}>Recomendado</Text> : null}
+          <View key={plan.unlimited ? 'unlimited' : plan.documents} style={[styles.rechargePlan, { backgroundColor: plan.color }, selectedPlanKey === (plan.unlimited ? 'unlimited' : `${plan.documents}:${plan.amount}`) ? styles.rechargePlanSelected : null]}>
+            <View style={styles.rechargePlanTop}>
+              <View style={styles.rechargePlanIcon}>
+                <MaterialCommunityIcons name={plan.unlimited ? 'creation' : plan.recommended ? 'briefcase-check-outline' : 'file-document-multiple-outline'} size={19} color="#0072BD" />
+              </View>
+              {plan.recommended ? <Text style={styles.rechargePlanBadge}>Recomendado</Text> : null}
+            </View>
             {plan.unlimited ? <Text style={styles.rechargePlanDocuments}>Ilimitados</Text> : <Text style={styles.rechargePlanDocuments}>{plan.documents}</Text>}
             {!plan.unlimited ? <Text style={styles.rechargePlanUnit}>documentos</Text> : <Text style={styles.rechargePlanUnit}>durante 1 año</Text>}
             <Text style={styles.rechargePlanAmount}>USD ${plan.amount.toFixed(2)}</Text>
@@ -9174,7 +9495,7 @@ function PurchaseDocumentsScreen({
             <SecondaryButton label="Elegir plan  →" onPress={() => selectPlan(plan)} />
           </View>
         ))}
-      </View>
+      </ScrollView>
 
     </View>
   );

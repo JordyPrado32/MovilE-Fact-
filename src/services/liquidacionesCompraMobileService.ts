@@ -38,12 +38,12 @@ export type LiquidacionCompraGuardarInput = {
 };
 
 export function getLiquidacionCompraPreparacion(userId: number) {
-  return requestWithFallback<FacturaPreparacion>([
+  return requestWithFallback<Record<string, unknown>>([
     `/api/liquidaciones-compra/preparacion?idUsuario=${userId}`,
     `/api/liquidacion-compra/preparacion?idUsuario=${userId}`,
     `/api/compras/liquidaciones/preparacion?idUsuario=${userId}`,
     `/api/facturas/preparacion?idUsuario=${userId}`,
-  ]);
+  ]).then(normalizeLiquidacionPreparacion);
 }
 
 export async function getLiquidacionesCompra(userId: number, top = 0) {
@@ -148,13 +148,55 @@ async function requestWithFallback<T>(paths: string[]) {
   let lastError: unknown;
   for (const path of paths) {
     try {
-      return await apiRequest<T>(path);
+      return await apiRequest<T>(path, { suppressErrorLog: true });
     } catch (error) {
       lastError = error;
       if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 0)) throw error;
     }
   }
   throw lastError;
+}
+
+function normalizeLiquidacionPreparacion(response: Record<string, unknown>): FacturaPreparacion {
+  const preview = isRecord(response.preview) ? response.preview : isRecord(response.Preview) ? response.Preview : null;
+  if (!preview) return response as FacturaPreparacion;
+
+  const serieVisual = text(pickValue(preview, ['SerieVisual', 'serieVisual']));
+  const serieRaw = text(pickValue(preview, ['Serie', 'serie']));
+  const secuencial = text(pickValue(preview, ['Secuencial', 'secuencial']));
+  const codemisor = numberValue(pickValue(preview, ['CodEmisor', 'codemisor', 'codEmisor']));
+  const normalized = response as FacturaPreparacion;
+
+  return {
+    ...normalized,
+    caja: {
+      ...(normalized.caja ?? {}),
+      serieLiquidacion: serieVisual || serieRaw || normalized.caja?.serieLiquidacion,
+      serieLiquidacionCompra: serieVisual || serieRaw || normalized.caja?.serieLiquidacionCompra,
+      siguiente: secuencial || normalized.caja?.siguiente,
+      proximo: secuencial || normalized.caja?.proximo,
+      codemisor: codemisor ?? normalized.caja?.codemisor,
+    },
+    series: [
+      {
+        serieRaw: serieVisual || serieRaw,
+        serieVisual: serieVisual || serieRaw,
+        codemisor: codemisor ?? null,
+        siguiente: secuencial || null,
+        proximo: secuencial || null,
+      },
+      ...(normalized.series ?? []),
+    ].filter((item) => Boolean(item.serieRaw || item.serieVisual)),
+    formasPago: normalizeFormasPago(response.formasPago ?? response.FormasPago) ?? normalized.formasPago,
+  };
+}
+
+function normalizeFormasPago(value: unknown): FacturaPreparacion['formasPago'] {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter(isRecord).map((row) => ({
+    codigo: text(pickValue(row, ['codigo', 'Codigo'])) || null,
+    descripcion: text(pickValue(row, ['descripcion', 'Descripcion'])) || null,
+  }));
 }
 
 function normalizeRows(response: ApiRow[] | Record<string, unknown>): ApiRow[] {
