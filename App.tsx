@@ -9083,6 +9083,33 @@ function OperationalModuleScreen({
 
   if (!config) return null;
 
+  if (view === 'cuentas-cobrar') {
+    return (
+      <AccountsReceivableScreen
+        search={search}
+        items={items}
+        loading={loading}
+        saving={saving}
+        message={message}
+        activeTab={selectedTab ?? 'Cuentas por cobrar'}
+        formMode={formMode}
+        form={form}
+        placeholder={config.placeholder}
+        onRefresh={onRefresh}
+        onSearch={onSearch}
+        onTabChange={(tab) => {
+          onCancel();
+          onTabChange(tab);
+        }}
+        onCreate={onCreate}
+        onCancel={onCancel}
+        onChange={onChange}
+        onSave={onSave}
+        onRegisterPayment={onRegisterPayment}
+      />
+    );
+  }
+
   if (view === 'estado-cuenta') {
     return (
       <AccountStatementScreen
@@ -9183,6 +9210,209 @@ function OperationalModuleScreen({
         onClose={() => setDetailItem(null)}
       />
     </>
+  );
+}
+
+function AccountsReceivableScreen({
+  search,
+  items,
+  loading,
+  saving,
+  message,
+  activeTab,
+  formMode,
+  form,
+  placeholder,
+  onRefresh,
+  onSearch,
+  onTabChange,
+  onCreate,
+  onCancel,
+  onChange,
+  onSave,
+  onRegisterPayment,
+}: {
+  search: string;
+  items: OperationalMobileItem[];
+  loading: boolean;
+  saving: boolean;
+  message?: MessageState;
+  activeTab: string;
+  formMode: OperationalFormMode;
+  form: OperationalFormState;
+  placeholder: string;
+  onRefresh: () => void;
+  onSearch: (value: string) => void;
+  onTabChange: (tab: string) => void;
+  onCreate: () => void;
+  onCancel: () => void;
+  onChange: (field: keyof OperationalFormState, value: string) => void;
+  onSave: () => void;
+  onRegisterPayment?: (item: OperationalMobileItem) => void;
+}) {
+  const totalBalance = items.reduce((total, item) => total + getAccountStatementAmount(item, ['saldoPendiente', 'SaldoPendiente', 'saldoActual', 'SaldoActual', 'saldo', 'Saldo'], item.meta), 0);
+  const overdueItems = items.filter((item) => normalizeText(item.status || '').includes('venc'));
+  const activeClients = new Set(items.map((item) => getAccountStatementClientId(item) || item.title).filter(Boolean)).size;
+  const averageDays = Math.round(items.reduce((total, item) => total + getAccountStatementNumber(item, ['diasCobro', 'DiasCobro', 'diasPromedio', 'DiasPromedio', 'diasMora', 'DiasMora'], 0), 0) / Math.max(items.length, 1));
+  const selectedTab = activeTab || 'Cuentas por cobrar';
+
+  return (
+    <>
+      <View style={styles.receivableHeroCard}>
+        <Text style={styles.heroEyebrow}>Cuentas por cobrar</Text>
+        <Text style={styles.receivableHeroTitle}>Registro de abonos</Text>
+        <Text style={styles.receivableHeroText}>Avance paso a paso: seleccione el cliente, registre el pago, distribuya el valor y confirme el abono.</Text>
+      </View>
+
+      <View style={styles.receivableMetricGrid}>
+        <ReceivableMetricCard icon="wallet-outline" label="Saldo total por cobrar" value={formatMoney(totalBalance)} tone="blue" helper={`${items.length} factura(s) pendientes`} />
+        <ReceivableMetricCard icon="calendar-alert" label="Facturas vencidas" value={formatMoney(overdueItems.reduce((total, item) => total + getAccountStatementAmount(item, ['saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta), 0))} tone="red" helper={`${overdueItems.length} requieren atencion`} />
+        <ReceivableMetricCard icon="timer-sand" label="Facturas por vencer" value={formatMoney(Math.max(totalBalance - overdueItems.reduce((total, item) => total + getAccountStatementAmount(item, ['saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta), 0), 0))} tone="orange" helper="Dentro de 30 dias" />
+        <ReceivableMetricCard icon="account-cash-outline" label="Clientes con saldo" value={activeClients || items.length} tone="green" helper="Cartera activa visible" />
+        <ReceivableMetricCard icon="chart-line" label="Dias promedio de cobro" value={`${averageDays || 0} dias`} tone="purple" helper="Promedio general" />
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.adminTabs}>
+        {['Cuentas por cobrar', 'Abonos'].map((tab) => (
+          <Pressable key={tab} style={[styles.adminTab, selectedTab === tab && styles.adminTabActive]} onPress={() => onTabChange(tab)}>
+            <Text style={[styles.adminTabText, selectedTab === tab && styles.adminTabTextActive]}>{tab}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      {formMode ? (
+        <OperationalForm
+          title={formMode === 'edit' ? `Editar ${selectedTab}` : `Registrar ${selectedTab}`}
+          form={form}
+          saving={saving}
+          onCancel={onCancel}
+          onChange={onChange}
+          onSave={onSave}
+        />
+      ) : null}
+
+      <View style={styles.receivableSearchPanel}>
+        <View style={styles.adminSearchHeader}>
+          <View style={styles.adminSearchTitleBlock}>
+            <Text style={styles.clientFormSubtitle}>Busqueda y filtros</Text>
+            <Text style={styles.clientFormTitle}>Encuentra tu cartera rapido</Text>
+          </View>
+          <Pressable style={styles.adminActionPill} onPress={onRefresh}>
+            <Text style={styles.adminActionText}>Refrescar</Text>
+          </Pressable>
+        </View>
+        <SearchField label="Buscar por cedula, RUC, nombre o factura" placeholder={placeholder} value={search} onChangeText={onSearch} resultCount={items.length} loading={loading} />
+        <View style={styles.receivableFilterChips}>
+          {['Todas', 'Vencidas', 'Por vencer', 'Vigentes'].map((filter) => (
+            <View key={filter} style={[styles.clientFilterChip, filter === 'Todas' && styles.clientFilterChipActive]}>
+              <Text style={[styles.clientFilterChipText, filter === 'Todas' && styles.clientFilterChipTextActive]}>{filter}</Text>
+            </View>
+          ))}
+        </View>
+        {message ? <MessageBox message={message} /> : null}
+      </View>
+
+      <View style={styles.receivableListPanel}>
+        <View style={styles.clientListHeader}>
+          <View>
+            <Text style={styles.clientListEyebrow}>Cartera pendiente</Text>
+            <Text style={styles.clientListTitle}>{selectedTab === 'Abonos' ? 'Registro de abonos' : 'Facturas por cobrar'}</Text>
+          </View>
+          <Text style={styles.clientListCount}>{items.length}</Text>
+        </View>
+        {loading ? <EmptyState title="Cargando cartera" text="Consultando facturas pendientes..." /> : null}
+        {!loading && !message && items.length === 0 ? <EmptyState title="Sin cartera para mostrar" text="Cuando existan facturas pendientes, apareceran aqui." /> : null}
+        {!loading && items.length > 0 ? (
+          <ResultCollection
+            items={items}
+            resetKey={`cuentas-cobrar-${selectedTab}-${search}`}
+            keyExtractor={(item, index) => `cuenta-cobrar-${item.id || 'item'}-${index}`}
+            variant="plain"
+            renderItem={(item) => (
+              <ReceivableInvoiceCard
+                item={item}
+                onRegister={() => onRegisterPayment?.(item) ?? onCreate()}
+              />
+            )}
+          />
+        ) : null}
+      </View>
+
+      <View style={styles.receivableSteps}>
+        {[
+          ['1', 'Identificar cliente', 'Buscar por cedula, RUC o nombre'],
+          ['2', 'Registrar pago', 'Monto recibido y observacion'],
+          ['3', 'Distribuir', 'Aplicar el abono por factura'],
+          ['4', 'Confirmar', 'Registrar el abono final'],
+        ].map(([number, title, text], index) => (
+          <View key={number} style={[styles.receivableStep, index === (formMode ? 1 : 0) && styles.receivableStepActive]}>
+            <Text style={[styles.receivableStepNumber, index === (formMode ? 1 : 0) && styles.receivableStepNumberActive]}>{number}</Text>
+            <View style={styles.receivableStepCopy}>
+              <Text style={styles.receivableStepTitle}>{title}</Text>
+              <Text style={styles.receivableStepText}>{text}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+    </>
+  );
+}
+
+function ReceivableMetricCard({ icon, label, value, tone, helper }: { icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; label: string; value: string | number; tone: 'blue' | 'red' | 'orange' | 'green' | 'purple'; helper: string }) {
+  const toneStyle = tone === 'red' ? styles.receivableMetricRed : tone === 'orange' ? styles.receivableMetricOrange : tone === 'green' ? styles.receivableMetricGreen : tone === 'purple' ? styles.receivableMetricPurple : styles.receivableMetricBlue;
+  const iconColor = tone === 'red' ? '#D92D3A' : tone === 'orange' ? '#D77416' : tone === 'green' ? '#0C8C57' : tone === 'purple' ? '#7448D8' : '#0870BE';
+
+  return (
+    <View style={[styles.receivableMetricCard, toneStyle]}>
+      <View style={styles.receivableMetricHeader}>
+        <Text style={styles.receivableMetricLabel}>{label}</Text>
+        <MaterialCommunityIcons name={icon} size={16} color={iconColor} />
+      </View>
+      <Text style={styles.receivableMetricValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+      <Text style={styles.receivableMetricHelper}>{helper}</Text>
+    </View>
+  );
+}
+
+function ReceivableInvoiceCard({ item, onRegister }: { item: OperationalMobileItem; onRegister: () => void }) {
+  const invoiceNumber = getAccountStatementText(item, ['numeroFactura', 'NumeroFactura', 'numeroDocumento', 'NumeroDocumento', 'factura', 'Factura']) || item.id || 'Factura';
+  const client = getAccountStatementText(item, ['cliente', 'Cliente', 'nombreCliente', 'NombreCliente']) || item.title || 'Cliente';
+  const identification = getAccountStatementText(item, ['numeroIdentificacion', 'NumeroIdentificacion', 'identificacion', 'Identificacion', 'ruc', 'Ruc']) || item.subtitle || 'Sin identificacion';
+  const issueDate = getAccountStatementText(item, ['fechaEmision', 'FechaEmision', 'fecha', 'Fecha']) || '-';
+  const dueDate = getAccountStatementText(item, ['fechaVencimiento', 'FechaVencimiento', 'vencimiento', 'Vencimiento']) || '-';
+  const total = getAccountStatementDisplayMoney(item, ['total', 'Total', 'valorFacturado', 'ValorFacturado'], item.meta);
+  const balance = getAccountStatementDisplayMoney(item, ['saldoPendiente', 'SaldoPendiente', 'saldoActual', 'SaldoActual', 'saldo', 'Saldo'], item.meta);
+  const status = item.status || (normalizeText(dueDate).includes('-') ? 'Vigente' : 'Pendiente');
+  const isOverdue = normalizeText(status).includes('venc');
+
+  return (
+    <View style={styles.receivableInvoiceCard}>
+      <View style={styles.receivableInvoiceTop}>
+        <View style={styles.receivableInvoiceIcon}>
+          <MaterialCommunityIcons name="file-document-outline" size={20} color="#0870BE" />
+        </View>
+        <View style={styles.clientInfo}>
+          <Text style={styles.receivableInvoiceNumber}>{invoiceNumber}</Text>
+          <Text style={styles.clientName}>{client}</Text>
+          <Text style={styles.clientMeta}>{identification}</Text>
+        </View>
+        <View style={[styles.accountStatusPill, isOverdue ? styles.accountStatusDanger : styles.receivableStatusOk]}>
+          <Text style={[styles.accountStatusText, isOverdue ? styles.accountStatusTextDanger : styles.receivableStatusOkText]}>{status}</Text>
+        </View>
+      </View>
+      <View style={styles.accountClientGrid}>
+        <AccountClientStat label="Emision" value={issueDate} />
+        <AccountClientStat label="Vencimiento" value={dueDate} />
+        <AccountClientStat label="Total" value={total} />
+        <AccountClientStat label="Saldo" value={balance} danger={isOverdue} />
+      </View>
+      <View style={styles.clientActions}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Registrar abono de ${invoiceNumber}`} style={[styles.smallActionButton, styles.smallSuccessButton]} onPress={onRegister}>
+          <MaterialCommunityIcons name="cash-plus" size={16} color="#128A46" />
+          <Text style={[styles.smallActionText, styles.smallSuccessText]}>Registrar</Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
