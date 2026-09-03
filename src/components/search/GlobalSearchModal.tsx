@@ -47,7 +47,7 @@ export function GlobalSearchModal({ visible, query, results, onChangeQuery, onCl
 
 const styles = StyleSheet.create({
   overlay: { alignItems: 'center', flex: 1, justifyContent: 'flex-start', paddingHorizontal: 16, paddingTop: 56 },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(4, 24, 44, 0.62)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(4, 24, 44, 0.62)' },
   panel: { backgroundColor: '#F7FBFE', borderColor: '#9BDFF5', borderRadius: 24, borderWidth: 1, maxHeight: '78%', maxWidth: 500, padding: 18, shadowColor: '#001F38', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 18, width: '100%' },
   header: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between', marginBottom: 14 },
   titleBlock: { flex: 1 },

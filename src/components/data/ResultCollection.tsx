@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
   pageText: { color: '#617A90', fontSize: 12, fontWeight: '900' },
   activePageText: { color: '#FFFFFF' },
   overlay: { flex: 1, justifyContent: 'center', padding: 20 },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(4, 35, 60, 0.48)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(4, 35, 60, 0.48)' },
   modalCard: { backgroundColor: '#FFFFFF', borderColor: '#B9D8EE', borderRadius: 22, borderWidth: 1, gap: 18, maxHeight: '80%', padding: 20, shadowColor: '#002C50', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 8 },
   modalHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: 10 },
   titleWrap: { flex: 1, gap: 4 },

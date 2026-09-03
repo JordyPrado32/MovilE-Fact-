@@ -6597,7 +6597,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           </View>
         </View>
       </Modal>
-      <StatusBar style="light" backgroundColor="#07305E" translucent={false} />
+      <StatusBar style="light" />
     </SafeAreaView>
   );
 }
@@ -7464,17 +7464,8 @@ function MisNotasCreditoMobileScreen({
 
   return (
     <>
-      <View style={styles.adminHeroCard}>
-        <Text style={styles.heroEyebrow}>Ajustes emitidos</Text>
-        <Text style={styles.heroTitle}>Mis notas de credito con filtros, reporte y acciones unificadas</Text>
-        <Text style={styles.heroText}>Busca por cliente, documento modificado o motivo, exporta el resultado visible y abre el XML o PDF desde la misma vista.</Text>
-      </View>
-      <View style={styles.metricGrid}>
-        <MetricBox value={visibleNotas.length} label="Notas filtradas" />
-        <MetricBox value={formatMoney(total)} label="Total filtrado" />
-        <MetricBox value={autorizadas} label="Autorizadas" />
-      </View>
-      <View style={styles.formSectionBox}>
+      <DocumentHistoryHero eyebrow="Ajustes emitidos" title="Mis notas de credito" text="Busca por cliente, documento modificado o motivo, exporta el resultado visible y abre el XML o PDF desde la misma vista." metrics={[{ value: visibleNotas.length, label: 'Notas filtradas' }, { value: formatMoney(total), label: 'Total filtrado' }, { value: autorizadas, label: 'Autorizadas' }]} />
+      <View style={styles.invoiceHistoryFilterPanel}>
         <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
         <Text style={styles.clientName}>Notas de credito generadas</Text>
         <SearchField label="Buscar notas de credito" placeholder="Numero, factura, cliente o identificacion" value={filter} onChangeText={setFilter} resultCount={visibleNotas.length} totalCount={notas.length} />
@@ -7505,7 +7496,7 @@ function MisNotasCreditoMobileScreen({
         {visibleNotas.map((nota, index) => {
           const notaKey = listItemKey('mis-notas-credito', [nota.codNotaCredito, nota.numeroNota, nota.facturaModificada], index);
           return (
-            <View key={notaKey} style={styles.clientCard}>
+            <View key={notaKey} style={styles.invoiceHistoryCard}>
               <View style={styles.clientCardHeader}>
                 <View style={styles.clientInfo}>
                   <Text style={styles.clientName}>{nota.numeroNota ?? `Nota ${nota.codNotaCredito}`}</Text>
@@ -7789,17 +7780,8 @@ function MisNotasDebitoMobileScreen({
 
   return (
     <>
-      <View style={styles.adminHeroCard}>
-        <Text style={styles.heroEyebrow}>Cargos emitidos</Text>
-        <Text style={styles.heroTitle}>Mis notas de debito con filtros, reporte y acciones unificadas</Text>
-        <Text style={styles.heroText}>Filtra por cliente, documento modificado o motivo, exporta tu consulta y abre cada comprobante.</Text>
-      </View>
-      <View style={styles.metricGrid}>
-        <MetricBox value={visibleNotas.length} label="Notas filtradas" />
-        <MetricBox value={formatMoney(total)} label="Total filtrado" />
-        <MetricBox value={autorizadas} label="Autorizadas" />
-      </View>
-      <View style={styles.formSectionBox}>
+      <DocumentHistoryHero eyebrow="Cargos emitidos" title="Mis notas de debito" text="Filtra por cliente, documento modificado o motivo, exporta tu consulta y abre cada comprobante." metrics={[{ value: visibleNotas.length, label: 'Notas filtradas' }, { value: formatMoney(total), label: 'Total filtrado' }, { value: autorizadas, label: 'Autorizadas' }]} />
+      <View style={styles.invoiceHistoryFilterPanel}>
         <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
         <Text style={styles.clientName}>Notas de debito generadas</Text>
         <SearchField label="Buscar notas de debito" placeholder="Numero, factura, cliente o identificacion" value={filter} onChangeText={setFilter} resultCount={visibleNotas.length} totalCount={notas.length} />
@@ -7830,7 +7812,7 @@ function MisNotasDebitoMobileScreen({
         {visibleNotas.map((nota, index) => {
           const notaKey = listItemKey('mis-notas-debito', [nota.codNotaDebito, nota.numeroNota, nota.facturaModificada], index);
           return (
-            <View key={notaKey} style={styles.clientCard}>
+            <View key={notaKey} style={styles.invoiceHistoryCard}>
               <View style={styles.clientCardHeader}>
                 <View style={styles.clientInfo}>
                   <Text style={styles.clientName}>{nota.numeroNota ?? `Nota ${nota.codNotaDebito}`}</Text>
@@ -8111,17 +8093,8 @@ function MisLiquidacionesCompraMobileScreen({
 
   return (
     <>
-      <View style={styles.adminHeroCard}>
-        <Text style={styles.heroEyebrow}>Compras emitidas</Text>
-        <Text style={styles.heroTitle}>Mis liquidaciones con filtros, reporte y acciones unificadas</Text>
-        <Text style={styles.heroText}>Filtra por proveedor, numero o identificacion, exporta tu consulta y abre cada comprobante.</Text>
-      </View>
-      <View style={styles.metricGrid}>
-        <MetricBox value={visibleLiquidaciones.length} label="Liquidaciones filtradas" />
-        <MetricBox value={formatMoney(total)} label="Total filtrado" />
-        <MetricBox value={autorizadas} label="Autorizadas" />
-      </View>
-      <View style={styles.formSectionBox}>
+      <DocumentHistoryHero eyebrow="Compras emitidas" title="Mis liquidaciones" text="Filtra por proveedor, numero o identificacion, exporta tu consulta y abre cada comprobante." metrics={[{ value: visibleLiquidaciones.length, label: 'Liquidaciones filtradas' }, { value: formatMoney(total), label: 'Total filtrado' }, { value: autorizadas, label: 'Autorizadas' }]} />
+      <View style={styles.invoiceHistoryFilterPanel}>
         <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
         <Text style={styles.clientName}>Liquidaciones de compra generadas</Text>
         <SearchField label="Buscar liquidaciones" placeholder="Numero, proveedor o identificacion" value={filter} onChangeText={setFilter} resultCount={visibleLiquidaciones.length} totalCount={liquidaciones.length} />
@@ -8148,7 +8121,7 @@ function MisLiquidacionesCompraMobileScreen({
         {visibleLiquidaciones.map((liquidacion, index) => {
           const key = listItemKey('mis-liquidaciones', [liquidacion.codLiquidacion, liquidacion.numero, liquidacion.identificacionProveedor], index);
           return (
-            <View key={key} style={styles.clientCard}>
+            <View key={key} style={styles.invoiceHistoryCard}>
               <View style={styles.clientCardHeader}>
                 <View style={styles.clientInfo}>
                   <Text style={styles.clientName}>{liquidacion.numero ?? `Liquidacion ${liquidacion.codLiquidacion}`}</Text>
@@ -8463,17 +8436,8 @@ function MisGuiasRemisionMobileScreen({
 
   return (
     <>
-      <View style={styles.adminHeroCard}>
-        <Text style={styles.heroEyebrow}>Traslados emitidos</Text>
-        <Text style={styles.heroTitle}>Mis guias de remision con filtros, reporte y acciones unificadas</Text>
-        <Text style={styles.heroText}>Filtra por destinatario, transportista o numero, exporta tu consulta y abre cada comprobante.</Text>
-      </View>
-      <View style={styles.metricGrid}>
-        <MetricBox value={visibleGuias.length} label="Guias filtradas" />
-        <MetricBox value={autorizadas} label="Autorizadas" />
-        <MetricBox value={visibleGuias.length} label="Guias visibles" />
-      </View>
-      <View style={styles.formSectionBox}>
+      <DocumentHistoryHero eyebrow="Traslados emitidos" title="Mis guias de remision" text="Filtra por destinatario, transportista o numero, exporta tu consulta y abre cada comprobante." metrics={[{ value: visibleGuias.length, label: 'Guias filtradas' }, { value: autorizadas, label: 'Autorizadas' }, { value: visibleGuias.length, label: 'Guias visibles' }]} />
+      <View style={styles.invoiceHistoryFilterPanel}>
         <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
         <Text style={styles.clientName}>Guias de remision generadas</Text>
         <SearchField label="Buscar guias" placeholder="Guia, destinatario, identificacion o transportista" value={filter} onChangeText={setFilter} resultCount={visibleGuias.length} totalCount={guias.length} />
@@ -8500,7 +8464,7 @@ function MisGuiasRemisionMobileScreen({
         {visibleGuias.map((guia, index) => {
           const key = listItemKey('mis-guias', [guia.codGuia, guia.numero, guia.identificacionDestinatario], index);
           return (
-            <View key={key} style={styles.clientCard}>
+            <View key={key} style={styles.invoiceHistoryCard}>
               <View style={styles.clientCardHeader}>
                 <View style={styles.clientInfo}>
                   <Text style={styles.clientName}>{guia.numero ?? `Guia ${guia.codGuia}`}</Text>
@@ -8538,6 +8502,36 @@ function MisGuiasRemisionMobileScreen({
   );
 }
 
+function DocumentHistoryHero({
+  eyebrow,
+  title,
+  text: description,
+  metrics,
+}: {
+  eyebrow: string;
+  title: string;
+  text: string;
+  metrics: Array<{ value: string | number; label: string }>;
+}) {
+  return (
+    <View style={styles.invoiceHistoryHeader}>
+      <View style={styles.invoiceHistoryHeaderTop}>
+        <View style={styles.invoiceHistoryHeaderIcon}>
+          <MaterialCommunityIcons name="file-document-multiple-outline" size={25} color="#FFFFFF" />
+        </View>
+        <View style={styles.invoiceHistoryHeaderCopy}>
+          <Text style={styles.invoiceHistoryEyebrow}>{eyebrow}</Text>
+          <Text style={styles.invoiceHistoryTitle}>{title}</Text>
+          <Text style={styles.invoiceHistoryText}>{description}</Text>
+        </View>
+      </View>
+      <View style={styles.invoiceHistoryStats}>
+        {metrics.map((metric) => <InvoiceHistoryMetric key={metric.label} value={metric.value} label={metric.label} />)}
+      </View>
+    </View>
+  );
+}
+
 function MisRetencionesMobileScreen({
   retenciones,
   loading,
@@ -8569,17 +8563,8 @@ function MisRetencionesMobileScreen({
 
   return (
     <>
-      <View style={styles.adminHeroCard}>
-        <Text style={styles.heroEyebrow}>Retenciones emitidas</Text>
-        <Text style={styles.heroTitle}>Mis retenciones con filtros, reporte y acciones unificadas</Text>
-        <Text style={styles.heroText}>Busca por proveedor, comprobante o documento sustento, revisa el estado y exporta la consulta visible.</Text>
-      </View>
-      <View style={styles.metricGrid}>
-        <MetricBox value={visibleRetenciones.length} label="Retenciones filtradas" />
-        <MetricBox value={formatMoney(base)} label="Base filtrada" />
-        <MetricBox value={autorizadas} label="Autorizadas" />
-      </View>
-      <View style={styles.formSectionBox}>
+      <DocumentHistoryHero eyebrow="Retenciones emitidas" title="Mis retenciones" text="Busca por proveedor, comprobante o documento sustento, revisa el estado y exporta la consulta visible." metrics={[{ value: visibleRetenciones.length, label: 'Retenciones filtradas' }, { value: formatMoney(base), label: 'Base filtrada' }, { value: autorizadas, label: 'Autorizadas' }]} />
+      <View style={styles.invoiceHistoryFilterPanel}>
         <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
         <Text style={styles.clientName}>Retenciones generadas</Text>
         <SearchField label="Buscar retenciones" placeholder="Numero, sustento, proveedor o identificacion" value={filter} onChangeText={setFilter} resultCount={visibleRetenciones.length} totalCount={retenciones.length} />
@@ -8606,7 +8591,7 @@ function MisRetencionesMobileScreen({
         {visibleRetenciones.map((retencion, index) => {
           const key = listItemKey('mis-retenciones', [retencion.codRetencion, retencion.numero, retencion.documentoSustento, retencion.identificacionProveedor], index);
           return (
-            <View key={key} style={styles.clientCard}>
+            <View key={key} style={styles.invoiceHistoryCard}>
               <View style={styles.clientCardHeader}>
                 <View style={styles.clientInfo}>
                   <Text style={styles.clientName}>{retencion.numero ?? `Retencion ${retencion.codRetencion}`}</Text>
@@ -11565,7 +11550,7 @@ function AppLaunchScreen() {
         <Text style={styles.launchStatusText}>Preparando todo...</Text>
         <Text style={styles.launchFooterText}>Seguro  -  Rapido  -  Facil</Text>
       </View>
-      <StatusBar style="light" backgroundColor="#07305E" translucent={false} />
+      <StatusBar style="light" />
     </SafeAreaView>
   );
 }

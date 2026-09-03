@@ -1058,7 +1058,7 @@ export const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   avatarModalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(3, 24, 48, 0.54)',
   },
   avatarModalCard: {
@@ -3118,7 +3118,7 @@ export const styles = StyleSheet.create({
     color: EFACT_THEME.colors.primary,
   },
   globalSearchOverlay: { alignItems: 'center', flex: 1, justifyContent: 'flex-start', paddingHorizontal: 16, paddingTop: 56 },
-  globalSearchBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(4, 24, 44, 0.62)' },
+  globalSearchBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(4, 24, 44, 0.62)' },
   globalSearchPanel: { backgroundColor: '#F7FBFE', borderColor: '#9BDFF5', borderRadius: 24, borderWidth: 1, maxHeight: '78%', maxWidth: 500, padding: 18, shadowColor: '#001F38', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 18, width: '100%' },
   globalSearchHeader: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between', marginBottom: 14 },
   globalSearchTitleBlock: { flex: 1 },
@@ -3143,7 +3143,7 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   notificationsBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(4, 24, 44, 0.58)',
   },
   notificationsPanel: {
@@ -4842,7 +4842,7 @@ export const styles = StyleSheet.create({
     padding: 20,
   },
   detailModalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(4, 35, 60, 0.48)',
   },
   detailModalCard: {
