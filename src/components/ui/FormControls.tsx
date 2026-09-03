@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -35,7 +35,7 @@ export function Field({ label, value, onChangeText, secureTextEntry, keyboardTyp
   );
 }
 
-export function SearchField({ label, value, onChangeText, placeholder, resultCount, totalCount, loading, onSubmit }: {
+export function SearchField({ label, value, onChangeText, placeholder, resultCount, totalCount, loading, onSubmit, predictive = false, suggestions = [], onSelectSuggestion }: {
   label: string;
   value: string;
   onChangeText: (value: string) => void;
@@ -44,8 +44,18 @@ export function SearchField({ label, value, onChangeText, placeholder, resultCou
   totalCount?: number;
   loading?: boolean;
   onSubmit?: () => void;
+  predictive?: boolean;
+  suggestions?: Array<{ id: string; title: string; subtitle?: string }>;
+  onSelectSuggestion?: (suggestion: { id: string; title: string; subtitle?: string }) => void;
 }) {
   const hasQuery = value.trim().length > 0;
+  const submitRef = useRef(onSubmit);
+  submitRef.current = onSubmit;
+  useEffect(() => {
+    if (!predictive || !value.trim() || !submitRef.current) return;
+    const timer = setTimeout(() => submitRef.current?.(), 350);
+    return () => clearTimeout(timer);
+  }, [predictive, value]);
   const countLabel = loading ? 'Buscando' : typeof resultCount === 'number' ? `${resultCount} ${resultCount === 1 ? 'resultado' : 'resultados'}` : undefined;
   return (
     <View style={styles.searchCard}>
@@ -62,6 +72,12 @@ export function SearchField({ label, value, onChangeText, placeholder, resultCou
         {value ? <Pressable accessibilityLabel="Limpiar busqueda" hitSlop={8} style={styles.searchClearButton} onPress={() => onChangeText('')}><Text style={styles.searchClearText}>×</Text></Pressable> : null}
         {onSubmit ? <Pressable accessibilityLabel="Ejecutar busqueda" style={styles.searchSubmitButton} onPress={onSubmit}><Text style={styles.searchSubmitText}>Buscar</Text></Pressable> : null}
       </View>
+      {predictive && hasQuery && suggestions.length > 0 ? <View style={styles.searchSuggestions}>
+        {suggestions.slice(0, 5).map((suggestion) => <Pressable key={suggestion.id} style={styles.searchSuggestion} onPress={() => onSelectSuggestion?.(suggestion)}>
+          <Text style={styles.searchSuggestionTitle} numberOfLines={1}>{suggestion.title}</Text>
+          {suggestion.subtitle ? <Text style={styles.searchSuggestionSubtitle} numberOfLines={1}>{suggestion.subtitle}</Text> : null}
+        </Pressable>)}
+      </View> : null}
       <Text style={styles.searchHelper}>{hasQuery && typeof resultCount === 'number' ? `Mostrando ${resultCount}${typeof totalCount === 'number' ? ` de ${totalCount}` : ''}. Toca × para ver todo.` : placeholder ?? 'Escribe para filtrar los registros.'}</Text>
     </View>
   );
@@ -103,7 +119,7 @@ export function SecurityNotice() { return <View style={styles.securityNotice}><T
 
 const styles = StyleSheet.create({
   field: { gap: 7 }, label: { color: '#34465B', fontSize: 12, fontWeight: '900' }, inputShell: { alignItems: 'center', backgroundColor: '#F8FBFD', borderColor: '#D9E5EE', borderRadius: 12, borderWidth: 1, flexDirection: 'row', minHeight: 48 }, input: { color: '#263A4F', flex: 1, fontSize: 14, paddingHorizontal: 13, paddingVertical: 11 }, inputWithAction: { paddingRight: 4 }, passwordToggle: { padding: 10 },
-  searchCard: { backgroundColor: '#F7FAFD', borderColor: '#DCE8F1', borderRadius: 14, borderWidth: 1, gap: 8, padding: 11 }, searchHeaderRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, searchTitleBlock: { flex: 1, gap: 2 }, searchEyebrow: { color: '#0072BD', fontSize: 10, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' }, searchTitle: { color: '#263A4F', fontSize: 14, fontWeight: '900' }, searchCountBadge: { alignItems: 'center', backgroundColor: '#EAF5FC', borderRadius: 10, flexDirection: 'row', gap: 5, paddingHorizontal: 8, paddingVertical: 6 }, searchCountText: { color: '#00649D', fontSize: 11, fontWeight: '900' }, searchInputShell: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#D9E5EE', borderRadius: 11, borderWidth: 1, flexDirection: 'row', minHeight: 45 }, searchIcon: { color: '#0072BD', fontSize: 21, paddingLeft: 11 }, searchInput: { color: '#263A4F', flex: 1, fontSize: 13, paddingHorizontal: 8, paddingVertical: 10 }, searchClearButton: { paddingHorizontal: 8 }, searchClearText: { color: '#5B7489', fontSize: 21, fontWeight: '800' }, searchSubmitButton: { backgroundColor: '#0072BD', borderRadius: 8, marginRight: 5, paddingHorizontal: 9, paddingVertical: 7 }, searchSubmitText: { color: '#FFFFFF', fontSize: 11, fontWeight: '900' }, searchHelper: { color: '#718497', fontSize: 11, fontWeight: '700' },
+  searchCard: { backgroundColor: '#F7FAFD', borderColor: '#DCE8F1', borderRadius: 14, borderWidth: 1, gap: 8, padding: 11 }, searchHeaderRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, searchTitleBlock: { flex: 1, gap: 2 }, searchEyebrow: { color: '#0072BD', fontSize: 10, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' }, searchTitle: { color: '#263A4F', fontSize: 14, fontWeight: '900' }, searchCountBadge: { alignItems: 'center', backgroundColor: '#EAF5FC', borderRadius: 10, flexDirection: 'row', gap: 5, paddingHorizontal: 8, paddingVertical: 6 }, searchCountText: { color: '#00649D', fontSize: 11, fontWeight: '900' }, searchInputShell: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#D9E5EE', borderRadius: 11, borderWidth: 1, flexDirection: 'row', minHeight: 45 }, searchIcon: { color: '#0072BD', fontSize: 21, paddingLeft: 11 }, searchInput: { color: '#263A4F', flex: 1, fontSize: 13, paddingHorizontal: 8, paddingVertical: 10 }, searchClearButton: { paddingHorizontal: 8 }, searchClearText: { color: '#5B7489', fontSize: 21, fontWeight: '800' }, searchSubmitButton: { backgroundColor: '#0072BD', borderRadius: 8, marginRight: 5, paddingHorizontal: 9, paddingVertical: 7 }, searchSubmitText: { color: '#FFFFFF', fontSize: 11, fontWeight: '900' }, searchSuggestions: { backgroundColor: '#FFFFFF', borderColor: '#D9E5EE', borderRadius: 10, borderWidth: 1, marginTop: -2, overflow: 'hidden' }, searchSuggestion: { borderBottomColor: '#EDF2F6', borderBottomWidth: 1, paddingHorizontal: 11, paddingVertical: 9 }, searchSuggestionTitle: { color: '#173E61', fontSize: 13, fontWeight: '900' }, searchSuggestionSubtitle: { color: '#718497', fontSize: 11, fontWeight: '700', marginTop: 2 }, searchHelper: { color: '#718497', fontSize: 11, fontWeight: '700' },
   primaryButton: { alignItems: 'center', backgroundColor: '#0072BD', borderRadius: 12, justifyContent: 'center', minHeight: 48, paddingHorizontal: 16 }, disabledButton: { opacity: 0.55 }, primaryButtonText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' }, secondaryButton: { alignItems: 'center', backgroundColor: '#EFF5F9', borderColor: '#D5E2EB', borderRadius: 12, borderWidth: 1, justifyContent: 'center', minHeight: 48, paddingHorizontal: 16 }, secondaryButtonText: { color: '#315A7A', fontSize: 13, fontWeight: '900' }, biometricButton: { alignItems: 'center', borderColor: '#B9D8EE', borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 8, justifyContent: 'center', minHeight: 48, paddingHorizontal: 14 }, biometricButtonText: { color: '#00649D', fontSize: 13, fontWeight: '900' },
   loginActionTiles: { flexDirection: 'row', gap: 8 }, loginActionTile: { alignItems: 'center', backgroundColor: '#F4F8FC', borderColor: '#DCE8F1', borderRadius: 12, borderWidth: 1, flex: 1, gap: 6, justifyContent: 'center', minHeight: 76, paddingHorizontal: 4 }, loginActionTileActive: { backgroundColor: '#EAF5FC', borderColor: '#0072BD' }, loginActionLabel: { color: '#668196', fontSize: 11, fontWeight: '800', textAlign: 'center' }, loginActionLabelActive: { color: '#00649D' }, segmentButton: { alignItems: 'center', backgroundColor: '#F6F9FC', borderColor: '#E1EAF2', borderRadius: 12, borderWidth: 1, flex: 1, gap: 4, justifyContent: 'center', minHeight: 70, paddingHorizontal: 8, paddingVertical: 8 }, segmentButtonActive: { backgroundColor: '#EAF5FC', borderColor: '#0A75B6' }, segmentCopy: { alignItems: 'center', gap: 2 }, segmentText: { color: '#536476', fontSize: 12, fontWeight: '800', textAlign: 'center' }, segmentTextActive: { color: '#00649D' }, segmentDescription: { color: '#8191A0', fontSize: 9, fontWeight: '700', textAlign: 'center' }, segmentDescriptionActive: { color: '#24729B' },
   link: { color: '#0072BD', fontSize: 12, fontWeight: '900' }, inlineSwitch: { alignItems: 'center', flexDirection: 'row', justifyContent: 'center', marginTop: 20 }, mutedText: { color: '#6D8192', fontSize: 12, fontWeight: '700' }, message: { borderRadius: 14, marginTop: 16, padding: 14 }, message_success: { backgroundColor: '#E8F7EF' }, message_error: { backgroundColor: '#FDEBEC' }, message_info: { backgroundColor: '#EAF4FE' }, messageText: { color: '#244153', fontSize: 13, fontWeight: '800', lineHeight: 18 }, externalLink: { alignSelf: 'center', marginTop: 10 }, externalLinkText: { color: '#0072BD', fontSize: 12, fontWeight: '800' }, securityNotice: { alignItems: 'center', flexDirection: 'row', gap: 7, justifyContent: 'center', marginTop: 18 }, securityIcon: { color: '#18B889', fontSize: 14, fontWeight: '900' }, securityText: { color: '#5C6D80', flex: 1, fontSize: 12, fontWeight: '700', lineHeight: 16, textAlign: 'center' },
