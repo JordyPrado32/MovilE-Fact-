@@ -4109,6 +4109,21 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setDirectoryMessage(null);
   };
 
+  const openAccountPaymentFromStatement = (item: OperationalMobileItem) => {
+    setSelectedOperationalItem(null);
+    setOperationalForm({
+      ...initialOperationalForm,
+      codigo: getAccountStatementClientId(item),
+      descripcion: item.title ? `Abono de ${item.title}` : 'Abono de cliente',
+      observacion: item.title ? `Cliente: ${item.title}` : '',
+    });
+    setOperationalFormMode('create');
+    setOperationalTabByView((current) => ({ ...current, 'cuentas-cobrar': 'Abonos' }));
+    setSearch('');
+    setDirectoryMessage(null);
+    setActiveView('cuentas-cobrar');
+  };
+
   const openEditOperational = (item: OperationalMobileItem) => {
     setSelectedOperationalItem(item);
     setOperationalForm(operationalItemToForm(item));
@@ -6384,6 +6399,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onView={showOperationalItemDetail}
                 onEdit={openEditOperational}
                 onDelete={confirmDeleteOperational}
+                onRegisterPayment={openAccountPaymentFromStatement}
                 />
               )
             ) : null}
@@ -9036,6 +9052,7 @@ function OperationalModuleScreen({
   onView,
   onEdit,
   onDelete,
+  onRegisterPayment,
 }: {
   view: WorkspaceView;
   search: string;
@@ -9056,6 +9073,7 @@ function OperationalModuleScreen({
   onView: (item: OperationalMobileItem) => void;
   onEdit: (item: OperationalMobileItem) => void;
   onDelete: (item: OperationalMobileItem) => void;
+  onRegisterPayment?: (item: OperationalMobileItem) => void;
 }) {
   const module = getOperationalModuleSlug(view);
   const config = module ? getOperationalScreenConfig(view, module) : null;
@@ -9064,6 +9082,21 @@ function OperationalModuleScreen({
   const [detailItem, setDetailItem] = useState<OperationalMobileItem | null>(null);
 
   if (!config) return null;
+
+  if (view === 'estado-cuenta') {
+    return (
+      <AccountStatementScreen
+        search={search}
+        items={items}
+        loading={loading}
+        message={message}
+        placeholder={config.placeholder}
+        onRefresh={onRefresh}
+        onSearch={onSearch}
+        onRegisterPayment={onRegisterPayment}
+      />
+    );
+  }
 
   if (view === 'recargas' && selectedTab === 'Historial') {
     return (
@@ -9151,6 +9184,478 @@ function OperationalModuleScreen({
       />
     </>
   );
+}
+
+function AccountStatementScreen({
+  search,
+  items,
+  loading,
+  message,
+  placeholder,
+  onRefresh,
+  onSearch,
+  onRegisterPayment,
+}: {
+  search: string;
+  items: OperationalMobileItem[];
+  loading: boolean;
+  message?: MessageState;
+  placeholder: string;
+  onRefresh: () => void;
+  onSearch: (value: string) => void;
+  onRegisterPayment?: (item: OperationalMobileItem) => void;
+}) {
+  const [detailItem, setDetailItem] = useState<OperationalMobileItem | null>(null);
+  const visibleBalance = items.reduce((total, item) => total + getAccountStatementAmount(item, ['saldoTotalCliente', 'SaldoTotalCliente', 'saldoActual', 'SaldoActual', 'saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta), 0);
+  const visibleInvoices = items.reduce((total, item) => total + getAccountStatementNumber(item, ['facturas', 'Facturas', 'facturasPendientes', 'FacturasPendientes', 'cantidadFacturas', 'CantidadFacturas'], 0), 0);
+  const visiblePayments = items.reduce((total, item) => total + getAccountStatementNumber(item, ['abonos', 'Abonos', 'cantidadAbonos', 'CantidadAbonos'], 0), 0);
+
+  return (
+    <>
+      <View style={styles.accountHeroCard}>
+        <View style={styles.accountHeroCopy}>
+          <Text style={styles.heroEyebrow}>Cuentas por cobrar</Text>
+          <Text style={styles.accountHeroTitle}>Estado de cuenta por cliente</Text>
+          <Text style={styles.accountHeroText}>Facturas, abonos y saldos por cliente.</Text>
+        </View>
+        <View style={styles.accountMetricGrid}>
+          <AccountMetricCard icon="wallet-outline" label="Saldo visible" value={formatMoney(visibleBalance)} tone="blue" />
+          <AccountMetricCard icon="account-group-outline" label="Clientes visibles" value={items.length} tone="green" />
+          <AccountMetricCard icon="file-document-outline" label="Facturas visibles" value={visibleInvoices || items.length} tone="purple" />
+          <AccountMetricCard icon="cash-check" label="Abonos visibles" value={visiblePayments} tone="orange" />
+        </View>
+      </View>
+
+      <View style={styles.formSectionBox}>
+        <View style={styles.adminSearchHeader}>
+          <View style={styles.adminSearchTitleBlock}>
+            <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
+            <Text style={styles.clientFormTitle}>Filtros de estado</Text>
+          </View>
+          <Pressable style={styles.adminActionPill} onPress={onRefresh}>
+            <Text style={styles.adminActionText}>Refrescar</Text>
+          </Pressable>
+        </View>
+        <SearchField label="Buscar por cliente, RUC o factura" placeholder={placeholder} value={search} onChangeText={onSearch} resultCount={items.length} loading={loading} />
+        {message ? <MessageBox message={message} /> : null}
+      </View>
+
+      <View style={styles.accountListPanel}>
+        <View style={styles.clientListHeader}>
+          <View>
+            <Text style={styles.clientListEyebrow}>Listado por cliente</Text>
+            <Text style={styles.clientListTitle}>Estado de cuenta</Text>
+          </View>
+          <Text style={styles.clientListCount}>{items.length}</Text>
+        </View>
+        {loading ? <EmptyState title="Cargando estados" text="Consultando saldos y movimientos..." /> : null}
+        {!loading && !message && items.length === 0 ? <EmptyState title="Sin clientes para mostrar" text="Cuando existan saldos, apareceran aqui." /> : null}
+        {!loading && items.length > 0 ? (
+          <ResultCollection
+            items={items}
+            resetKey={`estado-cuenta-${search}`}
+            keyExtractor={(item, index) => `estado-cuenta-${item.id || 'cliente'}-${index}`}
+            variant="plain"
+            renderItem={(item) => (
+              <AccountStatementClientCard
+                item={item}
+                onView={() => setDetailItem(item)}
+                onRegister={() => onRegisterPayment?.(item)}
+              />
+            )}
+          />
+        ) : null}
+      </View>
+
+      <AccountStatementDetailModal
+        item={detailItem}
+        onClose={() => setDetailItem(null)}
+        onRegister={() => {
+          if (detailItem) onRegisterPayment?.(detailItem);
+          setDetailItem(null);
+        }}
+      />
+    </>
+  );
+}
+
+function AccountMetricCard({ icon, label, value, tone }: { icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; label: string; value: string | number; tone: 'blue' | 'green' | 'purple' | 'orange' }) {
+  const toneStyle = tone === 'green' ? styles.accountMetricGreen : tone === 'purple' ? styles.accountMetricPurple : tone === 'orange' ? styles.accountMetricOrange : styles.accountMetricBlue;
+
+  return (
+    <View style={styles.accountMetricCard}>
+      <View style={[styles.accountMetricIcon, toneStyle]}>
+        <MaterialCommunityIcons name={icon} size={17} color={tone === 'green' ? '#0C8C57' : tone === 'purple' ? '#7448D8' : tone === 'orange' ? '#D77416' : '#0870BE'} />
+      </View>
+      <Text style={styles.accountMetricLabel}>{label}</Text>
+      <Text style={styles.accountMetricValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+    </View>
+  );
+}
+
+function AccountStatementClientCard({ item, onView, onRegister }: { item: OperationalMobileItem; onView: () => void; onRegister: () => void }) {
+  const balance = getAccountStatementDisplayMoney(item, ['saldoTotalCliente', 'SaldoTotalCliente', 'saldoActual', 'SaldoActual', 'saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta);
+  const totalBilled = getAccountStatementDisplayMoney(item, ['totalFacturado', 'TotalFacturado', 'valorFacturado', 'ValorFacturado', 'total', 'Total'], undefined);
+  const totalPayments = getAccountStatementDisplayMoney(item, ['totalAbonos', 'TotalAbonos', 'abonos', 'Abonos'], undefined);
+  const invoiceCount = getAccountStatementNumber(item, ['facturas', 'Facturas', 'facturasPendientes', 'FacturasPendientes', 'cantidadFacturas', 'CantidadFacturas'], 1);
+  const identification = getAccountStatementText(item, ['numeroIdentificacion', 'NumeroIdentificacion', 'identificacion', 'Identificacion', 'ruc', 'Ruc', 'cedula', 'Cedula']) || item.subtitle || 'Sin identificacion';
+  const status = item.status || (getAccountStatementAmount(item, ['saldoTotalCliente', 'SaldoTotalCliente', 'saldoActual', 'SaldoActual', 'saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta) > 0 ? 'Pendiente' : 'Al dia');
+  const isOverdue = normalizeText(status).includes('venc');
+
+  return (
+    <View style={styles.accountClientCard}>
+      <View style={styles.clientCardHeader}>
+        <View style={styles.accountClientAvatar}>
+          <MaterialCommunityIcons name="account-cash-outline" size={22} color="#0870BE" />
+        </View>
+        <View style={styles.clientInfo}>
+          <Text style={styles.clientName}>{item.title || 'Cliente'}</Text>
+          <Text style={styles.clientMeta}>{identification}</Text>
+        </View>
+        <View style={[styles.accountStatusPill, isOverdue ? styles.accountStatusDanger : styles.accountStatusPending]}>
+          <Text style={[styles.accountStatusText, isOverdue ? styles.accountStatusTextDanger : styles.accountStatusTextPending]}>{status}</Text>
+        </View>
+      </View>
+      <View style={styles.accountClientGrid}>
+        <AccountClientStat label="Facturas" value={invoiceCount} />
+        <AccountClientStat label="Facturado" value={totalBilled} />
+        <AccountClientStat label="Abonos" value={totalPayments} />
+        <AccountClientStat label="Saldo" value={balance} danger />
+      </View>
+      <View style={styles.clientActions}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Ver ${item.title || item.id}`} style={[styles.smallActionButton, styles.crudViewAction]} onPress={onView}>
+          <MaterialCommunityIcons name="eye-outline" size={16} color="#00649D" />
+          <Text style={styles.smallActionText}>Ver</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Registrar abono de ${item.title || item.id}`} style={[styles.smallActionButton, styles.smallSuccessButton]} onPress={onRegister}>
+          <MaterialCommunityIcons name="cash-plus" size={16} color="#128A46" />
+          <Text style={[styles.smallActionText, styles.smallSuccessText]}>Registrar</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function AccountClientStat({ label, value, danger }: { label: string; value: string | number; danger?: boolean }) {
+  return (
+    <View style={styles.accountClientStat}>
+      <Text style={styles.accountClientStatLabel}>{label}</Text>
+      <Text style={[styles.accountClientStatValue, danger && styles.accountClientStatDanger]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+    </View>
+  );
+}
+
+function AccountStatementDetailModal({ item, onClose, onRegister }: { item: OperationalMobileItem | null; onClose: () => void; onRegister: () => void }) {
+  const [activeTab, setActiveTab] = useState<AccountStatementTab>('Historial');
+  useEffect(() => {
+    if (item) setActiveTab('Historial');
+  }, [item]);
+  const movements = item ? getAccountStatementMovements(item) : [];
+  const invoices = item ? getAccountStatementInvoices(item) : [];
+  const payments = item ? getAccountStatementPayments(item) : [];
+  const balance = item ? getAccountStatementDisplayMoney(item, ['saldoTotalCliente', 'SaldoTotalCliente', 'saldoActual', 'SaldoActual', 'saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta) : '$ 0,00';
+  const invoiceCount = item ? getAccountStatementNumber(item, ['facturas', 'Facturas', 'facturasPendientes', 'FacturasPendientes', 'cantidadFacturas', 'CantidadFacturas'], movements.length || 1) : 0;
+  const lastPayment = item ? getAccountStatementDisplayMoney(item, ['ultimoAbono', 'UltimoAbono', 'ultimoPago', 'UltimoPago', 'valorUltimoAbono', 'ValorUltimoAbono'], '$ 0,00') : '$ 0,00';
+  const daysOverdue = item ? getAccountStatementText(item, ['diasVencidos', 'DiasVencidos', 'diasMora', 'DiasMora']) || '0 dias' : '0 dias';
+  const email = item ? getAccountStatementText(item, ['email', 'Email', 'correo', 'Correo']) : '';
+  const identification = item ? getAccountStatementText(item, ['numeroIdentificacion', 'NumeroIdentificacion', 'identificacion', 'Identificacion', 'ruc', 'Ruc']) || item.subtitle : '';
+  const totalBilled = item ? getAccountStatementDisplayMoney(item, ['totalFacturado', 'TotalFacturado', 'valorFacturado', 'ValorFacturado', 'total', 'Total'], balance) : '$ 0,00';
+  const totalPaid = item ? getAccountStatementDisplayMoney(item, ['totalAbonos', 'TotalAbonos', 'totalAbonado', 'TotalAbonado', 'abonos', 'Abonos'], '$ 0,00') : '$ 0,00';
+  const creditBalance = item ? getAccountStatementDisplayMoney(item, ['saldoFavor', 'SaldoFavor', 'saldoAFavor', 'SaldoAFavor'], '$ 0,00') : '$ 0,00';
+  const settledDocuments = item ? getAccountStatementNumber(item, ['documentosSaldados', 'DocumentosSaldados', 'facturasSaldadas', 'FacturasSaldadas'], 0) : 0;
+
+  return (
+    <Modal visible={Boolean(item)} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.accountModalOverlay}>
+        <Pressable style={styles.detailModalBackdrop} onPress={onClose} />
+        <View style={styles.accountModalCard}>
+          <View style={styles.accountModalHeader}>
+            <View style={styles.detailModalTitleWrap}>
+              <Text style={styles.detailModalEyebrow}>ESTADO DE CUENTA</Text>
+              <Text style={styles.accountModalTitle} numberOfLines={2}>{item?.title || 'Cliente'}</Text>
+              <Text style={styles.clientMeta}>{identification ? `RUC/CI: ${identification}` : 'Sin identificacion'}</Text>
+            </View>
+            <Pressable accessibilityLabel="Cerrar detalle" style={styles.detailModalClose} onPress={onClose}>
+              <Text style={styles.detailModalCloseText}>×</Text>
+            </Pressable>
+          </View>
+          <View style={styles.accountModalChips}>
+            {email ? <AccountInfoChip icon="email-outline" label={email} /> : null}
+            <AccountInfoChip icon="file-document-outline" label={`${invoiceCount} factura(s)`} />
+            <AccountInfoChip icon="wallet-outline" label={balance} />
+          </View>
+          <View style={styles.accountModalStats}>
+            <AccountModalStat icon="wallet-outline" label="Saldo total" value={balance} danger />
+            <AccountModalStat icon="file-document-outline" label="Facturas pendientes" value={invoiceCount} />
+            <AccountModalStat icon="calendar-check-outline" label="Ultimo abono" value={lastPayment} />
+            <AccountModalStat icon="clock-outline" label="Dias vencidos" value={daysOverdue} success={String(daysOverdue).startsWith('0')} />
+          </View>
+          <View style={styles.accountModalTabs}>
+            {(['Historial', 'Facturas', 'Abonos', 'Resumen'] as AccountStatementTab[]).map((tab) => (
+              <Pressable key={tab} style={[styles.accountModalTab, activeTab === tab && styles.accountModalTabActive]} onPress={() => setActiveTab(tab)}>
+                <Text style={[styles.accountModalTabText, activeTab === tab && styles.accountModalTabTextActive]}>{tab}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {activeTab === 'Historial' ? <AccountStatementHistory movements={movements} /> : null}
+          {activeTab === 'Facturas' ? <AccountStatementInvoices invoices={invoices} /> : null}
+          {activeTab === 'Abonos' ? <AccountStatementPayments payments={payments} /> : null}
+          {activeTab === 'Resumen' ? (
+            <View style={styles.accountSummaryGrid}>
+              <AccountSummaryBox label="Total facturado" value={totalBilled} />
+              <AccountSummaryBox label="Total abonado" value={totalPaid} />
+              <AccountSummaryBox label="Saldo a favor" value={creditBalance} />
+              <AccountSummaryBox label="Documentos saldados" value={settledDocuments} />
+            </View>
+          ) : null}
+          <View style={styles.accountModalActions}>
+            <Pressable style={[styles.accountModalActionButton, styles.accountModalRegisterButton]} onPress={onRegister}>
+              <MaterialCommunityIcons name="cash-plus" size={17} color="#128A46" />
+              <Text style={styles.accountModalRegisterText}>Registrar abono</Text>
+            </Pressable>
+            <Pressable style={styles.accountModalActionButton} onPress={() => Alert.alert('Estado de cuenta', 'Envio de estado de cuenta pendiente de conectar en movil.')}>
+              <MaterialCommunityIcons name="email-outline" size={17} color="#315A7A" />
+              <Text style={styles.accountModalActionText}>Enviar estado</Text>
+            </Pressable>
+            <Pressable style={styles.accountModalActionButton} onPress={() => Alert.alert('Estado de cuenta', 'Descarga PDF pendiente de conectar en movil.')}>
+              <MaterialCommunityIcons name="download-outline" size={17} color="#315A7A" />
+              <Text style={styles.accountModalActionText}>Descargar PDF</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+type AccountStatementTab = 'Historial' | 'Facturas' | 'Abonos' | 'Resumen';
+
+type AccountStatementMovement = {
+  date: string;
+  document: string;
+  concept: string;
+  debit?: string;
+  credit?: string;
+  balance: string;
+  status?: string;
+};
+
+function AccountStatementHistory({ movements }: { movements: AccountStatementMovement[] }) {
+  return (
+    <View style={styles.accountMovementTable}>
+      <View style={styles.accountMovementHeader}>
+        <Text style={styles.accountMovementHeaderText}>Fecha</Text>
+        <Text style={styles.accountMovementHeaderText}>Documento</Text>
+        <Text style={styles.accountMovementHeaderText}>Saldo</Text>
+      </View>
+      {movements.map((movement, index) => (
+        <View key={`movement-${index}`} style={styles.accountMovementRow}>
+          <Text style={styles.accountMovementText}>{movement.date}</Text>
+          <View style={styles.accountMovementDocument}>
+            <Text style={styles.accountMovementTitle}>{movement.document}</Text>
+            <Text style={styles.accountMovementConcept}>{movement.concept}</Text>
+          </View>
+          <Text style={styles.accountMovementAmount}>{movement.balance}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function AccountStatementInvoices({ invoices }: { invoices: AccountStatementMovement[] }) {
+  return (
+    <View style={styles.accountTabList}>
+      {invoices.map((invoice, index) => (
+        <View key={`invoice-${index}`} style={styles.accountDocumentCard}>
+          <View style={styles.accountDocumentMain}>
+            <Text style={styles.accountDocumentTitle}>{invoice.document}</Text>
+            <Text style={styles.accountDocumentMeta}>{invoice.date} · vence {invoice.concept || '-'}</Text>
+          </View>
+          <View style={styles.accountDocumentRight}>
+            <Text style={styles.accountDocumentAmount}>{invoice.balance}</Text>
+            <View style={[styles.accountStatusPill, styles.accountStatusPending]}>
+              <Text style={[styles.accountStatusText, styles.accountStatusTextPending]}>{invoice.status || 'Pendiente'}</Text>
+            </View>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function AccountStatementPayments({ payments }: { payments: AccountStatementMovement[] }) {
+  if (!payments.length) {
+    return <View style={styles.accountEmptyTab}><Text style={styles.accountEmptyTabText}>Sin abonos registrados para este cliente.</Text></View>;
+  }
+
+  return (
+    <View style={styles.accountMovementTable}>
+      <View style={styles.accountMovementHeader}>
+        <Text style={styles.accountMovementHeaderText}>Fecha</Text>
+        <Text style={styles.accountMovementHeaderText}>Abono</Text>
+        <Text style={styles.accountMovementHeaderText}>Valor</Text>
+      </View>
+      {payments.map((payment, index) => (
+        <View key={`payment-${index}`} style={styles.accountMovementRow}>
+          <Text style={styles.accountMovementText}>{payment.date}</Text>
+          <View style={styles.accountMovementDocument}>
+            <Text style={styles.accountMovementTitle}>{payment.document}</Text>
+            <Text style={styles.accountMovementConcept}>{payment.concept}</Text>
+          </View>
+          <Text style={styles.accountMovementAmount}>{payment.credit || payment.balance}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function AccountSummaryBox({ label, value }: { label: string; value: string | number }) {
+  return (
+    <View style={styles.accountSummaryBox}>
+      <Text style={styles.accountSummaryLabel}>{label}</Text>
+      <Text style={styles.accountSummaryValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+    </View>
+  );
+}
+
+function AccountInfoChip({ icon, label }: { icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; label: string }) {
+  return (
+    <View style={styles.accountInfoChip}>
+      <MaterialCommunityIcons name={icon} size={14} color="#0870BE" />
+      <Text style={styles.accountInfoChipText} numberOfLines={1}>{label}</Text>
+    </View>
+  );
+}
+
+function AccountModalStat({ icon, label, value, danger, success }: { icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; label: string; value: string | number; danger?: boolean; success?: boolean }) {
+  return (
+    <View style={styles.accountModalStat}>
+      <View style={[styles.accountMetricIcon, success ? styles.accountMetricGreen : danger ? styles.accountMetricOrange : styles.accountMetricBlue]}>
+        <MaterialCommunityIcons name={icon} size={16} color={success ? '#0C8C57' : danger ? '#D92D3A' : '#0870BE'} />
+      </View>
+      <View style={styles.accountModalStatCopy}>
+        <Text style={styles.accountMetricLabel}>{label}</Text>
+        <Text style={[styles.accountModalStatValue, danger && styles.accountClientStatDanger, success && styles.accountModalStatSuccess]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
+function getAccountStatementClientId(item: OperationalMobileItem) {
+  return getAccountStatementText(item, ['idCliente', 'IdCliente', 'codCliente', 'CodCliente', 'codigoCliente', 'CodigoCliente']) || item.id || '';
+}
+
+function getAccountStatementText(item: OperationalMobileItem, keys: string[]) {
+  const value = getAccountStatementRawValue(item, keys);
+  return value === null || value === undefined ? '' : String(value);
+}
+
+function getAccountStatementNumber(item: OperationalMobileItem, keys: string[], fallback: number) {
+  const value = getAccountStatementRawValue(item, keys);
+  const numberValue = parseAccountStatementNumber(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function getAccountStatementAmount(item: OperationalMobileItem, keys: string[], fallback?: unknown) {
+  const value = getAccountStatementRawValue(item, keys);
+  const parsed = parseAccountStatementMoney(value);
+  if (Number.isFinite(parsed)) return parsed;
+  const fallbackParsed = parseAccountStatementMoney(fallback);
+  return Number.isFinite(fallbackParsed) ? fallbackParsed : 0;
+}
+
+function getAccountStatementDisplayMoney(item: OperationalMobileItem, keys: string[], fallback?: unknown) {
+  const value = getAccountStatementRawValue(item, keys);
+  const parsed = parseAccountStatementMoney(value);
+  if (Number.isFinite(parsed)) return formatMoney(parsed);
+  const fallbackParsed = parseAccountStatementMoney(fallback);
+  if (Number.isFinite(fallbackParsed)) return formatMoney(fallbackParsed);
+  return typeof fallback === 'string' && fallback.trim() ? fallback : '$ 0,00';
+}
+
+function getAccountStatementRawValue(item: OperationalMobileItem, keys: string[]) {
+  const row = item.raw ?? {};
+  for (const key of keys) {
+    if (row[key] !== null && row[key] !== undefined) return row[key];
+  }
+  const normalized = keys.map((key) => normalizeText(key));
+  return Object.entries(row).find(([key, value]) => value !== null && value !== undefined && normalized.includes(normalizeText(key)))?.[1];
+}
+
+function parseAccountStatementNumber(value: unknown) {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return Number.NaN;
+  const parsed = Number(value.replace(/[^\d.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+function parseAccountStatementMoney(value: unknown) {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return Number.NaN;
+  const normalized = value.replace(/[^\d,.-]/g, '').replace(/\.(?=.*\.)/g, '').replace(',', '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+function getAccountStatementMovements(item: OperationalMobileItem) {
+  const rawMovements = getAccountStatementRawValue(item, ['movimientos', 'Movimientos', 'historial', 'Historial', 'detalle', 'Detalle']);
+  const rows = Array.isArray(rawMovements) ? rawMovements.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)) : [];
+  const balance = getAccountStatementDisplayMoney(item, ['saldoTotalCliente', 'SaldoTotalCliente', 'saldoActual', 'SaldoActual', 'saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta);
+  const fallbackRow = {
+    date: getAccountStatementText(item, ['fecha', 'Fecha', 'fechaEmision', 'FechaEmision', 'fechaUltimoAbono', 'FechaUltimoAbono']) || '-',
+    document: getAccountStatementText(item, ['numeroFactura', 'NumeroFactura', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento']) || item.detail || item.id || 'Factura',
+    concept: 'Factura',
+    balance,
+  };
+
+  if (!rows.length) return [fallbackRow];
+
+  return rows.slice(0, 4).map((row) => {
+    const movementItem: OperationalMobileItem = { id: '', title: '', raw: row };
+    return {
+      date: getAccountStatementText(movementItem, ['fecha', 'Fecha', 'fechaEmision', 'FechaEmision']) || '-',
+      document: getAccountStatementText(movementItem, ['documento', 'Documento', 'numeroDocumento', 'NumeroDocumento', 'numeroFactura', 'NumeroFactura']) || 'Movimiento',
+      concept: getAccountStatementText(movementItem, ['concepto', 'Concepto', 'tipo', 'Tipo']) || 'Movimiento',
+      debit: getAccountStatementDisplayMoney(movementItem, ['debito', 'Debito', 'debe', 'Debe'], '$ 0,00'),
+      credit: getAccountStatementDisplayMoney(movementItem, ['credito', 'Credito', 'haber', 'Haber'], '$ 0,00'),
+      balance: getAccountStatementDisplayMoney(movementItem, ['saldo', 'Saldo', 'saldoActual', 'SaldoActual'], balance),
+    };
+  });
+}
+
+function getAccountStatementInvoices(item: OperationalMobileItem): AccountStatementMovement[] {
+  const rawInvoices = getAccountStatementRawValue(item, ['facturasDetalle', 'FacturasDetalle', 'facturas', 'Facturas', 'documentos', 'Documentos']);
+  const rows = Array.isArray(rawInvoices) ? rawInvoices.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)) : [];
+  if (!rows.length) {
+    return getAccountStatementMovements(item).map((movement) => ({ ...movement, status: item.status || 'Pendiente' }));
+  }
+
+  return rows.slice(0, 4).map((row) => {
+    const invoiceItem: OperationalMobileItem = { id: '', title: '', raw: row };
+    return {
+      date: getAccountStatementText(invoiceItem, ['fecha', 'Fecha', 'fechaEmision', 'FechaEmision']) || '-',
+      document: getAccountStatementText(invoiceItem, ['numeroFactura', 'NumeroFactura', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento']) || 'Factura',
+      concept: getAccountStatementText(invoiceItem, ['fechaVencimiento', 'FechaVencimiento', 'vence', 'Vence']) || '-',
+      balance: getAccountStatementDisplayMoney(invoiceItem, ['saldo', 'Saldo', 'saldoPendiente', 'SaldoPendiente', 'total', 'Total'], '$ 0,00'),
+      status: getAccountStatementText(invoiceItem, ['estado', 'Estado', 'estadoPago', 'EstadoPago']) || 'Pendiente',
+    };
+  });
+}
+
+function getAccountStatementPayments(item: OperationalMobileItem): AccountStatementMovement[] {
+  const rawPayments = getAccountStatementRawValue(item, ['abonosDetalle', 'AbonosDetalle', 'pagos', 'Pagos', 'abonos', 'Abonos']);
+  const rows = Array.isArray(rawPayments) ? rawPayments.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)) : [];
+
+  return rows.slice(0, 4).map((row) => {
+    const paymentItem: OperationalMobileItem = { id: '', title: '', raw: row };
+    return {
+      date: getAccountStatementText(paymentItem, ['fecha', 'Fecha', 'fechaAbono', 'FechaAbono', 'fechaPago', 'FechaPago']) || '-',
+      document: getAccountStatementText(paymentItem, ['numero', 'Numero', 'comprobante', 'Comprobante', 'documento', 'Documento']) || 'Abono',
+      concept: getAccountStatementText(paymentItem, ['observacion', 'Observacion', 'formaPago', 'FormaPago', 'concepto', 'Concepto']) || 'Abono registrado',
+      credit: getAccountStatementDisplayMoney(paymentItem, ['valor', 'Valor', 'monto', 'Monto', 'credito', 'Credito'], '$ 0,00'),
+      balance: getAccountStatementDisplayMoney(paymentItem, ['saldo', 'Saldo'], '$ 0,00'),
+    };
+  });
 }
 
 function RechargeHistoryScreen({
