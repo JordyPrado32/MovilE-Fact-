@@ -18,7 +18,7 @@ export type Cliente = {
   pais?: number | null;
   provincia?: number | null;
   ciudad?: number | null;
-  tipoidentificacion?: number | null;
+  tipoidentificacion?: string | number | null;
   esProveedor?: boolean;
   cuentaContableProveedor?: string | null;
   creditoTributarioProveedor?: string | null;

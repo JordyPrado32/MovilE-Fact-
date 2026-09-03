@@ -57,7 +57,7 @@ export type FacturaPreparacion = {
     proximo?: string | number | null;
     numeroSecuencia?: string | number | null;
   }[];
-  formasPago?: { id?: number; codigo?: string | null; descripcion?: string | null; descripcionSri?: string | null }[];
+  formasPago?: { id?: number; codigo?: string | number | null; descripcion?: string | null; descripcionSri?: string | null }[];
 };
 
 type ApiRow = Record<string, unknown>;
@@ -68,6 +68,7 @@ export type FacturaLineaInput = {
   precio: number;
   descuento: number;
   tarifa: number;
+  detalle?: string | null;
 };
 
 export type FacturaGuardarInput = {
@@ -81,8 +82,22 @@ export type FacturaGuardarInput = {
   detalles: FacturaLineaInput[];
 };
 
-export function getFacturaPreparacion(userId: number) {
-  return apiRequest<FacturaPreparacion>(`/api/facturas/preparacion?idUsuario=${userId}`);
+export async function getFacturaPreparacion(userId: number) {
+  const response = await apiRequest<FacturaPreparacion>(`/api/facturas/preparacion?idUsuario=${userId}`);
+  const raw = response as FacturaPreparacion & Record<string, unknown>;
+  const formasPago = (response.formasPago ?? raw.FormasPago ?? []) as Record<string, unknown>[];
+
+  return {
+    ...response,
+    formasPago: formasPago
+      .map((item) => ({
+        id: Number(item.id ?? item.Id) || undefined,
+        codigo: (item.codigo ?? item.Codigo ?? null) as string | number | null,
+        descripcion: String(item.descripcion ?? item.Descripcion ?? '').trim() || null,
+        descripcionSri: String(item.descripcionSri ?? item.DescripcionSri ?? '').trim() || null,
+      }))
+      .filter((item) => item.codigo !== null && item.codigo !== undefined && String(item.codigo).trim() !== ''),
+  };
 }
 
 export async function getFacturas(userId: number, top = 0) {
@@ -106,10 +121,13 @@ export function getSiguienteFactura(userId: number, codemisor?: number | null, s
 }
 
 export function guardarFactura(input: FacturaGuardarInput) {
-  const totalBase = input.detalles.reduce((sum, item) => sum + Math.max(item.cantidad * item.precio - item.descuento, 0), 0);
+  const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+  const getBase = (item: FacturaLineaInput) => Math.max(item.cantidad * item.precio - item.descuento, 0);
+  const totalBase12 = input.detalles.reduce((sum, item) => sum + (item.tarifa > 0 ? getBase(item) : 0), 0);
+  const totalBase0 = input.detalles.reduce((sum, item) => sum + (item.tarifa <= 0 ? getBase(item) : 0), 0);
+  const totalBase = roundMoney(totalBase12 + totalBase0);
   const totalIva = input.detalles.reduce((sum, item) => {
-    const base = Math.max(item.cantidad * item.precio - item.descuento, 0);
-    return sum + base * (item.tarifa / 100);
+    return sum + roundMoney(getBase(item) * (item.tarifa / 100));
   }, 0);
 
   const factura = {
@@ -123,11 +141,12 @@ export function guardarFactura(input: FacturaGuardarInput) {
     autorizado: false,
     fechaentrega: new Date().toISOString(),
     notas: input.referencia || null,
-    subtotal12: totalBase,
+    subtotal12: roundMoney(totalBase12),
+    subtotal0: roundMoney(totalBase0),
     subtotal: totalBase,
-    descuentos: input.detalles.reduce((sum, item) => sum + item.descuento, 0),
-    iva: totalIva,
-    valortotal: totalBase + totalIva,
+    descuentos: roundMoney(input.detalles.reduce((sum, item) => sum + item.descuento, 0)),
+    iva: roundMoney(totalIva),
+    valortotal: roundMoney(totalBase + totalIva),
   };
 
   const detalles = input.detalles.map((item) => {
@@ -138,7 +157,7 @@ export function guardarFactura(input: FacturaGuardarInput) {
       codprincipal: item.producto.codprincipal,
       codauxiliar: item.producto.codauxiliar,
       cantproducto: item.cantidad,
-      descripproducto: item.producto.descripcion,
+      descripproducto: [item.producto.descripcion, item.detalle?.trim()].filter(Boolean).join(' - '),
       precioproducto: item.precio,
       descuento: item.descuento,
       valortproducto: base,

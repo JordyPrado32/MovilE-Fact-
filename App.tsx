@@ -1095,7 +1095,7 @@ function findTokenValue(value: unknown, depth = 0): string | null {
 function clienteToForm(cliente: Cliente): ClienteFormState {
   return {
     tipoCliente: cliente.tipoCliente ?? 0,
-    tipoidentificacion: cliente.tipoidentificacion ?? 2,
+    tipoidentificacion: Number(cliente.tipoidentificacion) || 2,
     nombres: cliente.nombres ?? '',
     apellidos: cliente.apellidos ?? '',
     nombrecomercial: cliente.nombrecomercial ?? '',
@@ -2384,7 +2384,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           if (!mounted) return;
           setFacturaPreparacion(data);
           const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
-          const formaPago = data.formasPago?.[0]?.codigo ?? '';
+          const formaPago = data.formasPago?.[0]?.codigo == null ? '' : String(data.formasPago[0].codigo);
           setFacturaForm((current) => ({ ...current, serie, formaPago }));
         })
       : getFacturas(catalogUserId, 0).then((data) => {
@@ -2475,7 +2475,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           if (!mounted) return;
           setLiquidacionPreparacion(data);
           const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
-          const formaPago = data.formasPago?.[0]?.codigo ?? '';
+          const formaPago = data.formasPago?.[0]?.codigo == null ? '' : String(data.formasPago[0].codigo);
           setLiquidacionForm((current) => ({ ...current, serie, formaPago }));
         })
       : getLiquidacionesCompra(catalogUserId, 0).then((data) => {
@@ -4302,7 +4302,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     try {
       const result = await guardarFactura({
         idUsuario: catalogUserId,
-        cliente: facturaCliente,
+        cliente: {
+          ...facturaCliente,
+          tipoidentificacion: facturaForm.tipoIdentificacion.trim() || facturaCliente.tipoidentificacion || null,
+          tipoCliente: Number(facturaForm.tipoCliente) || facturaCliente.tipoCliente || null,
+          oblgconta: facturaForm.obligadoContabilidad.trim() || facturaCliente.oblgconta || null,
+          direccion: facturaForm.direccion.trim() || facturaCliente.direccion || null,
+          celular: facturaForm.telefono.trim() || facturaCliente.celular || null,
+          correo: facturaForm.correoPrincipal.trim() || facturaCliente.correo || null,
+        },
         serie: facturaForm.serie,
         codemisor: getSerieCodemisorFromOptions(getDocumentSerieOptions(facturaPreparacion, puntosData, 'factura'), facturaForm.serie, facturaPreparacion),
         formaPago: facturaForm.formaPago,
@@ -4314,6 +4322,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           precio: Number(linea.precio.replace(',', '.')) || 0,
           descuento: Number(linea.descuento.replace(',', '.')) || 0,
           tarifa: Number(linea.tarifa.replace(',', '.')) || 0,
+          detalle: facturaForm.detalleLinea,
         })),
       });
       setDirectoryMessage({ type: 'success', text: `${result.mensaje} ${result.numeroComprobante ?? ''}`.trim() });
@@ -6957,15 +6966,6 @@ function NuevaFacturaMobileScreen({
         </View>
         <View style={styles.invoiceHeaderActions}>
           <View style={styles.invoiceHeaderBox}>
-            <DropdownField
-              label="Serie"
-              options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
-              value={Math.max(serieOptions.findIndex((item) => item.serieRaw === form.serie || item.serieVisual === form.serie) + 1, 0) || null}
-              onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? '' : '')}
-              allowClear
-            />
-          </View>
-          <View style={styles.invoiceHeaderBox}>
             <Text style={styles.invoiceMiniLabel}>Numero de factura</Text>
             <Text style={styles.invoiceHeaderValue}>{invoiceNumber}</Text>
           </View>
@@ -7101,9 +7101,9 @@ function NuevaFacturaMobileScreen({
           <Text style={styles.clientFormSubtitle}>Forma de pago</Text>
           <DropdownField
             label="Forma de pago (SRI)"
-            options={formaPagoOptions.map((item, index) => ({ label: item.descripcionSri || item.descripcion || item.codigo || `Forma ${index + 1}`, value: index + 1 }))}
-            value={Math.max(formaPagoOptions.findIndex((item) => item.codigo === form.formaPago) + 1, 0) || null}
-            onChange={(value) => onChange('formaPago', value ? formaPagoOptions[value - 1]?.codigo ?? '' : '')}
+            options={formaPagoOptions.map((item, index) => ({ label: String(item.descripcionSri || item.descripcion || item.codigo || `Forma ${index + 1}`), value: index + 1 }))}
+            value={Math.max(formaPagoOptions.findIndex((item) => String(item.codigo ?? '') === form.formaPago) + 1, 0) || null}
+            onChange={(value) => onChange('formaPago', value ? String(formaPagoOptions[value - 1]?.codigo ?? '') : '')}
             allowClear
           />
         </View>
@@ -7969,9 +7969,9 @@ function NuevaLiquidacionCompraMobileScreen({
         <View style={styles.invoiceGrid}>
           <DropdownField
             label="Forma de pago"
-            options={formaPagoOptions.map((item, index) => ({ label: item.descripcionSri || item.descripcion || item.codigo || `Forma ${index + 1}`, value: index + 1 }))}
-            value={Math.max(formaPagoOptions.findIndex((item) => item.codigo === form.formaPago) + 1, 0) || null}
-            onChange={(value) => onChange('formaPago', value ? formaPagoOptions[value - 1]?.codigo ?? '' : '')}
+            options={formaPagoOptions.map((item, index) => ({ label: String(item.descripcionSri || item.descripcion || item.codigo || `Forma ${index + 1}`), value: index + 1 }))}
+            value={Math.max(formaPagoOptions.findIndex((item) => String(item.codigo ?? '') === form.formaPago) + 1, 0) || null}
+            onChange={(value) => onChange('formaPago', value ? String(formaPagoOptions[value - 1]?.codigo ?? '') : '')}
             allowClear
           />
           <Field label="Dias de credito" value={form.diasCredito} onChangeText={(value) => onChange('diasCredito', value.replace(/[^\d]/g, ''))} keyboardType="number-pad" />
