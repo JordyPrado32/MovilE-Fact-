@@ -122,8 +122,8 @@ export function guardarGuiaRemision(input: GuiaRemisionGuardarInput) {
     cantidad: item.cantidad,
   }));
 
-  return apiRequest<{ mensaje: string; codGuia?: number; numeroComprobante?: string | null }>(
-    '/api/guias-remision/guardar-completa',
+  return apiRequest<{ mensaje?: string; secGuiaRemision?: number; codGuia?: number; numeroComprobante?: string | null }>(
+    '/api/guias-remision',
     {
       method: 'POST',
       body: JSON.stringify({
@@ -136,6 +136,10 @@ export function guardarGuiaRemision(input: GuiaRemisionGuardarInput) {
       }),
     },
   );
+}
+
+export function emitirGuiaRemision(userId: number, sec: number) {
+  return apiRequest<{ estado?: string; mensaje?: string; autorizacion?: string }>(`/api/guias-remision/${sec}/emitir?idUsuario=${userId}`, { method: 'POST' });
 }
 
 export function getGuiaRemisionPdf(userId: number, codGuia: number) {

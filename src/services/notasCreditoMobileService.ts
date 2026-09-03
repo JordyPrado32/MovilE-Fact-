@@ -88,6 +88,7 @@ export function guardarNotaCredito(input: NotaCreditoGuardarInput) {
     tipodocumento: 4,
     serie: input.serie?.replace(/-/g, '') || null,
     codfactura: input.facturaModificada?.codfactura || null,
+    codClientes: input.cliente.codcliente || null,
     facturaModificada: input.facturaModificada?.numeroCompleto ?? input.facturaModificada?.numfactura ?? null,
     motivo: input.motivo || null,
     observacion: input.observacion || null,
@@ -107,20 +108,18 @@ export function guardarNotaCredito(input: NotaCreditoGuardarInput) {
       codproducto: item.producto.codproducto,
       codprincipal: item.producto.codprincipal,
       codauxiliar: item.producto.codauxiliar,
-      cantproducto: item.cantidad,
-      descripproducto: item.producto.descripcion,
-      precioproducto: item.precio,
+      descripcion: item.producto.descripcion ?? 'Producto',
+      cantidad: item.cantidad,
+      preciounitario: item.precio,
       descuento: item.descuento,
-      valortproducto: base,
-      valoriva: valorIva,
-      valortotal: base + valorIva,
-      tarifa: item.tarifa,
-      costo: item.producto.costo ?? 0,
+      subtotal: base,
+      iva: item.tarifa,
+      total: base + valorIva,
     };
   });
 
-  return apiRequest<{ mensaje: string; codNotaCredito?: number; numeroComprobante?: string | null }>(
-    '/api/notas-credito/guardar-completa',
+  return apiRequest<{ mensaje?: string; sec?: number; codNotaCredito?: number; numeroComprobante?: string | null }>(
+    '/api/notas-credito',
     {
       method: 'POST',
       body: JSON.stringify({
@@ -133,6 +132,10 @@ export function guardarNotaCredito(input: NotaCreditoGuardarInput) {
       }),
     },
   );
+}
+
+export function emitirNotaCredito(userId: number, sec: number) {
+  return apiRequest<{ estado?: string; mensaje?: string; autorizacion?: string }>(`/api/notas-credito/${sec}/emitir?idUsuario=${userId}`, { method: 'POST' });
 }
 
 export function getNotaCreditoPdf(userId: number, codNotaCredito: number) {

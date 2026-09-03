@@ -84,6 +84,7 @@ export function guardarNotaDebito(input: NotaDebitoGuardarInput) {
     tipodocumento: 5,
     serie: input.serie?.replace(/-/g, '') || null,
     codfactura: input.facturaModificada?.codfactura || null,
+    codClientes: input.cliente.codcliente || null,
     facturaModificada: input.facturaModificada?.numeroCompleto ?? input.facturaModificada?.numfactura ?? null,
     estado: true,
     autorizado: false,
@@ -96,16 +97,16 @@ export function guardarNotaDebito(input: NotaDebitoGuardarInput) {
 
   const detalles = input.detalles.map((item) => ({
     descripcion: item.descripcion,
-    motivo: item.descripcion,
-    precio: item.precio,
-    tarifa: item.tarifa,
-    impuestoIce: item.impuestoIce || null,
+    detalle: item.descripcion,
+    preciounitario: item.precio,
+    subtotal: item.precio,
+    iva: item.tarifa,
     valorIce: item.valorIce,
-    valortotal: item.precio + item.valorIce + (item.precio + item.valorIce) * (item.tarifa / 100),
+    total: item.precio + item.valorIce + (item.precio + item.valorIce) * (item.tarifa / 100),
   }));
 
-  return apiRequest<{ mensaje: string; codNotaDebito?: number; numeroComprobante?: string | null }>(
-    '/api/notas-debito/guardar-completa',
+  return apiRequest<{ mensaje?: string; sec?: number; codNotaDebito?: number; numeroComprobante?: string | null }>(
+    '/api/notas-debito',
     {
       method: 'POST',
       body: JSON.stringify({
@@ -118,6 +119,10 @@ export function guardarNotaDebito(input: NotaDebitoGuardarInput) {
       }),
     },
   );
+}
+
+export function emitirNotaDebito(userId: number, sec: number) {
+  return apiRequest<{ estado?: string; mensaje?: string; autorizacion?: string }>(`/api/notas-debito/${sec}/emitir?idUsuario=${userId}`, { method: 'POST' });
 }
 
 export function getNotaDebitoPdf(userId: number, codNotaDebito: number) {

@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import type * as ExpoNotifications from 'expo-notifications';
 import { isRunningInExpoGo } from 'expo';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import { NotificacionItem } from './notificacionesService';
 
@@ -8,8 +9,14 @@ const CHANNEL_ID = 'efact-activity';
 const DELIVERED_KEY_PREFIX = 'efact_delivered_notifications_';
 let notificationsModule: typeof ExpoNotifications | null = null;
 
+function isExpoGoRuntime() {
+  return isRunningInExpoGo()
+    || Constants.appOwnership === 'expo'
+    || Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+}
+
 function getNotificationsModule() {
-  if (Platform.OS === 'web' || isRunningInExpoGo()) return null;
+  if (Platform.OS === 'web' || isExpoGoRuntime()) return null;
   if (!notificationsModule) {
     const candidate = require('expo-notifications') as Partial<typeof ExpoNotifications>;
     if (typeof candidate.setNotificationHandler !== 'function') return null;
@@ -25,7 +32,7 @@ function getNotificationsModule() {
   }
   return notificationsModule;
 }
-const canUseDeviceNotifications = Platform.OS !== 'web' && !isRunningInExpoGo();
+const canUseDeviceNotifications = Platform.OS !== 'web' && !isExpoGoRuntime();
 
 export async function syncDeviceNotifications(userId: number, items: NotificacionItem[]) {
   if (Platform.OS === 'web' || userId <= 0 || !items.length) return;
