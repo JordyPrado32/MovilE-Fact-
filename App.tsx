@@ -2492,10 +2492,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ? getLiquidacionCompraPreparacion(catalogUserId).then((data) => {
           if (!mounted) return;
           setLiquidacionPreparacion(data);
-          const serie = getSerieValue(data.series?.[0]) || data.caja?.serieFactura || '';
           const formaPago = data.formasPago?.[0]?.codigo == null ? '' : String(data.formasPago[0].codigo);
           const serie = getSerieValue(data.series?.[0]) || getCajaSerieForDocument(data, 'liquidacion') || '';
-          const formaPago = data.formasPago?.[0]?.codigo ?? '';
           setLiquidacionForm((current) => ({ ...current, serie, formaPago }));
         })
       : getLiquidacionesCompra(catalogUserId, 0).then((data) => {
