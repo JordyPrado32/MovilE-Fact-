@@ -161,10 +161,6 @@ export function enviarNotaDebitoCorreo(userId: number, codNotaDebito: number) {
   });
 }
 
-export function emitirNotaDebito(userId: number, codNotaDebito: number) {
-  return apiRequest<void>(`/api/notas-debito/${codNotaDebito}/emitir?idUsuario=${userId}`, { method: 'POST' });
-}
-
 export function anularNotaDebito(userId: number, codNotaDebito: number) {
   return apiRequest<void>(`/api/notas-debito/${codNotaDebito}?idUsuario=${userId}`, { method: 'DELETE' });
 }

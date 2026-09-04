@@ -167,10 +167,6 @@ export function enviarNotaCreditoCorreo(userId: number, codNotaCredito: number) 
   return apiRequest<void>(`/api/notas-credito/${codNotaCredito}/enviar-correo?idUsuario=${userId}`, { method: 'POST' });
 }
 
-export function emitirNotaCredito(userId: number, codNotaCredito: number) {
-  return apiRequest<void>(`/api/notas-credito/${codNotaCredito}/emitir?idUsuario=${userId}`, { method: 'POST' });
-}
-
 export function anularNotaCredito(userId: number, codNotaCredito: number) {
   return apiRequest<void>(`/api/notas-credito/${codNotaCredito}?idUsuario=${userId}`, { method: 'DELETE' });
 }

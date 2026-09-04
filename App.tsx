@@ -40,11 +40,11 @@ import { createCategoria, createSubcategoria, deleteCategoria, deleteSubcategori
 import { createCliente, deleteCliente, getCiudades, getClienteLookups, getClientes, getProvincias, updateCliente } from './src/services/clientesService';
 import { createEmisor, deleteEmisor, getEmisor, getEmisores, updateEmisor, uploadFirmaArchivo } from './src/services/emisoresService';
 import { anularFactura, buscarFacturaClientes, buscarFacturaProductos, enviarFacturaCorreo, FacturaListItem, FacturaPreparacion, FacturaProducto, getFacturaDetalle, getFacturaPdf, getFacturas, getFacturaPreparacion, getFacturaXml, guardarFactura, reintentarFacturaSri } from './src/services/facturasMobileService';
-import { anularGuiaRemision, buscarGuiaClientes, buscarGuiaFacturas, buscarGuiaProductos, buscarGuiaTransportistas, emitirGuiaRemision, emitirGuiaRemision, enviarGuiaRemisionCorreo, getGuiaRemisionPdf, getGuiaRemisionPreparacion, getGuiasRemision, getGuiaRemisionXml, guardarGuiaRemision, GuiaRemisionListItem } from './src/services/guiasRemisionMobileService';
+import { anularGuiaRemision, buscarGuiaClientes, buscarGuiaFacturas, buscarGuiaProductos, buscarGuiaTransportistas, emitirGuiaRemision, enviarGuiaRemisionCorreo, getGuiaRemisionPdf, getGuiaRemisionPreparacion, getGuiasRemision, getGuiaRemisionXml, guardarGuiaRemision, GuiaRemisionListItem } from './src/services/guiasRemisionMobileService';
 import { getMenusByRol, hasMenusByRolEndpoint } from './src/services/menuService';
-import { buscarLiquidacionProductos, buscarLiquidacionProveedores, enviarLiquidacionCompraCorreo, getLiquidacionCompraPdf, getLiquidacionCompraPreparacion, getLiquidacionesCompra, getLiquidacionCompraXml, guardarLiquidacionCompra, LiquidacionCompraListItem } from './src/services/liquidacionesCompraMobileService';
-import { buscarNotaCreditoFacturas, enviarNotaCreditoCorreo, getNotaCreditoPdf, getNotaCreditoPreparacion, getNotasCredito, getNotaCreditoXml, guardarNotaCredito, NotaCreditoListItem } from './src/services/notasCreditoMobileService';
-import { buscarNotaDebitoFacturas, enviarNotaDebitoCorreo, getNotaDebitoPdf, getNotaDebitoPreparacion, getNotasDebito, getNotaDebitoXml, guardarNotaDebito, NotaDebitoListItem } from './src/services/notasDebitoMobileService';
+import { buscarLiquidacionProductos, buscarLiquidacionProveedores, emitirLiquidacionCompra, enviarLiquidacionCompraCorreo, getLiquidacionCompraPdf, getLiquidacionCompraPreparacion, getLiquidacionesCompra, getLiquidacionCompraXml, guardarLiquidacionCompra, LiquidacionCompraListItem } from './src/services/liquidacionesCompraMobileService';
+import { anularNotaCredito, buscarNotaCreditoFacturas, emitirNotaCredito, enviarNotaCreditoCorreo, getNotaCreditoDetallesDisponibles, getNotaCreditoPdf, getNotaCreditoPreparacion, getNotasCredito, getNotaCreditoXml, guardarNotaCredito, NotaCreditoListItem } from './src/services/notasCreditoMobileService';
+import { anularNotaDebito, buscarNotaDebitoFacturas, emitirNotaDebito, enviarNotaDebitoCorreo, getNotaDebitoDetallesFactura, getNotaDebitoPdf, getNotaDebitoPreparacion, getNotasDebito, getNotaDebitoXml, guardarNotaDebito, NotaDebitoListItem } from './src/services/notasDebitoMobileService';
 import { clearNotificaciones, dismissNotificacion, getNotificaciones, NotificacionItem } from './src/services/notificacionesService';
 import { syncDeviceNotifications } from './src/services/deviceNotificationsService';
 import { CompraDocumentosEstado, createOperationalItem, deleteOperationalItem, getCompraDocumentosEstado, getOperationalMobileModule, getOperationalModuleConfig, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, updateOperationalItem } from './src/services/operationalMobileService';
@@ -362,7 +362,6 @@ const BASE_EFACT_MOBILE_MENUS: DynamicMenu[] = [
   { id: -1002, nombre: 'Mi Perfil', ruta: '/perfil', icono: 'ri-user-settings-line', orden: 2, estado: true },
   { id: -1003, nombre: 'Emisor', ruta: '/emisor', icono: 'ri-building-line', orden: 3, estado: true },
   { id: -1004, nombre: 'Firma', ruta: '/firma', icono: 'ri-shield-check-line', orden: 4, estado: true },
-  { id: -1025, nombre: 'E-Rúbrica', ruta: '/e-rubrica', icono: 'ri-draft-line', orden: 4, estado: true },
   { id: -1005, nombre: 'Pto. Emision', ruta: '/mi-caja', icono: 'ri-store-2-line', orden: 5, estado: true },
   { id: -1006, nombre: 'Clientes / Proveedores', ruta: '/clientes', icono: 'ri-group-line', orden: 6, estado: true },
   { id: -1007, nombre: 'Productos', ruta: '/productos', icono: 'ri-shopping-bag-line', orden: 7, estado: true },
@@ -4719,7 +4718,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           tarifa: Number(linea.tarifa.replace(',', '.')) || 0,
         })),
       });
-      const secNotaCredito = result.sec ?? result.codNotaCredito;
+      const secNotaCredito = result.codNotaCredito;
       const sri = secNotaCredito ? await emitirNotaCredito(catalogUserId, secNotaCredito) : null;
       setDirectoryMessage({ type: sri?.estado?.toUpperCase() === 'AUTORIZADO' ? 'success' : 'info', text: `${result.mensaje ?? 'Nota de credito guardada.'} ${sri?.mensaje ?? 'Enviada al SRI para validacion.'}`.trim() });
       clearNotaCreditoForm();
@@ -4897,7 +4896,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           valorIce: Number(linea.valorIce.replace(',', '.')) || 0,
         })),
       });
-      const secNotaDebito = result.sec ?? result.codNotaDebito;
+      const secNotaDebito = result.codNotaDebito;
       const sri = secNotaDebito ? await emitirNotaDebito(catalogUserId, secNotaDebito) : null;
       setDirectoryMessage({ type: sri?.estado?.toUpperCase() === 'AUTORIZADO' ? 'success' : 'info', text: `${result.mensaje ?? 'Nota de debito guardada.'} ${sri?.mensaje ?? 'Enviada al SRI para validacion.'}`.trim() });
       clearNotaDebitoForm();
@@ -5058,7 +5057,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           tarifa: Number(linea.tarifa.replace(',', '.')) || 0,
         })),
       });
-      const codLiquidacion = result.codFactura ?? result.codLiquidacion;
+      const codLiquidacion = result.codLiquidacion;
       const sri = codLiquidacion ? await emitirLiquidacionCompra(catalogUserId, codLiquidacion) : null;
       setDirectoryMessage({ type: sri?.estado?.toUpperCase() === 'AUTORIZADO' ? 'success' : 'info', text: `${result.mensaje ?? 'Liquidacion guardada.'} ${sri?.mensaje ?? 'Enviada al SRI para validacion.'}`.trim() });
       clearLiquidacionForm();
@@ -5291,7 +5290,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         puntoEmision: guiaForm.serie,
         detalles: guiaDetalles.map((detalle) => ({ producto: detalle.producto, cantidad: Number(detalle.cantidad.replace(',', '.')) || 0 })),
       });
-      const secGuia = result.secGuiaRemision ?? result.codGuia;
+      const secGuia = result.codGuia;
       const sri = secGuia ? await emitirGuiaRemision(catalogUserId, secGuia) : null;
       setDirectoryMessage({ type: sri?.estado?.toUpperCase() === 'AUTORIZADO' ? 'success' : 'info', text: `${result.mensaje ?? 'Guia de remision guardada.'} ${sri?.mensaje ?? 'Enviada al SRI para validacion.'}`.trim() });
       clearGuiaForm();
@@ -7391,7 +7390,6 @@ function NuevaFacturaMobileScreen({
   onUpdateLinea,
   onRemoveLinea,
   onClear,
-  onHistory,
   onSave,
 }: {
   form: NuevaFacturaFormState;
@@ -7413,7 +7411,6 @@ function NuevaFacturaMobileScreen({
   onUpdateLinea: (index: number, field: keyof Omit<NuevaFacturaLinea, 'producto'>, value: string) => void;
   onRemoveLinea: (index: number) => void;
   onClear: () => void;
-  onHistory: () => void;
   onSave: () => void;
 }) {
   const toNumber = (value: string) => Number(value.replace(',', '.')) || 0;
@@ -8360,6 +8357,7 @@ function NuevaLiquidacionCompraMobileScreen({
   onUpdateLinea,
   onRemoveLinea,
   onClear,
+  onHistory,
   onSave,
 }: {
   form: LiquidacionCompraFormState;
@@ -8380,6 +8378,7 @@ function NuevaLiquidacionCompraMobileScreen({
   onUpdateLinea: (index: number, field: keyof Omit<NuevaFacturaLinea, 'producto'>, value: string) => void;
   onRemoveLinea: (index: number) => void;
   onClear: () => void;
+  onHistory: () => void;
   onSave: () => void;
 }) {
   const toNumber = (value: string) => Number(value.replace(',', '.')) || 0;

@@ -117,7 +117,7 @@ export async function guardarGuiaRemision(input: GuiaRemisionGuardarInput) {
     Cantidad: Math.max(1, Math.round(item.cantidad)),
   }));
 
-  return apiRequest<{ mensaje?: string; secGuiaRemision?: number; codGuia?: number; numeroComprobante?: string | null }>(
+  const response = await apiRequest<{ mensaje?: string; sec?: number; secGuiaRemision?: number; Sec?: number; codGuia?: number; CodGuia?: number; numeroComprobante?: string | null }>(
     '/api/guias-remision',
     {
       method: 'POST',
@@ -174,10 +174,6 @@ export function enviarGuiaRemisionCorreo(userId: number, codGuia: number) {
     method: 'POST',
     body: JSON.stringify({ IdUsuario: userId, ForzarReenvio: true }),
   });
-}
-
-export function emitirGuiaRemision(userId: number, codGuia: number) {
-  return apiRequest<void>(`/api/guias-remision/${codGuia}/emitir?idUsuario=${userId}`, { method: 'POST' });
 }
 
 export function anularGuiaRemision(userId: number, codGuia: number) {
