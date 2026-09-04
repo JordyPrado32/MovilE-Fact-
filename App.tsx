@@ -4400,6 +4400,32 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setFacturaForm((current) => ({ ...current, [field]: value }));
   };
 
+  const mapProductoToFacturaProducto = (producto: Producto): FacturaProducto => ({
+    codproducto: producto.codproducto,
+    codprincipal: producto.codigo ?? null,
+    descripcion: producto.nombre,
+    precioUnitario: producto.precioBase ?? producto.precios?.[0] ?? 0,
+    costo: producto.precioBase ?? producto.precios?.[0] ?? 0,
+    tarifaIva: producto.tarifa ?? (producto.iva ? 12 : 0),
+  });
+
+  const searchLocalFacturaProductos = (rawFilter: string) => {
+    const term = normalizeText(rawFilter.trim());
+    if (!term) return [];
+    return productos
+      .filter((producto) => producto.estado !== false)
+      .filter((producto) => [
+        producto.nombre,
+        producto.codigo,
+        producto.tipo,
+        producto.categoriaDescripcion,
+        producto.subcategoriaDescripcion,
+        producto.tarifaDescripcion,
+      ].some((value) => normalizeText(value).includes(term)))
+      .slice(0, 20)
+      .map(mapProductoToFacturaProducto);
+  };
+
   const searchFacturaClientes = async () => {
     if (!catalogUserId || !facturaForm.clienteBusqueda.trim()) return;
     setLoadingFacturas(true);
@@ -4419,8 +4445,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setLoadingFacturas(true);
     setDirectoryMessage(null);
     try {
-      setFacturaProductos(await buscarFacturaProductos(catalogUserId, facturaForm.productoBusqueda));
+      const remoteProductos = await buscarFacturaProductos(catalogUserId, facturaForm.productoBusqueda);
+      setFacturaProductos(remoteProductos.length > 0 ? remoteProductos : searchLocalFacturaProductos(facturaForm.productoBusqueda));
     } catch (error) {
+      const localProductos = searchLocalFacturaProductos(facturaForm.productoBusqueda);
+      if (localProductos.length > 0) {
+        setFacturaProductos(localProductos);
+        return;
+      }
       const text = error instanceof ApiError ? error.message : 'No se pudo buscar productos.';
       setDirectoryMessage({ type: 'error', text });
     } finally {
@@ -5075,8 +5107,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setLoadingLiquidaciones(true);
     setDirectoryMessage(null);
     try {
-      setLiquidacionProductos(await buscarLiquidacionProductos(catalogUserId, liquidacionForm.productoBusqueda));
+      const remoteProductos = await buscarLiquidacionProductos(catalogUserId, liquidacionForm.productoBusqueda);
+      setLiquidacionProductos(remoteProductos.length > 0 ? remoteProductos : searchLocalFacturaProductos(liquidacionForm.productoBusqueda));
     } catch (error) {
+      const localProductos = searchLocalFacturaProductos(liquidacionForm.productoBusqueda);
+      if (localProductos.length > 0) {
+        setLiquidacionProductos(localProductos);
+        return;
+      }
       const text = error instanceof ApiError ? error.message : 'No se pudo buscar productos.';
       setDirectoryMessage({ type: 'error', text });
     } finally {
@@ -5244,8 +5282,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setLoadingGuias(true);
     setDirectoryMessage(null);
     try {
-      setGuiaProductos(await buscarGuiaProductos(catalogUserId, guiaForm.productoBusqueda));
+      const remoteProductos = await buscarGuiaProductos(catalogUserId, guiaForm.productoBusqueda);
+      setGuiaProductos(remoteProductos.length > 0 ? remoteProductos : searchLocalFacturaProductos(guiaForm.productoBusqueda));
     } catch (error) {
+      const localProductos = searchLocalFacturaProductos(guiaForm.productoBusqueda);
+      if (localProductos.length > 0) {
+        setGuiaProductos(localProductos);
+        return;
+      }
       const text = error instanceof ApiError ? error.message : 'No se pudo buscar productos.';
       setDirectoryMessage({ type: 'error', text });
     } finally {
@@ -5884,30 +5928,13 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onPress={() => openView('dashboard')}
                 index={0}
               />
-              {services
-                .filter((service) => {
-                  const normalized = normalizeText(`${service.codigo ?? ''} ${service.nombre ?? ''}`);
-                  return !normalized.includes('fact') && !normalized.includes('backoffice');
-                })
-                .map((service, index) => (
-                  <PortalServiceCard
-                    key={`${service.codigo ?? service.nombre ?? 'servicio'}-${index}`}
-                    title={getServiceDisplayName(service)}
-                    description={isERubricaService(service) || getServiceDisplayName(service) === 'E-RÚBRICA' ? 'Firma y valida documentos.' : 'Modulo sin acceso movil.'}
-                    enabled={isERubricaService(service) || getServiceDisplayName(service) === 'E-RÚBRICA'}
-                    onPress={() => (isERubricaService(service) || getServiceDisplayName(service) === 'E-RÚBRICA') && openView('e-rubrica')}
-                    index={index + 1}
-                  />
-                ))}
-              {!services.some(isERubricaService) ? (
-                <PortalServiceCard
-                  title="E-RÚBRICA"
-                  description="Firma y valida documentos."
-                    enabled={canUseERubrica}
-                  onPress={() => openView('e-rubrica')}
-                  index={services.length + 1}
-                />
-              ) : null}
+              <PortalServiceCard
+                title="E-RÚBRICA"
+                description="Firma y valida documentos."
+                enabled={canUseERubrica}
+                onPress={() => openView('e-rubrica')}
+                index={1}
+              />
             </View>
           </View>
         ) : null}

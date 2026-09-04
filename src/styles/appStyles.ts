@@ -1558,8 +1558,8 @@ export const styles = StyleSheet.create({
     elevation: 3,
   },
   portalHeaderLogo: {
-    height: 58,
-    width: 58,
+    height: 48,
+    width: 48,
   },
   portalHeaderAvatarFallback: {
     alignItems: 'center',
