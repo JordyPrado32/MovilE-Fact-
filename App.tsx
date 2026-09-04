@@ -4469,7 +4469,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         idUsuario: catalogUserId,
         cliente: {
           ...facturaCliente,
-          tipoidentificacion: facturaForm.tipoIdentificacion.trim() || facturaCliente.tipoidentificacion || null,
+          tipoidentificacion: getTipoIdentificacionCode(facturaForm.tipoIdentificacion) || facturaCliente.tipoidentificacion || null,
           tipoCliente: Number(facturaForm.tipoCliente) || facturaCliente.tipoCliente || null,
           oblgconta: facturaForm.obligadoContabilidad.trim() || facturaCliente.oblgconta || null,
           direccion: facturaForm.direccion.trim() || facturaCliente.direccion || null,
@@ -4505,10 +4505,17 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
   };
 
-  const openFacturaAsset = async (loader: () => Promise<{ url: string }>) => {
+  const getDocumentAssetUrl = (response: { url?: string | null } | string) => {
+    const value = typeof response === 'string' ? response : response.url;
+    if (!value) return '';
+    return value.startsWith('http') ? value : `${API_BASE_URL.replace(/\/$/, '')}/${value.replace(/^\//, '')}`;
+  };
+
+  const openFacturaAsset = async (loader: () => Promise<{ url?: string | null } | string>) => {
     try {
       const response = await loader();
-      const url = response.url?.startsWith('http') ? response.url : `${API_BASE_URL.replace(/\/$/, '')}/${response.url.replace(/^\//, '')}`;
+      const url = getDocumentAssetUrl(response);
+      if (!url) throw new Error('empty-url');
       await Linking.openURL(url);
     } catch (error) {
       const text = error instanceof ApiError ? error.message : 'No se pudo abrir el documento.';
@@ -4577,7 +4584,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       facturaBusqueda: factura.numeroCompleto ?? factura.numfactura ?? '',
       clienteBusqueda: getClienteDisplayName(cliente),
       correoPrincipal: getClienteEmail(cliente),
-      tipoIdentificacion: String(cliente.tipoidentificacion ?? ''),
+      tipoIdentificacion: getTipoIdentificacionLabel(cliente.tipoidentificacion),
       numeroIdentificacion: getClienteIdentification(cliente),
       tipoCliente: String(cliente.tipoCliente ?? ''),
       obligadoContabilidad: cliente.oblgconta ?? '',
@@ -4598,7 +4605,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         facturaBusqueda: facturaCompleta.numeroCompleto ?? facturaCompleta.numfactura ?? '',
         clienteBusqueda: getClienteDisplayName(clienteCompleto),
         correoPrincipal: getClienteEmail(clienteCompleto),
-        tipoIdentificacion: String(clienteCompleto.tipoidentificacion ?? ''),
+        tipoIdentificacion: getTipoIdentificacionLabel(clienteCompleto.tipoidentificacion),
         numeroIdentificacion: getClienteIdentification(clienteCompleto),
         tipoCliente: String(clienteCompleto.tipoCliente ?? ''),
         obligadoContabilidad: clienteCompleto.oblgconta ?? '',
@@ -4804,7 +4811,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       facturaBusqueda: factura.numeroCompleto ?? factura.numfactura ?? '',
       clienteBusqueda: getClienteDisplayName(cliente),
       correoPrincipal: getClienteEmail(cliente),
-      tipoIdentificacion: String(cliente.tipoidentificacion ?? ''),
+      tipoIdentificacion: getTipoIdentificacionLabel(cliente.tipoidentificacion),
       numeroIdentificacion: getClienteIdentification(cliente),
       tipoCliente: String(cliente.tipoCliente ?? ''),
       obligadoContabilidad: cliente.oblgconta ?? '',
@@ -4824,7 +4831,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         facturaBusqueda: facturaCompleta.numeroCompleto ?? facturaCompleta.numfactura ?? '',
         clienteBusqueda: getClienteDisplayName(clienteCompleto),
         correoPrincipal: getClienteEmail(clienteCompleto),
-        tipoIdentificacion: String(clienteCompleto.tipoidentificacion ?? ''),
+        tipoIdentificacion: getTipoIdentificacionLabel(clienteCompleto.tipoidentificacion),
         numeroIdentificacion: getClienteIdentification(clienteCompleto),
         tipoCliente: String(clienteCompleto.tipoCliente ?? ''),
         obligadoContabilidad: clienteCompleto.oblgconta ?? '',
@@ -4864,7 +4871,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         facturaBusqueda: parsed.factura.numeroCompleto ?? parsed.factura.numfactura ?? '',
         clienteBusqueda: getClienteDisplayName(parsed.cliente),
         correoPrincipal: getClienteEmail(parsed.cliente),
-        tipoIdentificacion: String(parsed.cliente.tipoidentificacion ?? ''),
+        tipoIdentificacion: getTipoIdentificacionLabel(parsed.cliente.tipoidentificacion),
         numeroIdentificacion: getClienteIdentification(parsed.cliente),
         tipoCliente: String(parsed.cliente.tipoCliente ?? ''),
         obligadoContabilidad: parsed.cliente.oblgconta ?? '',
@@ -4899,7 +4906,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         facturaBusqueda: parsed.factura.numeroCompleto ?? parsed.factura.numfactura ?? '',
         clienteBusqueda: getClienteDisplayName(parsed.cliente),
         correoPrincipal: getClienteEmail(parsed.cliente),
-        tipoIdentificacion: String(parsed.cliente.tipoidentificacion ?? ''),
+        tipoIdentificacion: getTipoIdentificacionLabel(parsed.cliente.tipoidentificacion),
         numeroIdentificacion: getClienteIdentification(parsed.cliente),
         tipoCliente: String(parsed.cliente.tipoCliente ?? ''),
         obligadoContabilidad: parsed.cliente.oblgconta ?? '',
@@ -5055,6 +5062,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setLiquidacionForm((current) => ({
       ...current,
       clienteBusqueda: getClienteDisplayName(proveedor),
+      tipoIdentificacion: getTipoIdentificacionLabel(proveedor.tipoidentificacion),
       numeroIdentificacion: getClienteIdentification(proveedor),
       direccion: proveedor.direccion ?? '',
       telefono: proveedor.celular || proveedor.telefonoconvencional || '',
@@ -5220,13 +5228,29 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const selectGuiaTransportista = (transportista: Cliente) => {
     setGuiaTransportista(transportista);
     setGuiaTransportistas([]);
-    setGuiaForm((current) => ({ ...current, transportistaBusqueda: getClienteDisplayName(transportista) }));
+    setGuiaForm((current) => ({
+      ...current,
+      transportistaBusqueda: getClienteDisplayName(transportista),
+      tipoIdentificacion: getTipoIdentificacionLabel(transportista.tipoidentificacion),
+      numeroIdentificacion: getClienteIdentification(transportista),
+      direccion: transportista.direccion ?? current.direccion,
+      telefono: transportista.celular || transportista.telefonoconvencional || current.telefono,
+      correoPrincipal: getClienteEmail(transportista) || current.correoPrincipal,
+    }));
   };
 
   const selectGuiaCliente = (cliente: Cliente) => {
     setGuiaCliente(cliente);
     setGuiaClientes([]);
-    setGuiaForm((current) => ({ ...current, clienteBusquedaGuia: getClienteDisplayName(cliente), numeroIdentificacion: getClienteIdentification(cliente) }));
+    setGuiaForm((current) => ({
+      ...current,
+      clienteBusquedaGuia: getClienteDisplayName(cliente),
+      tipoIdentificacion: getTipoIdentificacionLabel(cliente.tipoidentificacion),
+      numeroIdentificacion: getClienteIdentification(cliente),
+      direccion: cliente.direccion ?? current.direccion,
+      telefono: cliente.celular || cliente.telefonoconvencional || current.telefono,
+      correoPrincipal: getClienteEmail(cliente) || current.correoPrincipal,
+    }));
   };
 
   const selectGuiaFactura = async (factura: FacturaListItem) => {
@@ -5615,7 +5639,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     };
   };
   const efactDrawerMenu: DrawerMenuNode[] = [
-    { key: 'dashboard', label: 'Inicio', view: 'dashboard', disabled: !canUseEfact },
     {
       ...menuNode('clientes', 'Clientes / Proveedores'),
       children: [
@@ -5693,10 +5716,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       label: 'Configuracion',
       children: [
         menuNode('emisor', 'Emisor'),
-        menuNode('perfil', 'Mi Perfil'),
         menuNode('punto-emision', 'Pto. Emision'),
         menuNode('centro-normativo', 'Centro normativo'),
-        menuNode('firma', 'Firma'),
       ],
     },
   ];
@@ -5705,10 +5726,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     openView('e-rubrica');
   };
 
-  const openPdfPreview = async (loader: () => Promise<{ url: string }>, fileName: string) => {
+  const openPdfPreview = async (loader: () => Promise<{ url?: string | null } | string>, fileName: string) => {
     try {
       const response = await loader();
-      const url = response.url?.startsWith('http') ? response.url : `${API_BASE_URL.replace(/\/$/, '')}/${response.url.replace(/^\//, '')}`;
+      const url = getDocumentAssetUrl(response);
+      if (!url) throw new Error('empty-url');
       const target = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}preview-${Date.now()}-${fileName.replace(/[^a-z0-9._-]/gi, '-')}`;
       const download = await FileSystem.downloadAsync(url, target);
       setPdfPreview({ uri: download.uri, name: fileName });
@@ -6547,7 +6569,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   setFacturaForm((current) => ({
                     ...current,
                     clienteBusqueda: getClienteDisplayName(cliente),
-                    tipoIdentificacion: String(cliente.tipoidentificacion ?? ''),
+                    tipoIdentificacion: getTipoIdentificacionLabel(cliente.tipoidentificacion),
                     numeroIdentificacion: getClienteIdentification(cliente),
                     tipoCliente: String(cliente.tipoCliente ?? ''),
                     obligadoContabilidad: cliente.oblgconta ?? '',
@@ -6823,10 +6845,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       <PortalBottomNav
         bottomInset={insets.bottom}
         activeView={activeView}
-        onHome={() => openView('dashboard')}
         onServices={() => canUsePortal ? openView('portal') : setMenuOpen(true)}
-        onBot={() => openView('firma')}
-        onNewInvoice={() => openView('nueva-factura')}
+        onHome={() => openView('dashboard')}
+        onBot={() => openView('bot')}
+        onFirma={() => openView('firma')}
         onProfile={() => openView('perfil')}
       />
       <InitialSequenceModal
@@ -6986,7 +7008,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </Pressable>
             </View>
             <ScrollView contentContainerStyle={styles.menuList} showsVerticalScrollIndicator={false}>
-              {canUsePortal ? <MenuItem active={activeView === 'portal'} label="Portal" onPress={() => openView('portal')} /> : null}
               {drawerMenu.map((node) => renderDrawerNode(node))}
             </ScrollView>
             <Pressable
@@ -7302,7 +7323,7 @@ function buildClienteFromFactura(factura: FacturaListItem, cliente?: Cliente | n
     codcliente: numberValue(cliente?.codcliente ?? pickRecordValue(clienteRow, ['codcliente', 'Codcliente', 'CodCliente']) ?? pickRecordValue(facturaRow, ['codclientes', 'Codclientes', 'codClientes', 'CodClientes'])),
     nombrerazonsocial: (cliente?.nombrerazonsocial ?? textValue(pickRecordValue(clienteRow, ['nombrerazonsocial', 'NombreRazonSocial', 'razonSocial', 'RazonSocial']) ?? factura.cliente)) || null,
     numeroidentificacion: (cliente?.numeroidentificacion ?? textValue(pickRecordValue(clienteRow, ['numeroidentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc']) ?? factura.identificacionCliente)) || null,
-    tipoidentificacion: (cliente?.tipoidentificacion ?? textValue(pickRecordValue(clienteRow, ['tipoidentificacion', 'Tipoidentificacion', 'tipoIdentificacion', 'TipoIdentificacion']))) || null,
+    tipoidentificacion: getTipoIdentificacionLabel(cliente?.tipoidentificacion ?? textValue(pickRecordValue(clienteRow, ['tipoidentificacion', 'Tipoidentificacion', 'tipoIdentificacion', 'TipoIdentificacion']))) || null,
     direccion: (cliente?.direccion ?? textValue(pickRecordValue(clienteRow, ['direccion', 'Direccion']))) || null,
     celular: (cliente?.celular ?? textValue(pickRecordValue(clienteRow, ['celular', 'Celular', 'telefono', 'Telefono']))) || null,
     telefonoconvencional: (cliente?.telefonoconvencional ?? textValue(pickRecordValue(clienteRow, ['telefonoconvencional', 'TelefonoConvencional']))) || null,
@@ -7367,7 +7388,7 @@ function manualClienteFromForm(form: NuevaFacturaFormState): Cliente {
     codcliente: 0,
     nombrerazonsocial: form.clienteBusqueda.trim() || 'Cliente manual',
     numeroidentificacion: form.numeroIdentificacion.trim() || null,
-    tipoidentificacion: form.tipoIdentificacion.trim() || null,
+    tipoidentificacion: getTipoIdentificacionCode(form.tipoIdentificacion) || null,
     tipoCliente: Number(form.tipoCliente) || null,
     oblgconta: form.obligadoContabilidad.trim() || null,
     direccion: form.direccion.trim() || null,
@@ -7389,6 +7410,53 @@ function manualFacturaFromForm(form: NotaCreditoFormState | NotaDebitoFormState)
     fechaEmision: new Date().toISOString(),
     total: 0,
   };
+}
+
+function getTipoIdentificacionLabel(value?: string | number | null) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  const map: Record<string, string> = {
+    '04': 'RUC',
+    '4': 'RUC',
+    '05': 'CÉDULA',
+    '5': 'CÉDULA',
+    '06': 'PASAPORTE',
+    '6': 'PASAPORTE',
+    '07': 'CONSUMIDOR FINAL',
+    '7': 'CONSUMIDOR FINAL',
+    '08': 'IDENTIFICACIÓN DEL EXTERIOR',
+    '8': 'IDENTIFICACIÓN DEL EXTERIOR',
+  };
+  if (map[normalized]) return map[normalized];
+  if (normalized.includes('cedula') || normalized.includes('cédula')) return 'CÉDULA';
+  if (normalized.includes('ruc')) return 'RUC';
+  if (normalized.includes('pasaporte')) return 'PASAPORTE';
+  if (normalized.includes('consumidor')) return 'CONSUMIDOR FINAL';
+  return String(value ?? '');
+}
+
+function getTipoIdentificacionCode(value?: string | number | null) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return '';
+  const map: Record<string, string> = {
+    '04': '04',
+    '4': '04',
+    ruc: '04',
+    '05': '05',
+    '5': '05',
+    cedula: '05',
+    'cédula': '05',
+    '06': '06',
+    '6': '06',
+    pasaporte: '06',
+    '07': '07',
+    '7': '07',
+    'consumidor final': '07',
+    '08': '08',
+    '8': '08',
+    'identificacion del exterior': '08',
+    'identificación del exterior': '08',
+  };
+  return map[normalized] ?? String(value ?? '');
 }
 
 function decodeXmlValue(value: string) {
@@ -7427,7 +7495,7 @@ function parseFacturaXml(xml: string) {
 
   const cliente: Cliente = {
     codcliente: 0,
-    tipoidentificacion: xmlTag(xml, 'tipoIdentificacionComprador') || null,
+    tipoidentificacion: getTipoIdentificacionLabel(xmlTag(xml, 'tipoIdentificacionComprador')) || null,
     numeroidentificacion: identificacion || null,
     nombrerazonsocial: razonSocial || null,
     nombrecomercial: razonSocial || null,

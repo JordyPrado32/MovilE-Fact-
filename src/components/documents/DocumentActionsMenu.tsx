@@ -28,7 +28,7 @@ export function DocumentActionsMenu({ actions }: { actions: DocumentAction[] }) 
       {open ? (
         <Modal transparent visible={open} animationType="fade" onRequestClose={() => setOpen(false)}>
           <Pressable style={styles.documentActionOverlay} onPress={() => setOpen(false)}>
-            <View style={styles.documentActionMenu}>
+            <Pressable style={styles.documentActionMenu} onPress={(event) => event.stopPropagation()}>
               {actions.map((action) => {
                 const color = toneColor(action.tone);
                 return (
@@ -47,7 +47,7 @@ export function DocumentActionsMenu({ actions }: { actions: DocumentAction[] }) 
                   </Pressable>
                 );
               })}
-            </View>
+            </Pressable>
           </Pressable>
         </Modal>
       ) : null}

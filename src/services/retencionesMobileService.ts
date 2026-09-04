@@ -187,7 +187,7 @@ function toRetencionListItem(row: ApiRow): RetencionListItem {
   const retenido = numberValue(pickValue(row, RETENIDO_KEYS)) ?? sumNestedNumbers(row, RETENCION_DETAIL_KEYS, RETENIDO_KEYS);
 
   return {
-    codRetencion: numberValue(pickValue(row, ['codRetencion', 'CodRetencion', 'codretencion', 'idRetencion', 'IdRetencion', 'id', 'Id'])) ?? 0,
+    codRetencion: numberValue(pickValue(row, ['codRetencion', 'CodRetencion', 'codretencion', 'codFactura', 'CodFactura', 'codfactura', 'secRetencion', 'SecRetencion', 'sec', 'Sec', 'idRetencion', 'IdRetencion', 'id', 'Id'])) ?? 0,
     numero: numeroCompleto || [serie, numero].filter(Boolean).join('-') || numero || null,
     fecha: text(pickValue(row, ['fecha', 'Fecha', 'fechaEmision', 'FechaEmision', 'fechaemision', 'Fechaemision', 'fechaDocumento', 'FechaDocumento', 'fechaSustento', 'FechaSustento', 'fechaRetencion', 'FechaRetencion', 'fechaCreacion', 'FechaCreacion', 'fechaAutorizacion', 'FechaAutorizacion'])) || null,
     documentoSustento: text(pickValue(row, ['documentoSustento', 'DocumentoSustento', 'sustento', 'Sustento', 'numeroSustento', 'NumeroSustento', 'factura', 'Factura'])) || null,

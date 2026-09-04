@@ -128,7 +128,7 @@ export async function guardarGuiaRemision(input: GuiaRemisionGuardarInput) {
         Transportista: {
           Codigo: input.transportista.codcliente || 0,
           RazonSocial: input.transportista.nombrerazonsocial || input.transportista.nombrecomercial || null,
-          TipoIdentificacion: input.transportista.tipoidentificacion || null,
+          TipoIdentificacion: tipoIdentificacionCode(input.transportista.tipoidentificacion) || null,
           NumeroIdentificacion: input.transportista.numeroidentificacion || null,
           Correo: input.transportista.correo || null,
           Placa: input.placa || placaTransportista || null,
@@ -234,7 +234,7 @@ function toGuiaListItem(row: ApiRow): GuiaRemisionListItem {
   const numero = text(pickValue(row, ['numero', 'Numero', 'numGuia', 'NumGuia', 'secuencial', 'Secuencial']));
   const numeroCompleto = text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento']));
   return {
-    codGuia: numberValue(pickValue(row, ['codGuia', 'CodGuia', 'codguia', 'idGuia', 'IdGuia', 'id', 'Id'])) ?? 0,
+    codGuia: numberValue(pickValue(row, ['codGuia', 'CodGuia', 'codguia', 'secGuiaRemision', 'SecGuiaRemision', 'secGuia', 'SecGuia', 'sec', 'Sec', 'idGuia', 'IdGuia', 'id', 'Id'])) ?? 0,
     numero: numeroCompleto || [serie, numero].filter(Boolean).join('-') || numero || null,
     fecha: text(pickValue(row, ['fecha', 'Fecha', 'fechaEmision', 'FechaEmision', 'fechaemision', 'Fechaemision', 'fechaDocumento', 'FechaDocumento', 'fechaGuia', 'FechaGuia', 'fechaCreacion', 'FechaCreacion', 'fechaAutorizacion', 'FechaAutorizacion'])) || null,
     destinatario: text(pickValue(row, ['destinatario', 'Destinatario', 'cliente', 'Cliente', 'razonSocial', 'RazonSocial'])) || null,
@@ -264,6 +264,30 @@ function isRecord(value: unknown): value is ApiRow {
 function text(value: unknown) {
   if (value === null || value === undefined) return '';
   return String(value);
+}
+
+function tipoIdentificacionCode(value?: string | number | null) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  const map: Record<string, string> = {
+    '04': '04',
+    '4': '04',
+    ruc: '04',
+    '05': '05',
+    '5': '05',
+    cedula: '05',
+    'cédula': '05',
+    '06': '06',
+    '6': '06',
+    pasaporte: '06',
+    '07': '07',
+    '7': '07',
+    'consumidor final': '07',
+    '08': '08',
+    '8': '08',
+    'identificacion del exterior': '08',
+    'identificación del exterior': '08',
+  };
+  return map[normalized] ?? String(value ?? '');
 }
 
 function numberValue(value: unknown) {

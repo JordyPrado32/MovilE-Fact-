@@ -211,7 +211,7 @@ function toNotaDebitoListItem(row: ApiRow): NotaDebitoListItem {
   const numero = text(pickValue(row, ['numeroNota', 'NumeroNota', 'numNotaDebito', 'NumNotaDebito', 'numero', 'Numero', 'secuencial', 'Secuencial']));
   const numeroCompleto = text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento']));
   return {
-    codNotaDebito: numberValue(pickValue(row, ['codNotaDebito', 'CodNotaDebito', 'codnotadebito', 'idNotaDebito', 'IdNotaDebito', 'id', 'Id'])) ?? 0,
+    codNotaDebito: numberValue(pickValue(row, ['codNotaDebito', 'CodNotaDebito', 'codnotadebito', 'codNota', 'CodNota', 'secNotaDebito', 'SecNotaDebito', 'sec', 'Sec', 'idNotaDebito', 'IdNotaDebito', 'id', 'Id'])) ?? 0,
     numeroNota: numeroCompleto || [serie, numero].filter(Boolean).join('-') || numero || null,
     facturaModificada: text(pickValue(row, ['facturaModificada', 'FacturaModificada', 'numeroFactura', 'NumeroFactura', 'factura', 'Factura'])) || null,
     fechaSustento: text(pickValue(row, ['fechaSustento', 'FechaSustento', 'fechaEmision', 'FechaEmision', 'fechaemision', 'Fechaemision', 'fechaDocumento', 'FechaDocumento', 'fechaFactura', 'FechaFactura', 'fecha', 'Fecha', 'fechaCreacion', 'FechaCreacion', 'fechaAutorizacion', 'FechaAutorizacion'])) || null,

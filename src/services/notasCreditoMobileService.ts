@@ -175,7 +175,10 @@ export function getNotaCreditoXml(userId: number, codNotaCredito: number) {
 }
 
 export function enviarNotaCreditoCorreo(userId: number, codNotaCredito: number) {
-  return apiRequest<void>(`/api/notas-credito/${codNotaCredito}/enviar-correo?idUsuario=${userId}`, { method: 'POST' });
+  return apiRequest<void>(`/api/notas-credito/${codNotaCredito}/enviar-correo`, {
+    method: 'POST',
+    body: JSON.stringify({ IdUsuario: userId, ForzarReenvio: true, CorreosExtra: [] }),
+  });
 }
 
 export function anularNotaCredito(userId: number, codNotaCredito: number) {
@@ -272,7 +275,7 @@ function toNotaCreditoListItem(row: ApiRow): NotaCreditoListItem {
   const numeroCompleto = text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento']));
 
   return {
-    codNotaCredito: numberValue(pickValue(row, ['codNotaCredito', 'CodNotaCredito', 'codnotacredito', 'idNotaCredito', 'IdNotaCredito', 'id', 'Id'])) ?? 0,
+    codNotaCredito: numberValue(pickValue(row, ['codNotaCredito', 'CodNotaCredito', 'codnotacredito', 'codNota', 'CodNota', 'secNotaCredito', 'SecNotaCredito', 'sec', 'Sec', 'idNotaCredito', 'IdNotaCredito', 'id', 'Id'])) ?? 0,
     numeroNota: numeroCompleto || [serie, numero].filter(Boolean).join('-') || numero || null,
     facturaModificada: text(pickValue(row, ['facturaModificada', 'FacturaModificada', 'numeroFactura', 'NumeroFactura', 'factura', 'Factura'])) || null,
     fechaSustento: text(pickValue(row, ['fechaSustento', 'FechaSustento', 'fechaEmision', 'FechaEmision', 'fechaemision', 'Fechaemision', 'fechaDocumento', 'FechaDocumento', 'fechaFactura', 'FechaFactura', 'fecha', 'Fecha', 'fechaCreacion', 'FechaCreacion', 'fechaAutorizacion', 'FechaAutorizacion'])) || null,

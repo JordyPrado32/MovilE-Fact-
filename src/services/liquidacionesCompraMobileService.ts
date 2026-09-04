@@ -114,7 +114,7 @@ export async function guardarLiquidacionCompra(input: LiquidacionCompraGuardarIn
         PtoEmi: ptoEmi,
         Secuencial: input.numero || '',
         FechaEmision: new Date().toISOString(),
-        TipoIdentificacionProveedor: input.proveedor.tipoidentificacion || '04',
+        TipoIdentificacionProveedor: tipoIdentificacionCode(input.proveedor.tipoidentificacion) || '04',
         IdentificacionProveedor: input.proveedor.numeroidentificacion || '',
         RazonSocialProveedor: input.proveedor.nombrerazonsocial || input.proveedor.nombrecomercial || '',
         DireccionProveedor: input.proveedor.direccion || '',
@@ -153,7 +153,10 @@ export function getLiquidacionCompraXml(userId: number, codLiquidacion: number) 
 }
 
 export function enviarLiquidacionCompraCorreo(userId: number, codLiquidacion: number) {
-  return apiRequest<void>(`/api/liquidaciones-compra/${codLiquidacion}/enviar-correo?idUsuario=${userId}`, { method: 'POST' });
+  return apiRequest<void>(`/api/liquidaciones-compra/${codLiquidacion}/enviar-correo`, {
+    method: 'POST',
+    body: JSON.stringify({ IdUsuario: userId, ForzarReenvio: true, CorreosExtra: [] }),
+  });
 }
 
 export function emitirLiquidacionCompra(userId: number, codLiquidacion: number) {
@@ -247,7 +250,7 @@ function toLiquidacionListItem(row: ApiRow): LiquidacionCompraListItem {
   const numero = text(pickValue(row, ['numero', 'Numero', 'numLiquidacion', 'NumLiquidacion', 'secuencial', 'Secuencial']));
   const numeroCompleto = text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento']));
   return {
-    codLiquidacion: numberValue(pickValue(row, ['codLiquidacion', 'CodLiquidacion', 'codliquidacion', 'idLiquidacion', 'IdLiquidacion', 'id', 'Id'])) ?? 0,
+    codLiquidacion: numberValue(pickValue(row, ['codLiquidacion', 'CodLiquidacion', 'codliquidacion', 'codFactura', 'CodFactura', 'codfactura', 'secLiquidacion', 'SecLiquidacion', 'sec', 'Sec', 'idLiquidacion', 'IdLiquidacion', 'id', 'Id'])) ?? 0,
     numero: numeroCompleto || [serie, numero].filter(Boolean).join('-') || numero || null,
     fecha: text(pickValue(row, ['fecha', 'Fecha', 'fechaEmision', 'FechaEmision', 'fechaemision', 'Fechaemision', 'fechaDocumento', 'FechaDocumento', 'fechaSustento', 'FechaSustento', 'fechaCompra', 'FechaCompra', 'fechaCreacion', 'FechaCreacion', 'fechaAutorizacion', 'FechaAutorizacion'])) || null,
     proveedor: text(pickValue(row, ['proveedor', 'Proveedor', 'nombreProveedor', 'NombreProveedor', 'razonSocial', 'RazonSocial'])) || null,
@@ -278,6 +281,30 @@ function isRecord(value: unknown): value is ApiRow {
 function text(value: unknown) {
   if (value === null || value === undefined) return '';
   return String(value);
+}
+
+function tipoIdentificacionCode(value?: string | number | null) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  const map: Record<string, string> = {
+    '04': '04',
+    '4': '04',
+    ruc: '04',
+    '05': '05',
+    '5': '05',
+    cedula: '05',
+    'cédula': '05',
+    '06': '06',
+    '6': '06',
+    pasaporte: '06',
+    '07': '07',
+    '7': '07',
+    'consumidor final': '07',
+    '08': '08',
+    '8': '08',
+    'identificacion del exterior': '08',
+    'identificación del exterior': '08',
+  };
+  return map[normalized] ?? String(value ?? '');
 }
 
 function numberValue(value: unknown) {
