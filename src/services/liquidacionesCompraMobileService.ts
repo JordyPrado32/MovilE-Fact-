@@ -153,10 +153,7 @@ export function getLiquidacionCompraXml(userId: number, codLiquidacion: number) 
 }
 
 export function enviarLiquidacionCompraCorreo(userId: number, codLiquidacion: number) {
-  return apiRequest<void>(`/api/liquidaciones-compra/${codLiquidacion}/enviar-correo`, {
-    method: 'POST',
-    body: JSON.stringify({ IdUsuario: userId, ForzarReenvio: true, CorreosExtra: [] }),
-  });
+  return apiRequest<void>(`/api/liquidaciones-compra/${codLiquidacion}/enviar-correo?idUsuario=${userId}`, { method: 'POST' });
 }
 
 export function emitirLiquidacionCompra(userId: number, codLiquidacion: number) {

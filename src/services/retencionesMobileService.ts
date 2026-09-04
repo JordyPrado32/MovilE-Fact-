@@ -101,6 +101,8 @@ export type RetencionListItem = {
   autorizado?: boolean | null;
   base?: number | null;
   retenido?: number | null;
+  pdfUrl?: string | null;
+  xmlUrl?: string | null;
 };
 
 export async function getRetenciones(userId: number, top = 0) {
@@ -197,6 +199,8 @@ function toRetencionListItem(row: ApiRow): RetencionListItem {
     autorizado: booleanValue(pickValue(row, ['autorizado', 'Autorizado'])),
     base,
     retenido,
+    pdfUrl: text(pickValue(row, ['pdfUrl', 'PdfUrl', 'urlPdf', 'UrlPdf'])) || null,
+    xmlUrl: text(pickValue(row, ['xmlUrl', 'XmlUrl', 'urlXml', 'UrlXml'])) || null,
   };
 }
 

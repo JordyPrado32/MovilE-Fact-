@@ -175,10 +175,7 @@ export function getNotaCreditoXml(userId: number, codNotaCredito: number) {
 }
 
 export function enviarNotaCreditoCorreo(userId: number, codNotaCredito: number) {
-  return apiRequest<void>(`/api/notas-credito/${codNotaCredito}/enviar-correo`, {
-    method: 'POST',
-    body: JSON.stringify({ IdUsuario: userId, ForzarReenvio: true, CorreosExtra: [] }),
-  });
+  return apiRequest<void>(`/api/notas-credito/${codNotaCredito}/enviar-correo?idUsuario=${userId}`, { method: 'POST' });
 }
 
 export function anularNotaCredito(userId: number, codNotaCredito: number) {

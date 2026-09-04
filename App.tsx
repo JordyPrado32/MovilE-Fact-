@@ -51,7 +51,7 @@ import { CompraDocumentosEstado, createOperationalItem, deleteOperationalItem, g
 import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
 import { createPuntoEmision, deletePuntoEmision, getPuntoEmisionSiguienteSecuencial, getPuntosEmision, markPuntoPrincipal, PuntoDocumentoKey, savePuntoEmisionSecuenciaInicial, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
-import { enviarRetencionCorreo, getRetencionPdf, getRetenciones, getRetencionXml, RetencionListItem } from './src/services/retencionesMobileService';
+import { getRetencionPdf, getRetenciones, getRetencionXml, RetencionListItem } from './src/services/retencionesMobileService';
 import { ERubricaDashboard, ERubricaEmisor, buscarERubricaSolicitudesProveedor, descargarERubricaFirmaP12, firmarERubricaDocumento, getERubricaDashboard, getERubricaEmisores, getERubricaFirmaEstado, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, sincronizarERubricaPendientes, validarERubricaFirmaPdf, validarERubricaQr } from './src/services/erubricaMobileService';
 import { ChangePasswordRequest, DynamicMenu, LoginResponse, RegisterRequest, ServiceAccess, TipoDocumento } from './src/types/auth';
 import { CategoriaCatalogo, CiudadLookup, Cliente, ClienteLookups, Emisor, FirmaEstado, PerfilLookup, PerfilUsuario, Producto, ProductoLookups, ProductoTipo, ProvinciaLookup, PuntoEmision, PuntosEmisionData, SubcategoriaCatalogo, SubcategoriaLookup } from './src/types/business';
@@ -1301,23 +1301,36 @@ function getDocumentPlanStatus(data: CompraDocumentosEstado | null) {
   const expires = textValue(pickRecordValue(unlimitedPlan, ['vigenciaHasta', 'VigenciaHasta', 'fechaVence', 'FechaVence', 'fecha', 'Fecha']));
   const saldo = Number(data?.saldoDocumentos ?? 0);
 
+  const tone: 'success' | 'warning' | 'danger' = unlimitedPlan || saldo >= 5 ? 'success' : saldo > 0 ? 'warning' : 'danger';
   return {
     unlimited: Boolean(unlimitedPlan),
     label: unlimitedPlan ? 'Ilimitado' : Number.isFinite(saldo) ? String(saldo) : '-',
     caption: unlimitedPlan ? (expires ? `Vence: ${formatDocumentDate(expires)}` : 'Plan activo') : 'Documentos disponibles',
+    tone,
   };
 }
 
 function getFirmaSummary(emisores: Emisor[], estados: Record<number, FirmaEstado>) {
   const configured = emisores.filter((emisor) => hasFirmaConfigured(emisor) || estados[emisor.codigo]?.tieneCertificado === true);
-  const valid = configured.find((emisor) => estados[emisor.codigo]?.esValida) ?? configured[0];
-  const estado = valid ? estados[valid.codigo] : undefined;
+  const valid = configured.find((emisor) => estados[emisor.codigo]?.esValida);
+  const fallback = valid ?? configured[0];
+  const estado = fallback ? estados[fallback.codigo] : undefined;
+  const hasInvalidState = Boolean(fallback && estado && estado.esValida === false);
+  const active = Boolean(valid || (fallback && !estado && hasFirmaConfigured(fallback)));
 
+  const tone: 'success' | 'warning' | 'danger' = active ? 'success' : hasInvalidState ? 'danger' : 'warning';
   return {
-    active: Boolean(valid && (estado?.esValida || hasFirmaConfigured(valid))),
-    label: valid && (estado?.esValida || hasFirmaConfigured(valid)) ? 'Activa' : 'Pendiente',
-    caption: estado?.fechaExpiracion ? `Vence: ${formatDocumentDate(estado.fechaExpiracion)}` : valid ? 'Certificado configurado' : 'Sin firma',
+    active,
+    label: active ? 'Activa' : hasInvalidState ? 'Caducada' : 'Pendiente',
+    caption: estado?.fechaExpiracion ? `Vence: ${formatDocumentDate(estado.fechaExpiracion)}` : fallback ? 'Certificado configurado' : 'Sin firma',
+    tone,
   };
+}
+
+function statusToneStyles(tone: 'success' | 'warning' | 'danger') {
+  if (tone === 'danger') return { card: styles.unifiedStatusCardDanger, icon: styles.unifiedStatusIconDanger, color: '#D92D3A' };
+  if (tone === 'warning') return { card: styles.unifiedStatusCardWarning, icon: styles.unifiedStatusIconWarning, color: '#D77416' };
+  return { card: styles.unifiedStatusCardSuccess, icon: styles.unifiedStatusIconSuccess, color: '#0F9D58' };
 }
 
 function GlobalWorkspaceHeader({
@@ -1343,6 +1356,8 @@ function GlobalWorkspaceHeader({
   onDocuments: () => void;
   onFirma: () => void;
 }) {
+  const documentTone = statusToneStyles(documentPlan.tone);
+  const firmaTone = statusToneStyles(firmaSummary.tone);
   return (
     <View style={styles.unifiedTopBar}>
       <View style={styles.unifiedHeaderRow}>
@@ -1367,23 +1382,23 @@ function GlobalWorkspaceHeader({
         </View>
       </View>
       <View style={styles.unifiedStatusGrid}>
-        <Pressable style={styles.unifiedStatusCard} onPress={onDocuments}>
-          <View style={styles.unifiedStatusIcon}>
-            <MaterialCommunityIcons name="file-document-outline" size={22} color={EFACT_THEME.colors.primary} />
+        <Pressable style={[styles.unifiedStatusCard, documentTone.card]} onPress={onDocuments}>
+          <View style={[styles.unifiedStatusIcon, documentTone.icon]}>
+            <MaterialCommunityIcons name="file-document-outline" size={20} color={documentTone.color} />
           </View>
           <View style={styles.unifiedStatusCopy}>
             <Text style={styles.unifiedStatusLabel}>Total documentos</Text>
-            <Text style={styles.unifiedStatusValue}>{documentPlan.label}</Text>
+            <Text style={[styles.unifiedStatusValue, { color: documentTone.color }]}>{documentPlan.label}</Text>
             <Text style={styles.unifiedStatusCaption}>{documentPlan.caption}</Text>
           </View>
         </Pressable>
-        <Pressable style={styles.unifiedStatusCard} onPress={onFirma}>
-          <View style={[styles.unifiedStatusIcon, styles.unifiedFirmaIcon]}>
-            <MaterialCommunityIcons name="shield-check-outline" size={22} color="#15A85B" />
+        <Pressable style={[styles.unifiedStatusCard, firmaTone.card]} onPress={onFirma}>
+          <View style={[styles.unifiedStatusIcon, styles.unifiedFirmaIcon, firmaTone.icon]}>
+            <MaterialCommunityIcons name="shield-check-outline" size={20} color={firmaTone.color} />
           </View>
           <View style={styles.unifiedStatusCopy}>
             <Text style={styles.unifiedStatusLabel}>Firma electronica</Text>
-            <Text style={[styles.unifiedStatusValue, firmaSummary.active && styles.unifiedStatusOk]}>{firmaSummary.label}</Text>
+            <Text style={[styles.unifiedStatusValue, { color: firmaTone.color }]}>{firmaSummary.label}</Text>
             <Text style={styles.unifiedStatusCaption}>{firmaSummary.caption}</Text>
           </View>
         </Pressable>
@@ -4855,6 +4870,19 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
   };
 
+  const openKnownDocumentAsset = async (urlOrPath?: string | null) => {
+    if (!urlOrPath) {
+      setDirectoryMessage({ type: 'error', text: 'No se encontro la ruta del documento.' });
+      return;
+    }
+
+    try {
+      await Linking.openURL(getDocumentAssetUrl(urlOrPath));
+    } catch {
+      setDirectoryMessage({ type: 'error', text: 'No se pudo abrir el documento.' });
+    }
+  };
+
   const importNotaCreditoXml = async (uri: string) => {
     try {
       const parsed = parseFacturaXml(await FileSystem.readAsStringAsync(uri));
@@ -5435,17 +5463,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     ]);
   };
 
-  const sendRetencionCorreo = async (retencion: RetencionListItem) => {
-    if (!catalogUserId) return;
-    try {
-      await enviarRetencionCorreo(catalogUserId, retencion.codRetencion);
-      setDirectoryMessage({ type: 'success', text: 'Correo enviado correctamente.' });
-    } catch (error) {
-      const text = error instanceof ApiError ? error.message : 'No se pudo enviar el correo.';
-      setDirectoryMessage({ type: 'error', text });
-    }
-  };
-
   const modules: MobileModule[] = EFACT_MODULES.map((module) => {
     const count =
       module.view === 'clientes'
@@ -5856,12 +5873,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   <Text style={styles.portalWelcomeTitle}>Bienvenido, {portalFirstName}</Text>
                   <Text style={styles.portalWelcomeText}>Tus servicios activos estan listos para usarse</Text>
                 </View>
-                <View style={styles.portalWelcomePills}>
-                  <PortalStatusPill icon="check-decagram-outline" label="Disponible" />
-                  <PortalStatusPill icon="pulse" label="Actual" />
-                  <PortalStatusPill icon="shield-check-outline" label="Suscripcion activa" />
-                </View>
-              </View>
+      </View>
             </View>
 
             <View style={styles.portalServiceGrid}>
@@ -5881,7 +5893,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   <PortalServiceCard
                     key={`${service.codigo ?? service.nombre ?? 'servicio'}-${index}`}
                     title={getServiceDisplayName(service)}
-                    description={isERubricaService(service) || getServiceDisplayName(service) === 'E-RÚBRICA' ? 'Firma, valida y comparte documentos desde el móvil.' : 'Acceso preparado para una siguiente version movil.'}
+                    description={isERubricaService(service) || getServiceDisplayName(service) === 'E-RÚBRICA' ? 'Firma y valida documentos.' : 'Modulo sin acceso movil.'}
                     enabled={isERubricaService(service) || getServiceDisplayName(service) === 'E-RÚBRICA'}
                     onPress={() => (isERubricaService(service) || getServiceDisplayName(service) === 'E-RÚBRICA') && openView('e-rubrica')}
                     index={index + 1}
@@ -5890,7 +5902,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               {!services.some(isERubricaService) ? (
                 <PortalServiceCard
                   title="E-RÚBRICA"
-                  description="Firma, valida y comparte documentos desde el móvil."
+                  description="Firma y valida documentos."
                     enabled={canUseERubrica}
                   onPress={() => openView('e-rubrica')}
                   index={services.length + 1}
@@ -6771,9 +6783,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 loading={loadingRetenciones}
                 message={directoryMessage}
                 onRefresh={() => setReloadKey((value) => value + 1)}
-                onPdf={(retencion) => catalogUserId && openPdfPreview(() => getRetencionPdf(catalogUserId, retencion.codRetencion), 'retencion.pdf')}
-                onXml={(retencion) => catalogUserId && openFacturaAsset(() => getRetencionXml(catalogUserId, retencion.codRetencion))}
-                onEmail={sendRetencionCorreo}
+                onPdf={(retencion) => retencion.pdfUrl ? openKnownDocumentAsset(retencion.pdfUrl) : catalogUserId && openPdfPreview(() => getRetencionPdf(catalogUserId, retencion.codRetencion), 'retencion.pdf')}
+                onXml={(retencion) => retencion.xmlUrl ? openKnownDocumentAsset(retencion.xmlUrl) : catalogUserId && openFacturaAsset(() => getRetencionXml(catalogUserId, retencion.codRetencion))}
               />
             ) : null}
 
@@ -9258,7 +9269,6 @@ function MisRetencionesMobileScreen({
   onRefresh,
   onPdf,
   onXml,
-  onEmail,
 }: {
   retenciones: RetencionListItem[];
   loading: boolean;
@@ -9266,7 +9276,6 @@ function MisRetencionesMobileScreen({
   onRefresh: () => void;
   onPdf: (retencion: RetencionListItem) => void;
   onXml: (retencion: RetencionListItem) => void;
-  onEmail: (retencion: RetencionListItem) => void;
 }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(1);
@@ -9338,7 +9347,6 @@ function MisRetencionesMobileScreen({
                 { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(retencion) },
                 { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(retencion) },
                 { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(retencion) },
-                { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(retencion) },
               ]} />
             </View>
           );
@@ -11102,14 +11110,8 @@ function PortalServiceCard({
         <View style={[styles.portalServiceAccentLine, { backgroundColor: visual.accent }]} />
         <Text style={styles.portalServiceTitle}>{title}</Text>
         <Text style={styles.portalServiceDescription}>{description}</Text>
-        <View style={styles.portalServiceBadges}>
-          <Text style={[styles.portalServicePill, { borderColor: visual.accent, color: visual.accent }]}>
-            {enabled ? 'Disponible' : 'No disponible'}
-          </Text>
-          <Text style={styles.portalServiceSubscription}>Suscripcion activa</Text>
-        </View>
         <View style={[styles.portalServiceButton, { backgroundColor: enabled ? visual.accent : '#B8C5D2' }]}>
-          <Text style={styles.portalServiceButtonText}>Ingresar</Text>
+          <Text style={styles.portalServiceButtonText}>{enabled ? 'Ingresar' : 'No disponible'}</Text>
         </View>
       </View>
     </Pressable>
