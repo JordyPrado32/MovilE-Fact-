@@ -1310,6 +1310,8 @@ function getDocumentPlanStatus(data: CompraDocumentosEstado | null) {
   };
 }
 
+const EXPORT_GREEN = '#18B889';
+
 function getFirmaSummary(emisores: Emisor[], estados: Record<number, FirmaEstado>) {
   const configured = emisores.filter((emisor) => hasFirmaConfigured(emisor) || estados[emisor.codigo]?.tieneCertificado === true);
   const valid = configured.find((emisor) => estados[emisor.codigo]?.esValida);
@@ -4426,6 +4428,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       .map(mapProductoToFacturaProducto);
   };
 
+  const ensureFacturaProducto = (producto: FacturaProducto): FacturaProducto => ({
+    ...producto,
+    codproducto: producto.codproducto || 0,
+    codprincipal: producto.codprincipal || producto.codauxiliar || null,
+    descripcion: producto.descripcion || producto.codprincipal || producto.codauxiliar || 'Producto',
+    precioUnitario: producto.precioUnitario ?? 0,
+    tarifaIva: producto.tarifaIva ?? 0,
+  });
+
   const searchFacturaClientes = async () => {
     if (!catalogUserId || !facturaForm.clienteBusqueda.trim()) return;
     setLoadingFacturas(true);
@@ -4461,18 +4472,19 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   };
 
   const addFacturaProducto = (producto: FacturaProducto) => {
-    if (!producto.codproducto || !producto.descripcion?.trim()) {
+    const selectedProduct = ensureFacturaProducto(producto);
+    if (!selectedProduct.descripcion?.trim()) {
       setDirectoryMessage({ type: 'error', text: 'El producto seleccionado no tiene datos completos.' });
       return;
     }
     setFacturaLineas((current) => [
       ...current,
       {
-        producto,
+        producto: selectedProduct,
         cantidad: '1',
-        precio: String(producto.precioUnitario ?? 0),
+        precio: String(selectedProduct.precioUnitario ?? 0),
         descuento: '0',
-        tarifa: String(producto.tarifaIva ?? 0),
+        tarifa: String(selectedProduct.tarifaIva ?? 0),
       },
     ]);
     setFacturaProductos([]);
@@ -5137,12 +5149,13 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   };
 
   const addLiquidacionProducto = (producto: FacturaProducto) => {
+    const selectedProduct = ensureFacturaProducto(producto);
     setLiquidacionLineas((current) => [...current, {
-      producto,
+      producto: selectedProduct,
       cantidad: '1',
-      precio: String(producto.precioUnitario ?? 0),
+      precio: String(selectedProduct.precioUnitario ?? 0),
       descuento: '0',
-      tarifa: String(producto.tarifaIva ?? 15),
+      tarifa: String(selectedProduct.tarifaIva ?? 15),
     }]);
     setLiquidacionProductos([]);
     setLiquidacionForm((current) => ({ ...current, productoBusqueda: '' }));
@@ -5356,7 +5369,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   };
 
   const addGuiaProducto = (producto: FacturaProducto) => {
-    setGuiaDetalles((current) => [...current, { producto, cantidad: '1' }]);
+    setGuiaDetalles((current) => [...current, { producto: ensureFacturaProducto(producto), cantidad: '1' }]);
     setGuiaProductos([]);
     setGuiaForm((current) => ({ ...current, productoBusqueda: '' }));
   };
@@ -8030,12 +8043,12 @@ function NuevaNotaCreditoMobileScreen({
         <Text style={styles.clientFormSubtitle}>Opciones de emision</Text>
         <Text style={styles.invoiceSectionHelp}>Tambien puedes emitir la nota de credito de estas formas</Text>
         <View style={styles.invoiceGrid}>
-          <Pressable style={styles.invoiceHeaderBox} onPress={() => { setManualMode(true); setStep(1); }}>
-            <Text style={styles.invoiceHeaderValue}>Manual</Text>
+          <Pressable style={[styles.invoiceHeaderBox, styles.invoiceModeManual]} onPress={() => { setManualMode(true); setStep(1); }}>
+            <Text style={[styles.invoiceHeaderValue, styles.invoiceModeTitleManual]}>Manual</Text>
             <Text style={styles.invoiceSectionHelp}>Ingresa cliente, motivo y detalle sin partir del buscador.</Text>
           </Pressable>
-          <Pressable style={styles.invoiceHeaderBox} onPress={selectXml}>
-            <Text style={styles.invoiceHeaderValue}>Desde XML</Text>
+          <Pressable style={[styles.invoiceHeaderBox, styles.invoiceModeXml]} onPress={selectXml}>
+            <Text style={[styles.invoiceHeaderValue, styles.invoiceModeTitleXml]}>Desde XML</Text>
             <Text style={styles.invoiceSectionHelp}>Carga el XML de la factura para precargar datos y ajustar el detalle.</Text>
           </Pressable>
         </View>
@@ -8180,6 +8193,7 @@ function MisNotasCreditoMobileScreen({
 }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(1);
+  const [selectedNota, setSelectedNota] = useState<NotaCreditoListItem | null>(null);
   const visibleNotas = notas.filter((nota) => {
     const term = filter.trim().toLowerCase();
     const matchesText = !term || [
@@ -8214,7 +8228,15 @@ function MisNotasCreditoMobileScreen({
           onChange={(value) => setStatusFilter(value ?? 1)}
         />
         <View style={styles.formActions}>
-          <SecondaryButton label="Descargar Excel" onPress={() => Alert.alert('Descargar Excel', 'Exportacion pendiente de endpoint movil.')} />
+          <SecondaryButton label="Descargar Excel" accentColor={EXPORT_GREEN} onPress={() => exportRowsToCsv('notas-credito.csv', visibleNotas.map((nota) => ({
+            Nota: nota.numeroNota ?? '',
+            FacturaModificada: nota.facturaModificada ?? '',
+            Cliente: nota.cliente ?? '',
+            Identificacion: nota.identificacionCliente ?? '',
+            FechaSustento: formatDocumentDate(nota.fechaSustento),
+            Estado: nota.estadoSri ?? (nota.autorizado ? 'AUTORIZADO' : 'NO AUTORIZADO'),
+            Total: formatMoney(nota.total),
+          })))} />
           <PrimaryButton label="Refrescar" loading={loading} onPress={onRefresh} />
         </View>
       </View>
@@ -8265,7 +8287,8 @@ function MisNotasCreditoMobileScreen({
                   <Text style={styles.invoiceHistoryAuthorizationText} numberOfLines={2}>Documento modificado {nota.facturaModificada ?? 'no disponible'}</Text>
                 </View>
                 <DocumentActionsMenu actions={[
-                  { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(nota) },
+                  { label: 'Detalle', icon: 'information-outline', tone: 'primary', onPress: () => setSelectedNota(nota) },
+                  { label: 'Ver PDF', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(nota) },
                   { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(nota) },
                   { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(nota) },
                   { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(nota) },
@@ -8277,6 +8300,19 @@ function MisNotasCreditoMobileScreen({
           );
         })}
       </View>
+      <ItemDetailModal
+        visible={Boolean(selectedNota)}
+        title={selectedNota?.numeroNota ?? 'Detalle de nota de credito'}
+        values={selectedNota ? [
+          `Factura modificada: ${selectedNota.facturaModificada ?? '-'}`,
+          `Cliente: ${selectedNota.cliente ?? 'Consumidor final'}`,
+          `Identificacion: ${selectedNota.identificacionCliente ?? 'Sin identificacion'}`,
+          `Fecha sustento: ${formatDocumentDate(selectedNota.fechaSustento)}`,
+          `Estado SRI: ${selectedNota.estadoSri ?? (selectedNota.autorizado ? 'AUTORIZADO' : 'NO AUTORIZADO')}`,
+          `Total: ${formatMoney(selectedNota.total)}`,
+        ] : []}
+        onClose={() => setSelectedNota(null)}
+      />
     </>
   );
 }
@@ -8400,12 +8436,12 @@ function NuevaNotaDebitoMobileScreen({
         <Text style={styles.clientFormSubtitle}>Opciones de emision</Text>
         <Text style={styles.invoiceSectionHelp}>Tambien puedes emitir la nota de debito de estas formas</Text>
         <View style={styles.invoiceGrid}>
-          <Pressable style={styles.invoiceHeaderBox} onPress={() => { setManualMode(true); setStep(1); }}>
-            <Text style={styles.invoiceHeaderValue}>Manual</Text>
+          <Pressable style={[styles.invoiceHeaderBox, styles.invoiceModeManual]} onPress={() => { setManualMode(true); setStep(1); }}>
+            <Text style={[styles.invoiceHeaderValue, styles.invoiceModeTitleManual]}>Manual</Text>
             <Text style={styles.invoiceSectionHelp}>Ingresa cliente, factura modificada, motivo y detalle directamente.</Text>
           </Pressable>
-          <Pressable style={styles.invoiceHeaderBox} onPress={selectXml}>
-            <Text style={styles.invoiceHeaderValue}>Desde XML</Text>
+          <Pressable style={[styles.invoiceHeaderBox, styles.invoiceModeXml]} onPress={selectXml}>
+            <Text style={[styles.invoiceHeaderValue, styles.invoiceModeTitleXml]}>Desde XML</Text>
             <Text style={styles.invoiceSectionHelp}>Carga el XML de la factura para precargar datos y editar valores.</Text>
           </Pressable>
         </View>
@@ -8537,6 +8573,7 @@ function MisNotasDebitoMobileScreen({
 }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(1);
+  const [selectedNota, setSelectedNota] = useState<NotaDebitoListItem | null>(null);
   const visibleNotas = notas.filter((nota) => {
     const term = filter.trim().toLowerCase();
     const matchesText = !term || [nota.numeroNota, nota.facturaModificada, nota.cliente, nota.identificacionCliente, nota.estadoSri].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
@@ -8565,7 +8602,15 @@ function MisNotasDebitoMobileScreen({
           onChange={(value) => setStatusFilter(value ?? 1)}
         />
         <View style={styles.formActions}>
-          <SecondaryButton label="Descargar Excel" onPress={() => Alert.alert('Descargar Excel', 'Exportacion pendiente de endpoint movil.')} />
+          <SecondaryButton label="Descargar Excel" accentColor={EXPORT_GREEN} onPress={() => exportRowsToCsv('notas-debito.csv', visibleNotas.map((nota) => ({
+            Nota: nota.numeroNota ?? '',
+            FacturaModificada: nota.facturaModificada ?? '',
+            Cliente: nota.cliente ?? '',
+            Identificacion: nota.identificacionCliente ?? '',
+            FechaSustento: formatDocumentDate(nota.fechaSustento),
+            Estado: nota.estadoSri ?? (nota.autorizado ? 'AUTORIZADO' : 'PENDIENTE'),
+            Total: formatMoney(nota.total),
+          })))} />
           <PrimaryButton label="Refrescar" loading={loading} onPress={onRefresh} />
         </View>
       </View>
@@ -8616,7 +8661,8 @@ function MisNotasDebitoMobileScreen({
                   <Text style={styles.invoiceHistoryAuthorizationText} numberOfLines={2}>Documento modificado {nota.facturaModificada ?? 'no disponible'}</Text>
                 </View>
                 <DocumentActionsMenu actions={[
-                  { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(nota) },
+                  { label: 'Detalle', icon: 'information-outline', tone: 'primary', onPress: () => setSelectedNota(nota) },
+                  { label: 'Ver PDF', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(nota) },
                   { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(nota) },
                   { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(nota) },
                   { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(nota) },
@@ -8628,6 +8674,19 @@ function MisNotasDebitoMobileScreen({
           );
         })}
       </View>
+      <ItemDetailModal
+        visible={Boolean(selectedNota)}
+        title={selectedNota?.numeroNota ?? 'Detalle de nota de debito'}
+        values={selectedNota ? [
+          `Factura modificada: ${selectedNota.facturaModificada ?? '-'}`,
+          `Cliente: ${selectedNota.cliente ?? 'Consumidor final'}`,
+          `Identificacion: ${selectedNota.identificacionCliente ?? 'Sin identificacion'}`,
+          `Fecha sustento: ${formatDocumentDate(selectedNota.fechaSustento)}`,
+          `Estado SRI: ${selectedNota.estadoSri ?? (selectedNota.autorizado ? 'AUTORIZADO' : 'PENDIENTE')}`,
+          `Total: ${formatMoney(selectedNota.total)}`,
+        ] : []}
+        onClose={() => setSelectedNota(null)}
+      />
     </>
   );
 }
@@ -8871,6 +8930,7 @@ function MisLiquidacionesCompraMobileScreen({
 }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(1);
+  const [selectedLiquidacion, setSelectedLiquidacion] = useState<LiquidacionCompraListItem | null>(null);
   const visibleLiquidaciones = liquidaciones.filter((liquidacion) => {
     const term = filter.trim().toLowerCase();
     const matchesText = !term || [liquidacion.numero, liquidacion.fecha, liquidacion.proveedor, liquidacion.identificacionProveedor, liquidacion.estadoSri].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
@@ -8895,7 +8955,16 @@ function MisLiquidacionesCompraMobileScreen({
           onChange={(value) => setStatusFilter(value ?? 1)}
         />
         <View style={styles.formActions}>
-          <SecondaryButton label="Descargar Excel" onPress={() => Alert.alert('Descargar Excel', 'Exportacion pendiente de endpoint movil.')} />
+          <SecondaryButton label="Descargar Excel" accentColor={EXPORT_GREEN} onPress={() => exportRowsToCsv('liquidaciones-compra.csv', visibleLiquidaciones.map((liquidacion) => ({
+            Numero: liquidacion.numero ?? '',
+            Fecha: formatDocumentDate(liquidacion.fecha),
+            Proveedor: liquidacion.proveedor ?? '',
+            Identificacion: liquidacion.identificacionProveedor ?? '',
+            Estado: liquidacion.estadoSri ?? (liquidacion.autorizado ? 'AUTORIZADO' : 'NO AUTORIZADO'),
+            Base: formatMoney(liquidacion.base),
+            IVA: formatMoney(liquidacion.iva),
+            Total: formatMoney(liquidacion.total),
+          })))} />
           <PrimaryButton label="Refrescar" loading={loading} onPress={onRefresh} />
         </View>
       </View>
@@ -8956,7 +9025,8 @@ function MisLiquidacionesCompraMobileScreen({
                   <Text style={styles.invoiceHistoryAuthorizationText} numberOfLines={2}>{liquidacion.autorizado ? 'Autorizado' : 'No disponible'} · Retencion {liquidacion.retencionDisponible ? 'disponible' : 'no disponible'}</Text>
                 </View>
                 <DocumentActionsMenu actions={[
-                  { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(liquidacion) },
+                  { label: 'Detalle', icon: 'information-outline', tone: 'primary', onPress: () => setSelectedLiquidacion(liquidacion) },
+                  { label: 'Ver PDF', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(liquidacion) },
                   { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(liquidacion) },
                   { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(liquidacion) },
                   { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(liquidacion) },
@@ -8967,6 +9037,21 @@ function MisLiquidacionesCompraMobileScreen({
           );
         })}
       </View>
+      <ItemDetailModal
+        visible={Boolean(selectedLiquidacion)}
+        title={selectedLiquidacion?.numero ?? 'Detalle de liquidacion'}
+        values={selectedLiquidacion ? [
+          `Proveedor: ${selectedLiquidacion.proveedor ?? 'Proveedor'}`,
+          `Identificacion: ${selectedLiquidacion.identificacionProveedor ?? 'Sin identificacion'}`,
+          `Fecha: ${formatDocumentDate(selectedLiquidacion.fecha)}`,
+          `Estado SRI: ${selectedLiquidacion.estadoSri ?? (selectedLiquidacion.autorizado ? 'AUTORIZADO' : 'NO AUTORIZADO')}`,
+          `Base: ${formatMoney(selectedLiquidacion.base)}`,
+          `IVA: ${formatMoney(selectedLiquidacion.iva)}`,
+          `Total: ${formatMoney(selectedLiquidacion.total)}`,
+          `Retencion: ${selectedLiquidacion.retencionDisponible ? 'Disponible' : 'No disponible'}`,
+        ] : []}
+        onClose={() => setSelectedLiquidacion(null)}
+      />
     </>
   );
 }
@@ -9227,6 +9312,7 @@ function MisGuiasRemisionMobileScreen({
 }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(1);
+  const [selectedGuia, setSelectedGuia] = useState<GuiaRemisionListItem | null>(null);
   const visibleGuias = guias.filter((guia) => {
     const term = filter.trim().toLowerCase();
     const matchesText = !term || [guia.numero, guia.destinatario, guia.identificacionDestinatario, guia.transportista, guia.estadoSri].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
@@ -9250,7 +9336,15 @@ function MisGuiasRemisionMobileScreen({
           onChange={(value) => setStatusFilter(value ?? 1)}
         />
         <View style={styles.formActions}>
-          <SecondaryButton label="Descargar Excel" onPress={() => Alert.alert('Descargar Excel', 'Exportacion pendiente de endpoint movil.')} />
+          <SecondaryButton label="Descargar Excel" accentColor={EXPORT_GREEN} onPress={() => exportRowsToCsv('guias-remision.csv', visibleGuias.map((guia) => ({
+            Guia: guia.numero ?? '',
+            Fecha: formatDocumentDate(guia.fecha),
+            Destinatario: guia.destinatario ?? '',
+            Identificacion: guia.identificacionDestinatario ?? '',
+            Transportista: guia.transportista ?? '',
+            Traslado: formatDocumentDate(guia.fechaTraslado),
+            Estado: guia.estadoSri ?? (guia.autorizado ? 'AUTORIZADO' : 'PENDIENTE'),
+          })))} />
           <PrimaryButton label="Refrescar" loading={loading} onPress={onRefresh} />
         </View>
       </View>
@@ -9301,7 +9395,8 @@ function MisGuiasRemisionMobileScreen({
                   <Text style={styles.invoiceHistoryAuthorizationText} numberOfLines={2}>{guia.transportista ?? 'No disponible'}</Text>
                 </View>
                 <DocumentActionsMenu actions={[
-                  { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(guia) },
+                  { label: 'Detalle', icon: 'information-outline', tone: 'primary', onPress: () => setSelectedGuia(guia) },
+                  { label: 'Ver PDF', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(guia) },
                   { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(guia) },
                   { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(guia) },
                   { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(guia) },
@@ -9313,6 +9408,19 @@ function MisGuiasRemisionMobileScreen({
           );
         })}
       </View>
+      <ItemDetailModal
+        visible={Boolean(selectedGuia)}
+        title={selectedGuia?.numero ?? 'Detalle de guia de remision'}
+        values={selectedGuia ? [
+          `Destinatario: ${selectedGuia.destinatario ?? 'Destinatario'}`,
+          `Identificacion: ${selectedGuia.identificacionDestinatario ?? 'Sin identificacion'}`,
+          `Transportista: ${selectedGuia.transportista ?? 'No disponible'}`,
+          `Fecha: ${formatDocumentDate(selectedGuia.fecha)}`,
+          `Traslado: ${formatDocumentDate(selectedGuia.fechaTraslado)}`,
+          `Estado SRI: ${selectedGuia.estadoSri ?? (selectedGuia.autorizado ? 'AUTORIZADO' : 'PENDIENTE')}`,
+        ] : []}
+        onClose={() => setSelectedGuia(null)}
+      />
     </>
   );
 }
@@ -9332,7 +9440,7 @@ function DocumentHistoryHero({
     <View style={styles.invoiceHistoryHeader}>
       <View style={styles.invoiceHistoryHeaderTop}>
         <View style={styles.invoiceHistoryHeaderIcon}>
-          <MaterialCommunityIcons name="file-document-multiple-outline" size={22} color="#0072BD" />
+          <MaterialCommunityIcons name="file-document-multiple-outline" size={22} color="#FFFFFF" />
         </View>
         <View style={styles.invoiceHistoryHeaderCopy}>
           <Text style={styles.invoiceHistoryEyebrow}>LISTADO</Text>
@@ -9371,6 +9479,7 @@ function MisRetencionesMobileScreen({
 }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(1);
+  const [selectedRetencion, setSelectedRetencion] = useState<RetencionListItem | null>(null);
   const visibleRetenciones = retenciones.filter((retencion) => {
     const term = filter.trim().toLowerCase();
     const matchesText = !term || [retencion.numero, retencion.documentoSustento, retencion.proveedor, retencion.identificacionProveedor, retencion.estadoSri].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
@@ -9395,7 +9504,16 @@ function MisRetencionesMobileScreen({
           onChange={(value) => setStatusFilter(value ?? 1)}
         />
         <View style={styles.formActions}>
-          <SecondaryButton label="Descargar Excel" onPress={() => Alert.alert('Descargar Excel', 'Exportacion pendiente de endpoint movil.')} />
+          <SecondaryButton label="Descargar Excel" accentColor={EXPORT_GREEN} onPress={() => exportRowsToCsv('retenciones.csv', visibleRetenciones.map((retencion) => ({
+            Numero: retencion.numero ?? '',
+            Fecha: formatDocumentDate(retencion.fecha),
+            DocumentoSustento: retencion.documentoSustento ?? '',
+            Proveedor: retencion.proveedor ?? '',
+            Identificacion: retencion.identificacionProveedor ?? '',
+            Estado: retencion.estadoSri ?? (retencion.autorizado ? 'AUTORIZADO' : 'PENDIENTE'),
+            Base: formatMoney(retencion.base),
+            Retenido: formatMoney(retencion.retenido),
+          })))} />
           <PrimaryButton label="Refrescar" loading={loading} onPress={onRefresh} />
         </View>
       </View>
@@ -9446,7 +9564,8 @@ function MisRetencionesMobileScreen({
                   <Text style={styles.invoiceHistoryAuthorizationText} numberOfLines={2}>{retencion.documentoSustento ?? 'No disponible'} · Base {formatMoney(retencion.base)}</Text>
                 </View>
                 <DocumentActionsMenu actions={[
-                  { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(retencion) },
+                  { label: 'Detalle', icon: 'information-outline', tone: 'primary', onPress: () => setSelectedRetencion(retencion) },
+                  { label: 'Ver PDF', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(retencion) },
                   { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(retencion) },
                   { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(retencion) },
                 ]} />
@@ -9455,6 +9574,20 @@ function MisRetencionesMobileScreen({
           );
         })}
       </View>
+      <ItemDetailModal
+        visible={Boolean(selectedRetencion)}
+        title={selectedRetencion?.numero ?? 'Detalle de retencion'}
+        values={selectedRetencion ? [
+          `Documento sustento: ${selectedRetencion.documentoSustento ?? 'No disponible'}`,
+          `Proveedor: ${selectedRetencion.proveedor ?? 'Proveedor'}`,
+          `Identificacion: ${selectedRetencion.identificacionProveedor ?? 'Sin identificacion'}`,
+          `Fecha: ${formatDocumentDate(selectedRetencion.fecha)}`,
+          `Estado SRI: ${selectedRetencion.estadoSri ?? (selectedRetencion.autorizado ? 'AUTORIZADO' : 'PENDIENTE')}`,
+          `Base: ${formatMoney(selectedRetencion.base)}`,
+          `Retenido: ${formatMoney(selectedRetencion.retenido)}`,
+        ] : []}
+        onClose={() => setSelectedRetencion(null)}
+      />
     </>
   );
 }
@@ -9516,7 +9649,7 @@ function MisFacturasMobileScreen({
       <View style={styles.invoiceHistoryHeader}>
         <View style={styles.invoiceHistoryHeaderTop}>
           <View style={styles.invoiceHistoryHeaderIcon}>
-            <MaterialCommunityIcons name="file-document-multiple-outline" size={22} color="#0072BD" />
+            <MaterialCommunityIcons name="file-document-multiple-outline" size={22} color="#FFFFFF" />
           </View>
           <View style={styles.invoiceHistoryHeaderCopy}>
             <Text style={styles.invoiceHistoryEyebrow}>LISTADO</Text>
@@ -9938,6 +10071,20 @@ function OperationalModuleScreen({
         onRefresh={onRefresh}
         onSearch={onSearch}
         onView={onView}
+      />
+    );
+  }
+
+  if (view === 'centro-normativo') {
+    return (
+      <CentroNormativoMobileScreen
+        search={search}
+        items={items}
+        loading={loading}
+        message={message}
+        placeholder={config.placeholder}
+        onRefresh={onRefresh}
+        onSearch={onSearch}
       />
     );
   }
@@ -11158,6 +11305,155 @@ function OperationalMobileItemCard({
       </View>
     </View>
   );
+}
+
+function CentroNormativoMobileScreen({
+  search,
+  items,
+  loading,
+  message,
+  placeholder,
+  onRefresh,
+  onSearch,
+}: {
+  search: string;
+  items: OperationalMobileItem[];
+  loading: boolean;
+  message?: MessageState;
+  placeholder: string;
+  onRefresh: () => void;
+  onSearch: (value: string) => void;
+}) {
+  const [detailItem, setDetailItem] = useState<OperationalMobileItem | null>(null);
+  const categories = new Set(items.map((item) => getOperationalRawText(item, ['categoria', 'Categoria'], item.subtitle)).filter(Boolean));
+  const lastCheck = items.map((item) => getOperationalRawText(item, ['fechaActualizacion', 'FechaActualizacion', 'fecha', 'Fecha'])).find(Boolean);
+
+  return (
+    <>
+      <View style={styles.normativeHero}>
+        <View style={styles.normativeHeroCopy}>
+          <Text style={styles.normativeEyebrow}>BASE LEGAL DE E-FACT</Text>
+          <Text style={styles.normativeTitle}>Centro normativo</Text>
+          <Text style={styles.normativeText}>Encuentra en un solo lugar las disposiciones que respaldan tus comprobantes electronicos.</Text>
+          <View style={styles.normativeBenefits}>
+            <NormativeBenefit icon="check-decagram" label="Contenido organizado" />
+            <NormativeBenefit icon="link-variant" label="Fuentes oficiales" />
+            <NormativeBenefit icon="refresh" label="Consulta actualizada" />
+          </View>
+        </View>
+        <View style={styles.normativeHeroIcon}>
+          <MaterialCommunityIcons name="scale-balance" size={42} color="#FFFFFF" />
+        </View>
+      </View>
+      <View style={styles.normativeMetricGrid}>
+        <View style={styles.normativeMetricCard}>
+          <MaterialCommunityIcons name="file-document-outline" size={22} color="#0072BD" />
+          <View>
+            <Text style={styles.normativeMetricValue}>{items.length}</Text>
+            <Text style={styles.normativeMetricLabel}>Normativas disponibles</Text>
+          </View>
+        </View>
+        <View style={styles.normativeMetricCard}>
+          <MaterialCommunityIcons name="folder-check-outline" size={22} color="#08A889" />
+          <View>
+            <Text style={styles.normativeMetricValue}>{categories.size || items.length}</Text>
+            <Text style={styles.normativeMetricLabel}>Categorias organizadas</Text>
+          </View>
+        </View>
+        <View style={styles.normativeMetricCard}>
+          <MaterialCommunityIcons name="check-decagram-outline" size={22} color="#18B889" />
+          <View>
+            <Text style={styles.normativeMetricValue}>{lastCheck ? formatDocumentDate(lastCheck) : 'Actual'}</Text>
+            <Text style={styles.normativeMetricLabel}>Ultima verificacion</Text>
+          </View>
+        </View>
+      </View>
+      <View style={styles.normativeLibrary}>
+        <View style={styles.adminSearchHeader}>
+          <View style={styles.adminSearchTitleBlock}>
+            <Text style={styles.clientFormSubtitle}>Biblioteca normativa</Text>
+            <Text style={styles.clientFormTitle}>¿Que necesitas consultar?</Text>
+          </View>
+          <Pressable style={styles.adminActionPill} onPress={onRefresh}>
+            <Text style={styles.adminActionText}>Refrescar</Text>
+          </Pressable>
+        </View>
+        <SearchField label="Buscar normativa" placeholder={placeholder} value={search} onChangeText={onSearch} resultCount={items.length} loading={loading} />
+        {message ? <MessageBox message={message} /> : null}
+        {loading ? <EmptyState title="Cargando normativas" text="Consultando la biblioteca normativa..." /> : null}
+        {!loading && !message && items.length === 0 ? <EmptyState title="Sin normativas" text="Cuando existan normas publicadas, apareceran aqui." /> : null}
+      </View>
+      {!loading && items.length > 0 ? (
+        <View style={styles.normativeCardsGrid}>
+          {items.map((item, index) => {
+            const category = getOperationalRawText(item, ['categoria', 'Categoria'], item.subtitle || 'Normativa');
+            const code = getOperationalRawText(item, ['codigo', 'Codigo', 'numero', 'Numero'], item.id);
+            const sourceUrl = getOperationalRawText(item, ['url', 'Url', 'fuenteUrl', 'FuenteUrl', 'link', 'Link']);
+            const status = item.status || getOperationalRawText(item, ['estadoNorma', 'EstadoNorma'], 'Vigente');
+            return (
+              <View key={`normativa-${item.id || index}`} style={styles.normativeCard}>
+                <View style={styles.normativeCardTop}>
+                  <Text style={styles.normativeCategoryPill}>{category}</Text>
+                  <View style={[styles.invoiceHistoryStatusPill, getInvoiceStatusStyle(status)]}>
+                    <Text style={[styles.invoiceHistoryStatusText, getInvoiceStatusTextStyle(status)]}>{status}</Text>
+                  </View>
+                </View>
+                <View style={styles.normativeCardBody}>
+                  <View style={styles.normativeCardIcon}>
+                    <MaterialCommunityIcons name={index % 2 === 0 ? 'file-document-outline' : 'book-open-page-variant-outline'} size={24} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.normativeCardCopy}>
+                    <Text style={styles.normativeCode}># {code || 'Sin codigo'}</Text>
+                    <Text style={styles.normativeCardTitle}>{item.title}</Text>
+                  </View>
+                </View>
+                {item.detail ? <Text style={styles.normativeCardText} numberOfLines={3}>{item.detail}</Text> : null}
+                <View style={styles.normativeCardActions}>
+                  <Pressable style={styles.normativeDetailButton} onPress={() => setDetailItem(item)}>
+                    <MaterialCommunityIcons name="book-open-outline" size={15} color="#0072BD" />
+                    <Text style={styles.normativeDetailButtonText}>Ver detalle</Text>
+                  </Pressable>
+                  {sourceUrl ? (
+                    <Pressable style={styles.normativeSourceButton} onPress={() => Linking.openURL(sourceUrl)}>
+                      <Text style={styles.normativeSourceText}>Fuente oficial</Text>
+                      <MaterialCommunityIcons name="open-in-new" size={14} color="#0072BD" />
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+      <ItemDetailModal
+        visible={Boolean(detailItem)}
+        title={detailItem?.title || 'Detalle normativo'}
+        values={detailItem ? [
+          `Categoria: ${getOperationalRawText(detailItem, ['categoria', 'Categoria'], detailItem.subtitle) || 'Normativa'}`,
+          `Codigo: ${getOperationalRawText(detailItem, ['codigo', 'Codigo', 'numero', 'Numero'], detailItem.id) || 'Sin codigo'}`,
+          `Estado: ${detailItem.status || 'Vigente'}`,
+          detailItem.detail || 'Sin detalle registrado.',
+        ] : []}
+        onClose={() => setDetailItem(null)}
+      />
+    </>
+  );
+}
+
+function NormativeBenefit({ icon, label }: { icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; label: string }) {
+  return (
+    <View style={styles.normativeBenefit}>
+      <MaterialCommunityIcons name={icon} size={13} color="#0072BD" />
+      <Text style={styles.normativeBenefitText}>{label}</Text>
+    </View>
+  );
+}
+
+function getOperationalRawText(item: OperationalMobileItem, keys: string[], fallback?: string | null) {
+  const row = item.raw ?? {};
+  const normalizedKeys = keys.map((key) => key.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const entry = Object.entries(row).find(([key, value]) => value !== null && value !== undefined && normalizedKeys.includes(key.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  return entry?.[1] !== null && entry?.[1] !== undefined ? String(entry[1]) : fallback ?? '';
 }
 
 function MetricBox({ value, label }: { value: string | number; label: string }) {

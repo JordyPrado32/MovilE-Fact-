@@ -162,11 +162,19 @@ export function emitirGuiaRemision(userId: number, sec: number) {
 }
 
 export function getGuiaRemisionPdf(userId: number, codGuia: number) {
-  return apiRequest<{ url: string }>(`/api/guias-remision/${codGuia}/pdf?idUsuario=${userId}`);
+  return requestWithFallback<{ url: string }>([
+    `/api/guias-remision/${codGuia}/pdf?idUsuario=${userId}`,
+    `/api/guia-remision/${codGuia}/pdf?idUsuario=${userId}`,
+    `/api/guiasremision/${codGuia}/pdf?idUsuario=${userId}`,
+  ]);
 }
 
 export function getGuiaRemisionXml(userId: number, codGuia: number) {
-  return apiRequest<{ url: string }>(`/api/guias-remision/${codGuia}/xml?idUsuario=${userId}`);
+  return requestWithFallback<{ url: string }>([
+    `/api/guias-remision/${codGuia}/xml?idUsuario=${userId}`,
+    `/api/guia-remision/${codGuia}/xml?idUsuario=${userId}`,
+    `/api/guiasremision/${codGuia}/xml?idUsuario=${userId}`,
+  ]);
 }
 
 export function enviarGuiaRemisionCorreo(userId: number, codGuia: number) {

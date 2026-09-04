@@ -136,8 +136,9 @@ export async function buscarFacturaClientes(userId: number, filtro: string) {
   return response.map(normalizeCliente);
 }
 
-export function buscarFacturaProductos(userId: number, filtro: string) {
-  return apiRequest<FacturaProducto[]>(`/api/facturas/productos/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`);
+export async function buscarFacturaProductos(userId: number, filtro: string) {
+  const response = await apiRequest<ApiRow[] | ApiRow>(`/api/facturas/productos/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`);
+  return normalizeFacturaRows(response).map(normalizeFacturaProducto).filter((producto) => producto.descripcion || producto.codprincipal);
 }
 
 export function getSiguienteFactura(userId: number, codemisor?: number | null, serie?: string | null) {
@@ -287,13 +288,13 @@ function normalizeFacturaCliente(cliente: Cliente & Record<string, unknown>): Cl
 
 function normalizeFacturaProducto(row: ApiRow): FacturaProducto {
   return {
-    codproducto: numberValue(pickValue(row, ['codproducto', 'Codproducto', 'CodProducto', 'idProducto', 'IdProducto', 'id', 'Id'])) ?? 0,
-    codprincipal: text(pickValue(row, ['codprincipal', 'Codprincipal', 'CodPrincipal', 'codigoPrincipal', 'CodigoPrincipal', 'codigo', 'Codigo'])) || null,
+    codproducto: numberValue(pickValue(row, ['codproducto', 'Codproducto', 'CodProducto', 'idProducto', 'IdProducto', 'idproducto', 'Idproducto', 'productoId', 'ProductoId', 'id', 'Id'])) ?? 0,
+    codprincipal: text(pickValue(row, ['codprincipal', 'Codprincipal', 'CodPrincipal', 'codigoPrincipal', 'CodigoPrincipal', 'codigoProducto', 'CodigoProducto', 'codigo', 'Codigo', 'sku', 'Sku'])) || null,
     codauxiliar: text(pickValue(row, ['codauxiliar', 'Codauxiliar', 'CodAuxiliar', 'codigoAuxiliar', 'CodigoAuxiliar'])) || null,
-    descripcion: text(pickValue(row, ['descripcion', 'Descripcion', 'nombre', 'Nombre', 'descripproducto', 'DescripProducto'])) || null,
-    precioUnitario: numberValue(pickValue(row, ['precioUnitario', 'PrecioUnitario', 'valorUnitario', 'ValorUnitario', 'precioVenta', 'PrecioVenta', 'precioproducto', 'PrecioProducto', 'precioBase', 'PrecioBase', 'precio', 'Precio'])) ?? 0,
+    descripcion: text(pickValue(row, ['descripcion', 'Descripcion', 'nombreProducto', 'NombreProducto', 'producto', 'Producto', 'nombre', 'Nombre', 'descripproducto', 'DescripProducto', 'detalle', 'Detalle'])) || null,
+    precioUnitario: numberValue(pickValue(row, ['precioUnitario', 'PrecioUnitario', 'valorUnitario', 'ValorUnitario', 'precioVenta', 'PrecioVenta', 'pvp', 'Pvp', 'precio1', 'Precio1', 'precioproducto', 'PrecioProducto', 'precioBase', 'PrecioBase', 'valor', 'Valor', 'precio', 'Precio'])) ?? 0,
     costo: numberValue(pickValue(row, ['costo', 'Costo'])) ?? 0,
-    tarifaIva: numberValue(pickValue(row, ['tarifaIva', 'TarifaIva', 'porcentajeImpuesto', 'PorcentajeImpuesto', 'tarifa', 'Tarifa', 'iva', 'Iva'])) ?? 0,
+    tarifaIva: numberValue(pickValue(row, ['tarifaIva', 'TarifaIva', 'tarifaIVA', 'TarifaIVA', 'porcentajeIva', 'PorcentajeIva', 'porcentajeImpuesto', 'PorcentajeImpuesto', 'tarifa', 'Tarifa', 'iva', 'Iva'])) ?? 0,
     codigoImpuestoSri: text(pickValue(row, ['codigoImpuestoSri', 'CodigoImpuestoSri', 'codigoimpuesto', 'Codigoimpuesto'])) || null,
   };
 }
