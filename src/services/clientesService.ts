@@ -29,7 +29,7 @@ type ClienteApi = Cliente & {
   EsSujetoRetencionProveedor?: boolean;
 };
 
-function normalizeCliente(cliente: ClienteApi): Cliente {
+export function normalizeCliente(cliente: ClienteApi): Cliente {
   return {
     codcliente: cliente.codcliente ?? cliente.Codcliente ?? 0,
     apellidos: cliente.apellidos ?? cliente.Apellidos,

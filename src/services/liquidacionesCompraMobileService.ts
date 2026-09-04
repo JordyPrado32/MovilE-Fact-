@@ -30,6 +30,7 @@ export type LiquidacionCompraGuardarInput = {
   idUsuario: number;
   proveedor: Cliente;
   serie?: string | null;
+  numero?: string | null;
   codemisor?: number | null;
   formaPago?: string | null;
   diasCredito?: number | null;
@@ -72,8 +73,10 @@ export function buscarLiquidacionProductos(userId: number, filtro: string) {
   return buscarFacturaProductos(userId, filtro);
 }
 
-export function guardarLiquidacionCompra(input: LiquidacionCompraGuardarInput) {
-  const subtotal = input.detalles.reduce((sum, item) => sum + Math.max(item.cantidad * item.precio - item.descuento, 0), 0);
+export async function guardarLiquidacionCompra(input: LiquidacionCompraGuardarInput) {
+  const subtotal0 = input.detalles.reduce((sum, item) => sum + (item.tarifa <= 0 ? Math.max(item.cantidad * item.precio - item.descuento, 0) : 0), 0);
+  const subtotal15 = input.detalles.reduce((sum, item) => sum + (item.tarifa > 0 ? Math.max(item.cantidad * item.precio - item.descuento, 0) : 0), 0);
+  const subtotal = subtotal0 + subtotal15;
   const iva = input.detalles.reduce((sum, item) => {
     const base = Math.max(item.cantidad * item.precio - item.descuento, 0);
     return sum + base * (item.tarifa / 100);
@@ -106,34 +109,60 @@ export function guardarLiquidacionCompra(input: LiquidacionCompraGuardarInput) {
     const base = Math.max(item.cantidad * item.precio - item.descuento, 0);
     const valorIva = base * (item.tarifa / 100);
     return {
-      codProducto: item.producto.codproducto,
-      codPrincipal: item.producto.codprincipal ?? '',
-      codAuxiliar: item.producto.codauxiliar ?? '',
-      descripcion: item.producto.descripcion ?? 'Producto',
-      cantidad: item.cantidad,
-      precioUnitario: item.precio,
+      codproducto: item.producto.codproducto,
+      codprincipal: item.producto.codprincipal,
+      codauxiliar: item.producto.codauxiliar,
+      cantproducto: item.cantidad,
+      descripproducto: item.producto.descripcion,
+      precioproducto: item.precio,
       descuento: item.descuento,
-      precioTotalSinImpuesto: base,
-      codigoPorcentaje: item.tarifa === 12 ? 2 : item.tarifa,
+      valortproducto: base,
+      valoriva: valorIva,
+      valortotal: base + valorIva,
       tarifa: item.tarifa,
-      valorIva: valorIva,
-      valorTotal: base + valorIva,
+      costo: item.producto.costo ?? 0,
     };
   });
 
-  return apiRequest<{ mensaje?: string; codFactura?: number; codLiquidacion?: number; numeroComprobante?: string | null }>(
-    '/api/liquidaciones-compra',
+  return apiRequest<{ mensaje: string; codLiquidacion?: number; numeroComprobante?: string | null }>(
+    '/api/liquidaciones-compra/guardar-completa',
     {
       method: 'POST',
       body: JSON.stringify({
-        idUsuario: input.idUsuario,
-        liquidacion,
-        proveedor: input.proveedor,
-        detalles,
-        correosLiquidacion: input.correos?.filter(Boolean).map((correo) => ({ correo, guardarEnCliente: false })) ?? [],
+        Usuario: input.idUsuario,
+        CodEmisor: input.codemisor,
+        Estab: estab,
+        PtoEmi: ptoEmi,
+        Secuencial: input.numero || '',
+        FechaEmision: new Date().toISOString(),
+        TipoIdentificacionProveedor: input.proveedor.tipoidentificacion || '04',
+        IdentificacionProveedor: input.proveedor.numeroidentificacion || '',
+        RazonSocialProveedor: input.proveedor.nombrerazonsocial || input.proveedor.nombrecomercial || '',
+        DireccionProveedor: input.proveedor.direccion || '',
+        TelefonoFijoProveedor: input.proveedor.telefonoconvencional || '',
+        TelefonoProveedor: input.proveedor.celular || '',
+        EmailProveedor: input.proveedor.correo || '',
+        CorreosAdicionalesProveedor: input.correos?.filter(Boolean) ?? [],
+        CorreosAdicionalesProveedorGuardar: [],
+        CodProveedor: input.proveedor.codcliente || null,
+        FormaPago: input.formaPago || '01',
+        Plazo: input.diasCredito ?? 0,
+        UnidadTiempo: 'dias',
+        Moneda: 'DOLAR',
+        Subtotal0: subtotal0,
+        Subtotal15: subtotal15,
+        TotalSinImpuestos: subtotal,
+        TotalDescuento: input.detalles.reduce((sum, item) => sum + item.descuento, 0),
+        Iva15: iva,
+        IvaTotal: iva,
+        ImporteTotal: subtotal + iva,
+        Detalles: detalles,
       }),
     },
   );
+
+  const codLiquidacion = response.codFactura ?? response.CodFactura;
+  return { mensaje: response.mensaje ?? 'Liquidacion guardada correctamente.', codLiquidacion, numeroComprobante: null };
 }
 
 export function emitirLiquidacionCompra(userId: number, codFactura: number) {
@@ -149,10 +178,11 @@ export function getLiquidacionCompraXml(userId: number, codLiquidacion: number) 
 }
 
 export function enviarLiquidacionCompraCorreo(userId: number, codLiquidacion: number) {
-  return apiRequest<void>(`/api/liquidaciones-compra/${codLiquidacion}/enviar-correo`, {
-    method: 'POST',
-    body: JSON.stringify({ idUsuario: userId, forzarReenvio: true, correosCopia: [] }),
-  });
+  return apiRequest<void>(`/api/liquidaciones-compra/${codLiquidacion}/enviar-correo?idUsuario=${userId}`, { method: 'POST' });
+}
+
+export function emitirLiquidacionCompra(userId: number, codLiquidacion: number) {
+  return apiRequest<void>(`/api/liquidaciones-compra/${codLiquidacion}/emitir?idUsuario=${userId}`, { method: 'POST' });
 }
 
 async function requestWithFallback<T>(paths: string[]) {

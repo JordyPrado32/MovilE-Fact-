@@ -24,6 +24,14 @@ export type NotaCreditoLineaInput = {
   tarifa: number;
 };
 
+export type NotaCreditoDetalleDisponible = {
+  producto: FacturaProducto;
+  cantidad: number;
+  precio: number;
+  descuento: number;
+  tarifa: number;
+};
+
 export type NotaCreditoGuardarInput = {
   idUsuario: number;
   cliente: Cliente;
@@ -57,6 +65,7 @@ export async function getNotasCredito(userId: number, top = 0) {
 export async function buscarNotaCreditoFacturas(userId: number, filtro: string) {
   try {
     const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
+      `/api/notas-credito/buscar-facturas?idUsuario=${userId}&texto=${encodeURIComponent(filtro)}`,
       `/api/notas-credito/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
       `/api/nota-credito/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
     ]);
@@ -75,7 +84,12 @@ export async function buscarNotaCreditoFacturas(userId: number, filtro: string) 
   }
 }
 
-export function guardarNotaCredito(input: NotaCreditoGuardarInput) {
+export async function getNotaCreditoDetallesDisponibles(userId: number, codfactura: number): Promise<NotaCreditoDetalleDisponible[]> {
+  const response = await apiRequest<ApiRow[] | Record<string, unknown>>(`/api/notas-credito/facturas/${codfactura}/detalles-disponibles?idUsuario=${userId}`);
+  return normalizeRows(response).map(toNotaCreditoDetalleDisponible).filter((item) => item.cantidad > 0 && item.precio > 0);
+}
+
+export async function guardarNotaCredito(input: NotaCreditoGuardarInput) {
   const subtotal = input.detalles.reduce((sum, item) => sum + Math.max(item.cantidad * item.precio - item.descuento, 0), 0);
   const iva = input.detalles.reduce((sum, item) => {
     const base = Math.max(item.cantidad * item.precio - item.descuento, 0);
@@ -83,55 +97,58 @@ export function guardarNotaCredito(input: NotaCreditoGuardarInput) {
   }, 0);
 
   const notaCredito = {
-    codemisor: input.codemisor,
-    coddocumento: 4,
-    tipodocumento: 4,
-    serie: input.serie?.replace(/-/g, '') || null,
-    codfactura: input.facturaModificada?.codfactura || null,
-    codClientes: input.cliente.codcliente || null,
-    facturaModificada: input.facturaModificada?.numeroCompleto ?? input.facturaModificada?.numfactura ?? null,
-    motivo: input.motivo || null,
-    observacion: input.observacion || null,
-    estado: true,
-    autorizado: false,
-    fechaemision: new Date().toISOString(),
-    subtotal,
-    descuentos: input.detalles.reduce((sum, item) => sum + item.descuento, 0),
-    iva,
-    valortotal: subtotal + iva,
+    CodEmisor: input.codemisor,
+    CodClientes: input.cliente.codcliente || null,
+    CodDocumento: '04',
+    IdDocModificado: input.facturaModificada?.codfactura || null,
+    NumDocModificado: input.facturaModificada?.numeroCompleto ?? input.facturaModificada?.numfactura ?? null,
+    CodDocModificado: '01',
+    FechaEmiDocModificado: input.facturaModificada?.fechaEmision || null,
+    Serie: input.serie?.replace(/-/g, '') || null,
+    Motivo: input.motivo || 'Correccion de valores',
+    Observacion: input.observacion || null,
+    Estado: true,
+    Autorizado: 'N',
+    Subtotal: subtotal,
+    Descuentos: input.detalles.reduce((sum, item) => sum + item.descuento, 0),
+    Iva: iva,
+    ValorTotal: subtotal + iva,
   };
 
   const detalles = input.detalles.map((item) => {
     const base = Math.max(item.cantidad * item.precio - item.descuento, 0);
     const valorIva = base * (item.tarifa / 100);
     return {
-      codproducto: item.producto.codproducto,
-      codprincipal: item.producto.codprincipal,
-      codauxiliar: item.producto.codauxiliar,
-      descripcion: item.producto.descripcion ?? 'Producto',
-      cantidad: item.cantidad,
-      preciounitario: item.precio,
-      descuento: item.descuento,
-      subtotal: base,
-      iva: item.tarifa,
-      total: base + valorIva,
+      Codproducto: item.producto.codproducto,
+      Codprincipal: item.producto.codprincipal,
+      Codauxiliar: item.producto.codauxiliar,
+      Descripcion: item.producto.descripcion,
+      Detalle: item.producto.descripcion,
+      Cantidad: item.cantidad,
+      Preciounitario: item.precio,
+      Descuento: item.descuento,
+      PorcentajeDescuento: item.cantidad * item.precio > 0 ? item.descuento / (item.cantidad * item.precio) * 100 : 0,
+      Subtotal: base,
+      Iva: item.tarifa,
+      Total: base + valorIva,
     };
   });
 
-  return apiRequest<{ mensaje?: string; sec?: number; codNotaCredito?: number; numeroComprobante?: string | null }>(
+  const response = await apiRequest<{ sec?: number; Sec?: number; mensaje?: string; numeroComprobante?: string | null }>(
     '/api/notas-credito',
     {
       method: 'POST',
       body: JSON.stringify({
-        idUsuario: input.idUsuario,
-        notaCredito,
-        cliente: input.cliente,
-        facturaModificada: input.facturaModificada,
-        detalles,
-        correosNotaCredito: input.correos?.filter(Boolean).map((correo) => ({ correo, guardarEnCliente: false })) ?? [],
+        IdUsuario: input.idUsuario,
+        NotaCredito: notaCredito,
+        Detalles: detalles,
+        Correos: input.correos?.filter(Boolean).map((correo) => ({ correo, guardarEnCliente: false })) ?? [],
       }),
     },
   );
+
+  const sec = response.sec ?? response.Sec;
+  return { mensaje: response.mensaje ?? 'Nota de credito guardada correctamente.', codNotaCredito: sec, numeroComprobante: response.numeroComprobante ?? null };
 }
 
 export function emitirNotaCredito(userId: number, sec: number) {
@@ -147,10 +164,15 @@ export function getNotaCreditoXml(userId: number, codNotaCredito: number) {
 }
 
 export function enviarNotaCreditoCorreo(userId: number, codNotaCredito: number) {
-  return apiRequest<void>(`/api/notas-credito/${codNotaCredito}/enviar-correo`, {
-    method: 'POST',
-    body: JSON.stringify({ idUsuario: userId, forzarReenvio: true, correosCopia: [] }),
-  });
+  return apiRequest<void>(`/api/notas-credito/${codNotaCredito}/enviar-correo?idUsuario=${userId}`, { method: 'POST' });
+}
+
+export function emitirNotaCredito(userId: number, codNotaCredito: number) {
+  return apiRequest<void>(`/api/notas-credito/${codNotaCredito}/emitir?idUsuario=${userId}`, { method: 'POST' });
+}
+
+export function anularNotaCredito(userId: number, codNotaCredito: number) {
+  return apiRequest<void>(`/api/notas-credito/${codNotaCredito}?idUsuario=${userId}`, { method: 'DELETE' });
 }
 
 async function requestWithFallback<T>(paths: string[]) {
@@ -210,9 +232,31 @@ function normalizeFacturaRows(response: ApiRow[] | Record<string, unknown>): Fac
     serie: text(pickValue(row, ['serie', 'Serie'])) || null,
     fechaEmision: text(pickValue(row, ['fechaEmision', 'FechaEmision', 'fechaemision', 'Fechaemision', 'fecha', 'Fecha', 'fechaDocumento', 'FechaDocumento', 'fechaSustento', 'FechaSustento', 'fechaCreacion', 'FechaCreacion'])) || null,
     total: numberValue(pickValue(row, ['total', 'Total', 'valortotal', 'ValorTotal', 'valorTotal', 'totalFactura', 'TotalFactura', 'totalComprobante', 'TotalComprobante', 'totalDocumento', 'TotalDocumento', 'montoTotal', 'MontoTotal', 'importeTotal', 'ImporteTotal', 'valorDocumento', 'ValorDocumento', 'totalGeneral', 'TotalGeneral', 'monto', 'Monto', 'importe', 'Importe'])),
-    cliente: text(pickValue(row, ['cliente', 'Cliente', 'nombreCliente', 'NombreCliente', 'razonSocial', 'RazonSocial'])) || null,
+    cliente: text(pickValue(row, ['cliente', 'Cliente', 'clienteNombre', 'ClienteNombre', 'nombreCliente', 'NombreCliente', 'razonSocial', 'RazonSocial'])) || null,
     identificacionCliente: text(pickValue(row, ['identificacionCliente', 'IdentificacionCliente', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc'])) || null,
   }));
+}
+
+function toNotaCreditoDetalleDisponible(row: ApiRow): NotaCreditoDetalleDisponible {
+  const cantidad = numberValue(pickValue(row, ['cantidad', 'Cantidad', 'cantProducto', 'CantProducto'])) ?? 0;
+  const precio = numberValue(pickValue(row, ['preciounitario', 'Preciounitario', 'precioUnitario', 'PrecioUnitario', 'precio', 'Precio'])) ?? 0;
+  const descuento = numberValue(pickValue(row, ['descuento', 'Descuento'])) ?? 0;
+  const tarifa = numberValue(pickValue(row, ['iva', 'Iva', 'tarifa', 'Tarifa', 'tarifaIva', 'TarifaIva'])) ?? 0;
+
+  return {
+    producto: {
+      codproducto: numberValue(pickValue(row, ['codproducto', 'Codproducto', 'codProducto', 'CodProducto'])) ?? 0,
+      codprincipal: text(pickValue(row, ['codprincipal', 'Codprincipal', 'codPrincipal', 'CodPrincipal', 'codigoInterno', 'CodigoInterno'])) || null,
+      codauxiliar: text(pickValue(row, ['codauxiliar', 'Codauxiliar', 'codAuxiliar', 'CodAuxiliar'])) || null,
+      descripcion: text(pickValue(row, ['descripcion', 'Descripcion', 'detalle', 'Detalle'])) || null,
+      precioUnitario: precio,
+      tarifaIva: tarifa,
+    },
+    cantidad,
+    precio,
+    descuento,
+    tarifa,
+  };
 }
 
 function toNotaCreditoListItem(row: ApiRow): NotaCreditoListItem {

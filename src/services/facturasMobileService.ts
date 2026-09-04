@@ -1,5 +1,6 @@
 import { apiRequest } from './apiClient';
 import { Cliente } from '../types/business';
+import { normalizeCliente } from './clientesService';
 
 export type FacturaListItem = {
   codfactura: number;
@@ -19,6 +20,12 @@ export type FacturaListItem = {
   cliente?: string | null;
   identificacionCliente?: string | null;
   estado?: boolean | null;
+};
+
+export type FacturaDetalle = {
+  factura?: ApiRow | null;
+  cliente?: Cliente | null;
+  detalles?: ApiRow[];
 };
 
 export type FacturaProducto = {
@@ -111,13 +118,26 @@ export async function getFacturas(userId: number, top = 0) {
   return normalizeFacturaRows(response).map(toFacturaListItem);
 }
 
-export function buscarFacturaClientes(userId: number, filtro: string) {
-  return apiRequest<Cliente[]>(`/api/facturas/clientes/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`).then((clientes) => clientes.map(normalizeFacturaCliente));
+export async function getFacturaDetalle(userId: number, codfactura: number): Promise<FacturaDetalle> {
+  const response = await apiRequest<ApiRow>(`/api/facturas/${codfactura}?idUsuario=${userId}`);
+  const factura = pickValue(response, ['factura', 'Factura']);
+  const cliente = pickValue(response, ['cliente', 'Cliente']);
+  const detalles = pickValue(response, ['detalles', 'Detalles']);
+
+  return {
+    factura: isRecord(factura) ? factura : response,
+    cliente: isRecord(cliente) ? cliente as Cliente : null,
+    detalles: Array.isArray(detalles) ? detalles.filter(isRecord) : [],
+  };
+}
+
+export async function buscarFacturaClientes(userId: number, filtro: string) {
+  const response = await apiRequest<(Cliente & Record<string, unknown>)[]>(`/api/facturas/clientes/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`);
+  return response.map(normalizeCliente);
 }
 
 export function buscarFacturaProductos(userId: number, filtro: string) {
-  return apiRequest<ApiRow[] | Record<string, unknown>>(`/api/facturas/productos/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`)
-    .then((response) => normalizeFacturaRows(response).map(normalizeFacturaProducto));
+  return apiRequest<FacturaProducto[]>(`/api/facturas/productos/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`);
 }
 
 export function getSiguienteFactura(userId: number, codemisor?: number | null, serie?: string | null) {
@@ -209,6 +229,10 @@ export function anularFactura(userId: number, codfactura: number) {
   return apiRequest<void>(`/api/facturas/${codfactura}?idUsuario=${userId}`, { method: 'DELETE' });
 }
 
+export function reintentarFacturaSri(userId: number, codfactura: number) {
+  return apiRequest<void>(`/api/facturas/${codfactura}/reintentar-sri?idUsuario=${userId}`, { method: 'POST' });
+}
+
 function normalizeFacturaRows(response: ApiRow[] | Record<string, unknown>): ApiRow[] {
   if (Array.isArray(response)) return response;
 
@@ -297,6 +321,18 @@ function toFacturaListItem(row: ApiRow): FacturaListItem {
     cliente: text(pickValue(row, ['cliente', 'Cliente', 'nombreCliente', 'NombreCliente', 'razonSocial', 'RazonSocial', 'nombrerazonsocial', 'NombreRazonSocial'])) || null,
     identificacionCliente: text(pickValue(row, ['identificacionCliente', 'IdentificacionCliente', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc', 'cedula', 'Cedula'])) || null,
     estado: booleanValue(pickValue(row, ['estado', 'Estado', 'activo', 'Activo'])),
+  };
+}
+
+function toFacturaProducto(row: ApiRow): FacturaProducto {
+  return {
+    codproducto: numberValue(pickValue(row, ['codproducto', 'Codproducto', 'CodProducto', 'id', 'Id', 'codigo', 'Codigo'])) ?? 0,
+    codprincipal: text(pickValue(row, ['codprincipal', 'Codprincipal', 'CodPrincipal', 'codigoPrincipal', 'CodigoPrincipal'])) || null,
+    codauxiliar: text(pickValue(row, ['codauxiliar', 'Codauxiliar', 'CodAuxiliar', 'codigoAuxiliar', 'CodigoAuxiliar'])) || null,
+    descripcion: text(pickValue(row, ['descripcion', 'Descripcion', 'descripproducto', 'Descripproducto', 'nombre', 'Nombre'])) || null,
+    precioUnitario: numberValue(pickValue(row, ['precioUnitario', 'PrecioUnitario', 'preciounitario', 'Preciounitario', 'precio', 'Precio', 'precioBase', 'PrecioBase'])) ?? 0,
+    costo: numberValue(pickValue(row, ['costo', 'Costo'])) ?? 0,
+    tarifaIva: numberValue(pickValue(row, ['tarifaIva', 'TarifaIva', 'tarifa', 'Tarifa', 'iva', 'Iva'])) ?? 0,
   };
 }
 

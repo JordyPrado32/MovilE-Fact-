@@ -15,6 +15,7 @@ export type NuevaFacturaFormState = {
   numeroFactura: string;
   formaPago: string;
   tipoIdentificacion: string;
+  numeroIdentificacion: string;
   tipoCliente: string;
   obligadoContabilidad: string;
   direccion: string;

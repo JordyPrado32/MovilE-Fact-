@@ -37,6 +37,12 @@ export type CompraDocumentosPagoResponse = {
   status: string;
 };
 
+export type CompraDocumentosEstado = {
+  saldoDocumentos?: number | null;
+  FechaUltimaRecargaDocumentos?: string | null;
+  historial?: ApiRow[];
+};
+
 export type OperationalModuleConfig = {
   eyebrow: string;
   title: string;
@@ -144,6 +150,10 @@ export function iniciarPagoCompraDocumentos(userId: number, payload: CompraDocum
     body: JSON.stringify(payload),
     timeoutMs: 30000,
   });
+}
+
+export function getCompraDocumentosEstado(userId: number) {
+  return apiRequest<CompraDocumentosEstado>(`/api/documentos/compra?idUsuario=${userId}`);
 }
 
 export function updateOperationalItem(module: OperationalModule, tab: string, id: string, payload: ApiRow, context: OperationalRequestContext = {}) {

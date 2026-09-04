@@ -39,15 +39,15 @@ import { changePassword, checkAuth, login, recoverPassword, register } from './s
 import { createCategoria, createSubcategoria, deleteCategoria, deleteSubcategoria, getCategorias, getSubcategorias, updateCategoria, updateSubcategoria } from './src/services/categoriasService';
 import { createCliente, deleteCliente, getCiudades, getClienteLookups, getClientes, getProvincias, updateCliente } from './src/services/clientesService';
 import { createEmisor, deleteEmisor, getEmisor, getEmisores, updateEmisor, uploadFirmaArchivo } from './src/services/emisoresService';
-import { anularFactura, buscarFacturaClientes, buscarFacturaProductos, enviarFacturaCorreo, FacturaListItem, FacturaPreparacion, FacturaProducto, getFacturaPdf, getFacturas, getFacturaPreparacion, getFacturaXml, guardarFactura } from './src/services/facturasMobileService';
-import { buscarGuiaClientes, buscarGuiaFacturas, buscarGuiaProductos, buscarGuiaTransportistas, emitirGuiaRemision, enviarGuiaRemisionCorreo, getGuiaRemisionPdf, getGuiaRemisionPreparacion, getGuiasRemision, getGuiaRemisionXml, guardarGuiaRemision, GuiaRemisionListItem } from './src/services/guiasRemisionMobileService';
+import { anularFactura, buscarFacturaClientes, buscarFacturaProductos, enviarFacturaCorreo, FacturaListItem, FacturaPreparacion, FacturaProducto, getFacturaDetalle, getFacturaPdf, getFacturas, getFacturaPreparacion, getFacturaXml, guardarFactura, reintentarFacturaSri } from './src/services/facturasMobileService';
+import { anularGuiaRemision, buscarGuiaClientes, buscarGuiaFacturas, buscarGuiaProductos, buscarGuiaTransportistas, emitirGuiaRemision, emitirGuiaRemision, enviarGuiaRemisionCorreo, getGuiaRemisionPdf, getGuiaRemisionPreparacion, getGuiasRemision, getGuiaRemisionXml, guardarGuiaRemision, GuiaRemisionListItem } from './src/services/guiasRemisionMobileService';
 import { getMenusByRol, hasMenusByRolEndpoint } from './src/services/menuService';
-import { buscarLiquidacionProductos, buscarLiquidacionProveedores, emitirLiquidacionCompra, enviarLiquidacionCompraCorreo, getLiquidacionCompraPdf, getLiquidacionCompraPreparacion, getLiquidacionesCompra, getLiquidacionCompraXml, guardarLiquidacionCompra, LiquidacionCompraListItem } from './src/services/liquidacionesCompraMobileService';
-import { buscarNotaCreditoFacturas, emitirNotaCredito, enviarNotaCreditoCorreo, getNotaCreditoPdf, getNotaCreditoPreparacion, getNotasCredito, getNotaCreditoXml, guardarNotaCredito, NotaCreditoListItem } from './src/services/notasCreditoMobileService';
-import { buscarNotaDebitoFacturas, emitirNotaDebito, enviarNotaDebitoCorreo, getNotaDebitoPdf, getNotaDebitoPreparacion, getNotasDebito, getNotaDebitoXml, guardarNotaDebito, NotaDebitoListItem } from './src/services/notasDebitoMobileService';
+import { buscarLiquidacionProductos, buscarLiquidacionProveedores, enviarLiquidacionCompraCorreo, getLiquidacionCompraPdf, getLiquidacionCompraPreparacion, getLiquidacionesCompra, getLiquidacionCompraXml, guardarLiquidacionCompra, LiquidacionCompraListItem } from './src/services/liquidacionesCompraMobileService';
+import { buscarNotaCreditoFacturas, enviarNotaCreditoCorreo, getNotaCreditoPdf, getNotaCreditoPreparacion, getNotasCredito, getNotaCreditoXml, guardarNotaCredito, NotaCreditoListItem } from './src/services/notasCreditoMobileService';
+import { buscarNotaDebitoFacturas, enviarNotaDebitoCorreo, getNotaDebitoPdf, getNotaDebitoPreparacion, getNotasDebito, getNotaDebitoXml, guardarNotaDebito, NotaDebitoListItem } from './src/services/notasDebitoMobileService';
 import { clearNotificaciones, dismissNotificacion, getNotificaciones, NotificacionItem } from './src/services/notificacionesService';
 import { syncDeviceNotifications } from './src/services/deviceNotificationsService';
-import { createOperationalItem, deleteOperationalItem, getOperationalMobileModule, getOperationalModuleConfig, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, updateOperationalItem } from './src/services/operationalMobileService';
+import { CompraDocumentosEstado, createOperationalItem, deleteOperationalItem, getCompraDocumentosEstado, getOperationalMobileModule, getOperationalModuleConfig, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, updateOperationalItem } from './src/services/operationalMobileService';
 import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
 import { createPuntoEmision, deletePuntoEmision, getPuntoEmisionSiguienteSecuencial, getPuntosEmision, markPuntoPrincipal, PuntoDocumentoKey, savePuntoEmisionSecuenciaInicial, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
@@ -610,6 +610,7 @@ const initialNuevaFacturaForm: NuevaFacturaFormState = {
   numeroFactura: '',
   formaPago: '',
   tipoIdentificacion: '',
+  numeroIdentificacion: '',
   tipoCliente: '',
   obligadoContabilidad: '',
   direccion: '',
@@ -1288,6 +1289,108 @@ function getFirmaFileName(path?: string | null) {
 
 function hasFirmaConfigured(emisor: Emisor) {
   return Boolean(emisor.pathCertificado?.trim() && emisor.tieneClaveCertificadoConfigurada);
+}
+
+function getDocumentPlanStatus(data: CompraDocumentosEstado | null) {
+  const historial = Array.isArray(data?.historial) ? data.historial : [];
+  const unlimitedPlan = historial.find((item) => {
+    const row = item as Record<string, unknown>;
+    const estado = textValue(pickRecordValue(row, ['estado', 'Estado'])).toLowerCase();
+    return Boolean(pickRecordValue(row, ['esIlimitado', 'EsIlimitado']))
+      && (Boolean(pickRecordValue(row, ['saldoAplicado', 'SaldoAplicado'])) || estado.includes('apro') || estado.includes('pag'));
+  }) as Record<string, unknown> | undefined;
+  const expires = textValue(pickRecordValue(unlimitedPlan, ['vigenciaHasta', 'VigenciaHasta', 'fechaVence', 'FechaVence', 'fecha', 'Fecha']));
+  const saldo = Number(data?.saldoDocumentos ?? 0);
+
+  return {
+    unlimited: Boolean(unlimitedPlan),
+    label: unlimitedPlan ? 'Ilimitado' : Number.isFinite(saldo) ? String(saldo) : '-',
+    caption: unlimitedPlan ? (expires ? `Vence: ${formatDocumentDate(expires)}` : 'Plan activo') : 'Documentos disponibles',
+  };
+}
+
+function getFirmaSummary(emisores: Emisor[], estados: Record<number, FirmaEstado>) {
+  const configured = emisores.filter((emisor) => hasFirmaConfigured(emisor) || estados[emisor.codigo]?.tieneCertificado === true);
+  const valid = configured.find((emisor) => estados[emisor.codigo]?.esValida) ?? configured[0];
+  const estado = valid ? estados[valid.codigo] : undefined;
+
+  return {
+    active: Boolean(valid && (estado?.esValida || hasFirmaConfigured(valid))),
+    label: valid && (estado?.esValida || hasFirmaConfigured(valid)) ? 'Activa' : 'Pendiente',
+    caption: estado?.fechaExpiracion ? `Vence: ${formatDocumentDate(estado.fechaExpiracion)}` : valid ? 'Certificado configurado' : 'Sin firma',
+  };
+}
+
+function GlobalWorkspaceHeader({
+  title,
+  subtitle,
+  unreadNotifications,
+  documentPlan,
+  firmaSummary,
+  onSearch,
+  onNotifications,
+  onMenu,
+  onDocuments,
+  onFirma,
+}: {
+  title: string;
+  subtitle: string;
+  unreadNotifications: number;
+  documentPlan: ReturnType<typeof getDocumentPlanStatus>;
+  firmaSummary: ReturnType<typeof getFirmaSummary>;
+  onSearch: () => void;
+  onNotifications: () => void;
+  onMenu: () => void;
+  onDocuments: () => void;
+  onFirma: () => void;
+}) {
+  return (
+    <View style={styles.unifiedTopBar}>
+      <View style={styles.unifiedHeaderRow}>
+        <View style={styles.unifiedBrandBlock}>
+          <PortalHeaderAvatar />
+          <View style={styles.unifiedTitleBlock}>
+            <Text style={styles.unifiedTitle} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
+            <Text style={styles.unifiedSubtitle} numberOfLines={1}>{subtitle}</Text>
+          </View>
+        </View>
+        <View style={styles.unifiedHeaderActions}>
+          <Pressable style={styles.unifiedIconButton} onPress={onSearch} accessibilityLabel="Buscar en toda la operación">
+            <MaterialCommunityIcons name="magnify" size={22} color="#FFFFFF" />
+          </Pressable>
+          <Pressable style={styles.unifiedIconButton} onPress={onNotifications} accessibilityLabel="Notificaciones">
+            <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
+            {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
+          </Pressable>
+          <Pressable style={styles.unifiedIconButton} onPress={onMenu} accessibilityLabel="Menu">
+            <MaterialCommunityIcons name="menu" size={25} color="#FFFFFF" />
+          </Pressable>
+        </View>
+      </View>
+      <View style={styles.unifiedStatusGrid}>
+        <Pressable style={styles.unifiedStatusCard} onPress={onDocuments}>
+          <View style={styles.unifiedStatusIcon}>
+            <MaterialCommunityIcons name="file-document-outline" size={22} color={EFACT_THEME.colors.primary} />
+          </View>
+          <View style={styles.unifiedStatusCopy}>
+            <Text style={styles.unifiedStatusLabel}>Total documentos</Text>
+            <Text style={styles.unifiedStatusValue}>{documentPlan.label}</Text>
+            <Text style={styles.unifiedStatusCaption}>{documentPlan.caption}</Text>
+          </View>
+        </Pressable>
+        <Pressable style={styles.unifiedStatusCard} onPress={onFirma}>
+          <View style={[styles.unifiedStatusIcon, styles.unifiedFirmaIcon]}>
+            <MaterialCommunityIcons name="shield-check-outline" size={22} color="#15A85B" />
+          </View>
+          <View style={styles.unifiedStatusCopy}>
+            <Text style={styles.unifiedStatusLabel}>Firma electronica</Text>
+            <Text style={[styles.unifiedStatusValue, firmaSummary.active && styles.unifiedStatusOk]}>{firmaSummary.label}</Text>
+            <Text style={styles.unifiedStatusCaption}>{firmaSummary.caption}</Text>
+          </View>
+        </Pressable>
+      </View>
+    </View>
+  );
 }
 
 function operationalItemToForm(item: OperationalMobileItem): OperationalFormState {
@@ -2012,6 +2115,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [adminTabByView, setAdminTabByView] = useState<Record<string, string>>({});
   const [operationalItems, setOperationalItems] = useState<OperationalMobileItem[]>([]);
   const [operationalCounts, setOperationalCounts] = useState<Partial<Record<WorkspaceView, number>>>({});
+  const [compraDocumentosEstado, setCompraDocumentosEstado] = useState<CompraDocumentosEstado | null>(null);
   const [operationalTabByView, setOperationalTabByView] = useState<Record<string, string>>({});
   const [operationalFormMode, setOperationalFormMode] = useState<OperationalFormMode>(null);
   const [selectedOperationalItem, setSelectedOperationalItem] = useState<OperationalMobileItem | null>(null);
@@ -2608,6 +2712,23 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         }, {}),
       );
     });
+
+    return () => {
+      mounted = false;
+    };
+  }, [authorizedViews, catalogUserId, reloadKey]);
+
+  useEffect(() => {
+    if (!catalogUserId || !authorizedViews.has('recargas')) return;
+
+    let mounted = true;
+    getCompraDocumentosEstado(catalogUserId)
+      .then((data) => {
+        if (mounted) setCompraDocumentosEstado(data);
+      })
+      .catch(() => {
+        if (mounted) setCompraDocumentosEstado(null);
+      });
 
     return () => {
       mounted = false;
@@ -3293,6 +3414,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const openNewCliente = () => {
     setSelectedCliente(null);
     setClienteForm(initialClienteForm);
+    setClienteFormMode('create');
+    setDirectoryMessage(null);
+    openView('nuevo-cliente');
+  };
+
+  const openNewProveedor = () => {
+    setSelectedCliente(null);
+    setClienteForm({ ...initialClienteForm, esProveedor: true });
     setClienteFormMode('create');
     setDirectoryMessage(null);
     openView('nuevo-cliente');
@@ -4438,40 +4567,92 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
   };
 
-  const selectNotaCreditoFactura = (factura: FacturaListItem) => {
-    const cliente: Cliente = {
-      codcliente: 0,
-      nombrerazonsocial: factura.cliente,
-      numeroidentificacion: factura.identificacionCliente,
-    };
+  const selectNotaCreditoFactura = async (factura: FacturaListItem) => {
+    if (!catalogUserId) return;
+    const cliente = buildClienteFromFactura(factura);
     setNotaCreditoFactura(factura);
     setNotaCreditoCliente(cliente);
     setNotaCreditoFacturas([]);
     setNotaCreditoForm((current) => ({
       ...current,
       facturaBusqueda: factura.numeroCompleto ?? factura.numfactura ?? '',
-      clienteBusqueda: factura.cliente ?? '',
-      correoPrincipal: '',
-      tipoIdentificacion: '',
-      tipoCliente: '',
-      obligadoContabilidad: '',
-      direccion: '',
-      telefono: '',
+      clienteBusqueda: getClienteDisplayName(cliente),
+      correoPrincipal: getClienteEmail(cliente),
+      tipoIdentificacion: String(cliente.tipoidentificacion ?? ''),
+      numeroIdentificacion: getClienteIdentification(cliente),
+      tipoCliente: String(cliente.tipoCliente ?? ''),
+      obligadoContabilidad: cliente.oblgconta ?? '',
+      direccion: cliente.direccion ?? '',
+      telefono: cliente.celular || cliente.telefonoconvencional || '',
     }));
-    if (notaCreditoLineas.length === 0) {
-      setNotaCreditoLineas([{
-        producto: {
-          codproducto: 0,
-          codprincipal: 'NC',
-          descripcion: `Ajuste factura ${factura.numeroCompleto ?? factura.numfactura ?? ''}`.trim(),
-          precioUnitario: Number(factura.total ?? 0),
-          tarifaIva: 0,
-        },
-        cantidad: '1',
-        precio: String(Number(factura.total ?? 0)),
-        descuento: '0',
-        tarifa: '0',
-      }]);
+
+    try {
+      const detalle = await getFacturaDetalle(catalogUserId, factura.codfactura);
+      const facturaCompleta = mergeFacturaDetalle(factura, detalle.factura);
+      const clienteCompleto = buildClienteFromFactura(facturaCompleta, detalle.cliente, detalle.factura);
+      const detallesDisponibles = await getNotaCreditoDetallesDisponibles(catalogUserId, factura.codfactura);
+      const detalleRows = detallesDisponibles.length ? detallesDisponibles : detalle.detalles ?? [];
+      setNotaCreditoFactura(facturaCompleta);
+      setNotaCreditoCliente(clienteCompleto);
+      setNotaCreditoForm((current) => ({
+        ...current,
+        facturaBusqueda: facturaCompleta.numeroCompleto ?? facturaCompleta.numfactura ?? '',
+        clienteBusqueda: getClienteDisplayName(clienteCompleto),
+        correoPrincipal: getClienteEmail(clienteCompleto),
+        tipoIdentificacion: String(clienteCompleto.tipoidentificacion ?? ''),
+        numeroIdentificacion: getClienteIdentification(clienteCompleto),
+        tipoCliente: String(clienteCompleto.tipoCliente ?? ''),
+        obligadoContabilidad: clienteCompleto.oblgconta ?? '',
+        direccion: clienteCompleto.direccion ?? '',
+        telefono: clienteCompleto.celular || clienteCompleto.telefonoconvencional || '',
+      }));
+      if (detalleRows.length) {
+        setNotaCreditoLineas(detalleRows.map((row) => detalleFacturaToNotaCreditoLinea(row as Record<string, unknown>)));
+      } else if (notaCreditoLineas.length === 0) {
+        setNotaCreditoLineas([{
+          producto: {
+            codproducto: 0,
+            codprincipal: 'NC',
+            descripcion: `Ajuste factura ${facturaCompleta.numeroCompleto ?? facturaCompleta.numfactura ?? ''}`.trim(),
+            precioUnitario: Number(facturaCompleta.total ?? 0),
+            tarifaIva: 0,
+          },
+          cantidad: '1',
+          precio: String(Number(facturaCompleta.total ?? 0)),
+          descuento: '0',
+          tarifa: '0',
+        }]);
+      }
+    } catch (error) {
+      if (notaCreditoLineas.length === 0) {
+        setNotaCreditoLineas([{
+          producto: {
+            codproducto: 0,
+            codprincipal: 'NC',
+            descripcion: `Ajuste factura ${factura.numeroCompleto ?? factura.numfactura ?? ''}`.trim(),
+            precioUnitario: Number(factura.total ?? 0),
+            tarifaIva: 0,
+          },
+          cantidad: '1',
+          precio: String(Number(factura.total ?? 0)),
+          descuento: '0',
+          tarifa: '0',
+        }]);
+      }
+      const text = error instanceof ApiError ? error.message : 'No se pudo cargar el detalle completo de la factura.';
+      setDirectoryMessage({ type: 'info', text });
+    }
+  };
+
+  const retryFacturaSri = async (factura: FacturaListItem) => {
+    if (!catalogUserId) return;
+    try {
+      await reintentarFacturaSri(catalogUserId, factura.codfactura);
+      setDirectoryMessage({ type: 'success', text: 'Factura reenviada al SRI correctamente.' });
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo reintentar la emision de la factura.';
+      setDirectoryMessage({ type: 'error', text });
     }
   };
 
@@ -4507,8 +4688,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   const saveNuevaNotaCredito = async () => {
     if (!catalogUserId) return;
-    if (!notaCreditoCliente) {
-      setDirectoryMessage({ type: 'error', text: 'Selecciona la factura modificada para cargar el cliente.' });
+    const clienteParaGuardar = notaCreditoCliente ?? manualClienteFromForm(notaCreditoForm);
+    const facturaParaGuardar = notaCreditoFactura ?? manualFacturaFromForm(notaCreditoForm);
+    if (!notaCreditoCliente && !notaCreditoForm.clienteBusqueda.trim()) {
+      setDirectoryMessage({ type: 'error', text: 'Ingresa el cliente o selecciona una factura para cargarlo.' });
       return;
     }
     if (notaCreditoLineas.length === 0) {
@@ -4521,8 +4704,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     try {
       const result = await guardarNotaCredito({
         idUsuario: catalogUserId,
-        cliente: notaCreditoCliente,
-        facturaModificada: notaCreditoFactura,
+        cliente: clienteParaGuardar,
+        facturaModificada: facturaParaGuardar,
         serie: notaCreditoForm.serie,
         codemisor: getSerieCodemisorFromOptions(getDocumentSerieOptions(notaCreditoPreparacion, puntosData, 'notaCredito'), notaCreditoForm.serie, notaCreditoPreparacion),
         motivo: notaCreditoForm.motivo,
@@ -4560,6 +4743,39 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
   };
 
+  const emitNotaCreditoSri = async (nota: NotaCreditoListItem) => {
+    if (!catalogUserId) return;
+    try {
+      await emitirNotaCredito(catalogUserId, nota.codNotaCredito);
+      setDirectoryMessage({ type: 'success', text: 'Nota de credito enviada al SRI correctamente.' });
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo emitir la nota de credito.';
+      setDirectoryMessage({ type: 'error', text });
+    }
+  };
+
+  const confirmAnularNotaCredito = (nota: NotaCreditoListItem) => {
+    if (!catalogUserId) return;
+    Alert.alert('Anular nota de credito', `Deseas anular ${nota.numeroNota ?? 'esta nota de credito'}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Anular',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await anularNotaCredito(catalogUserId, nota.codNotaCredito);
+            setDirectoryMessage({ type: 'success', text: 'Nota de credito anulada correctamente.' });
+            setReloadKey((value) => value + 1);
+          } catch (error) {
+            const text = error instanceof ApiError ? error.message : 'No se pudo anular la nota de credito.';
+            setDirectoryMessage({ type: 'error', text });
+          }
+        },
+      },
+    ]);
+  };
+
   const updateNotaDebitoForm = (field: keyof NotaDebitoFormState, value: string) => {
     setNotaDebitoForm((current) => ({ ...current, [field]: value }));
   };
@@ -4578,26 +4794,59 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
   };
 
-  const selectNotaDebitoFactura = (factura: FacturaListItem) => {
-    const cliente: Cliente = {
-      codcliente: 0,
-      nombrerazonsocial: factura.cliente,
-      numeroidentificacion: factura.identificacionCliente,
-    };
+  const selectNotaDebitoFactura = async (factura: FacturaListItem) => {
+    if (!catalogUserId) return;
+    const cliente = buildClienteFromFactura(factura);
     setNotaDebitoFactura(factura);
     setNotaDebitoCliente(cliente);
     setNotaDebitoFacturas([]);
     setNotaDebitoForm((current) => ({
       ...current,
       facturaBusqueda: factura.numeroCompleto ?? factura.numfactura ?? '',
-      clienteBusqueda: factura.cliente ?? '',
-      correoPrincipal: '',
-      tipoIdentificacion: '',
-      tipoCliente: '',
-      obligadoContabilidad: '',
-      direccion: '',
-      telefono: '',
+      clienteBusqueda: getClienteDisplayName(cliente),
+      correoPrincipal: getClienteEmail(cliente),
+      tipoIdentificacion: String(cliente.tipoidentificacion ?? ''),
+      numeroIdentificacion: getClienteIdentification(cliente),
+      tipoCliente: String(cliente.tipoCliente ?? ''),
+      obligadoContabilidad: cliente.oblgconta ?? '',
+      direccion: cliente.direccion ?? '',
+      telefono: cliente.celular || cliente.telefonoconvencional || '',
     }));
+
+    try {
+      const detalle = await getFacturaDetalle(catalogUserId, factura.codfactura);
+      const facturaCompleta = mergeFacturaDetalle(factura, detalle.factura);
+      const clienteCompleto = buildClienteFromFactura(facturaCompleta, detalle.cliente, detalle.factura);
+      const detalleRows = await getNotaDebitoDetallesFactura(catalogUserId, factura.codfactura);
+      setNotaDebitoFactura(facturaCompleta);
+      setNotaDebitoCliente(clienteCompleto);
+      setNotaDebitoForm((current) => ({
+        ...current,
+        facturaBusqueda: facturaCompleta.numeroCompleto ?? facturaCompleta.numfactura ?? '',
+        clienteBusqueda: getClienteDisplayName(clienteCompleto),
+        correoPrincipal: getClienteEmail(clienteCompleto),
+        tipoIdentificacion: String(clienteCompleto.tipoidentificacion ?? ''),
+        numeroIdentificacion: getClienteIdentification(clienteCompleto),
+        tipoCliente: String(clienteCompleto.tipoCliente ?? ''),
+        obligadoContabilidad: clienteCompleto.oblgconta ?? '',
+        direccion: clienteCompleto.direccion ?? '',
+        telefono: clienteCompleto.celular || clienteCompleto.telefonoconvencional || '',
+      }));
+      if (detalleRows.length) {
+        setNotaDebitoLineas(detalleRows.map((row) => ({
+          descripcion: row.descripcion,
+          precio: String(row.precio),
+          tarifa: String(row.tarifa),
+          impuestoIce: '',
+          valorIce: String(row.valorIce ?? 0),
+        })));
+      } else if (detalle.detalles?.length) {
+        setNotaDebitoLineas(detalle.detalles.map((row) => detalleFacturaToNotaDebitoLinea(row)));
+      }
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo cargar el detalle completo de la factura.';
+      setDirectoryMessage({ type: 'info', text });
+    }
   };
 
   const updateNotaDebitoLinea = (index: number, field: keyof NotaDebitoLinea, value: string) => {
@@ -4623,8 +4872,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   const saveNuevaNotaDebito = async () => {
     if (!catalogUserId) return;
-    if (!notaDebitoCliente) {
-      setDirectoryMessage({ type: 'error', text: 'Selecciona la factura modificada para cargar el cliente.' });
+    const clienteParaGuardar = notaDebitoCliente ?? manualClienteFromForm(notaDebitoForm);
+    const facturaParaGuardar = notaDebitoFactura ?? manualFacturaFromForm(notaDebitoForm);
+    if (!notaDebitoCliente && !notaDebitoForm.clienteBusqueda.trim()) {
+      setDirectoryMessage({ type: 'error', text: 'Ingresa el cliente o selecciona una factura para cargarlo.' });
       return;
     }
 
@@ -4633,8 +4884,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     try {
       const result = await guardarNotaDebito({
         idUsuario: catalogUserId,
-        cliente: notaDebitoCliente,
-        facturaModificada: notaDebitoFactura,
+        cliente: clienteParaGuardar,
+        facturaModificada: facturaParaGuardar,
         serie: notaDebitoForm.serie,
         codemisor: getSerieCodemisorFromOptions(getDocumentSerieOptions(notaDebitoPreparacion, puntosData, 'notaDebito'), notaDebitoForm.serie, notaDebitoPreparacion),
         correos: notaDebitoForm.correoAdicional ? [notaDebitoForm.correoAdicional] : [],
@@ -4668,6 +4919,39 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       const text = error instanceof ApiError ? error.message : 'No se pudo enviar el correo.';
       setDirectoryMessage({ type: 'error', text });
     }
+  };
+
+  const emitNotaDebitoSri = async (nota: NotaDebitoListItem) => {
+    if (!catalogUserId) return;
+    try {
+      await emitirNotaDebito(catalogUserId, nota.codNotaDebito);
+      setDirectoryMessage({ type: 'success', text: 'Nota de debito enviada al SRI correctamente.' });
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo emitir la nota de debito.';
+      setDirectoryMessage({ type: 'error', text });
+    }
+  };
+
+  const confirmAnularNotaDebito = (nota: NotaDebitoListItem) => {
+    if (!catalogUserId) return;
+    Alert.alert('Anular nota de debito', `Deseas anular ${nota.numeroNota ?? 'esta nota de debito'}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Anular',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await anularNotaDebito(catalogUserId, nota.codNotaDebito);
+            setDirectoryMessage({ type: 'success', text: 'Nota de debito anulada correctamente.' });
+            setReloadKey((value) => value + 1);
+          } catch (error) {
+            const text = error instanceof ApiError ? error.message : 'No se pudo anular la nota de debito.';
+            setDirectoryMessage({ type: 'error', text });
+          }
+        },
+      },
+    ]);
   };
 
   const updateLiquidacionForm = (field: keyof LiquidacionCompraFormState, value: string) => {
@@ -4708,6 +4992,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setLiquidacionForm((current) => ({
       ...current,
       clienteBusqueda: getClienteDisplayName(proveedor),
+      numeroIdentificacion: getClienteIdentification(proveedor),
       direccion: proveedor.direccion ?? '',
       telefono: proveedor.celular || proveedor.telefonoconvencional || '',
       correoPrincipal: getClienteEmail(proveedor),
@@ -4760,6 +5045,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         idUsuario: catalogUserId,
         proveedor: liquidacionProveedor,
         serie: liquidacionForm.serie,
+        numero: liquidacionForm.numeroFactura,
         codemisor: getSerieCodemisorFromOptions(getDocumentSerieOptions(liquidacionPreparacion, puntosData, 'liquidacion'), liquidacionForm.serie, liquidacionPreparacion),
         formaPago: liquidacionForm.formaPago,
         diasCredito: Number(liquidacionForm.diasCredito) || 0,
@@ -4792,6 +5078,18 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       setDirectoryMessage({ type: 'success', text: 'Correo enviado correctamente.' });
     } catch (error) {
       const text = error instanceof ApiError ? error.message : 'No se pudo enviar el correo.';
+      setDirectoryMessage({ type: 'error', text });
+    }
+  };
+
+  const emitLiquidacionSri = async (liquidacion: LiquidacionCompraListItem) => {
+    if (!catalogUserId) return;
+    try {
+      await emitirLiquidacionCompra(catalogUserId, liquidacion.codLiquidacion);
+      setDirectoryMessage({ type: 'success', text: 'Liquidacion enviada al SRI correctamente.' });
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo emitir la liquidacion.';
       setDirectoryMessage({ type: 'error', text });
     }
   };
@@ -4865,15 +5163,36 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const selectGuiaCliente = (cliente: Cliente) => {
     setGuiaCliente(cliente);
     setGuiaClientes([]);
-    setGuiaForm((current) => ({ ...current, clienteBusquedaGuia: getClienteDisplayName(cliente) }));
+    setGuiaForm((current) => ({ ...current, clienteBusquedaGuia: getClienteDisplayName(cliente), numeroIdentificacion: getClienteIdentification(cliente) }));
   };
 
-  const selectGuiaFactura = (factura: FacturaListItem) => {
+  const selectGuiaFactura = async (factura: FacturaListItem) => {
+    if (!catalogUserId) return;
     setGuiaFactura(factura);
     setGuiaFacturas([]);
     setGuiaForm((current) => ({ ...current, facturaBusqueda: factura.numeroCompleto ?? factura.numfactura ?? '', clienteBusquedaGuia: factura.cliente ?? current.clienteBusquedaGuia }));
     if (!guiaCliente && factura.cliente) {
-      setGuiaCliente({ codcliente: 0, nombrerazonsocial: factura.cliente, numeroidentificacion: factura.identificacionCliente });
+      setGuiaCliente(buildClienteFromFactura(factura));
+    }
+
+    try {
+      const detalle = await getFacturaDetalle(catalogUserId, factura.codfactura);
+      const facturaCompleta = mergeFacturaDetalle(factura, detalle.factura);
+      const cliente = buildClienteFromFactura(facturaCompleta, detalle.cliente, detalle.factura);
+      setGuiaFactura(facturaCompleta);
+      setGuiaCliente(cliente);
+      setGuiaForm((current) => ({
+        ...current,
+        facturaBusqueda: facturaCompleta.numeroCompleto ?? facturaCompleta.numfactura ?? '',
+        clienteBusquedaGuia: getClienteDisplayName(cliente),
+        numeroIdentificacion: getClienteIdentification(cliente),
+      }));
+      if (detalle.detalles?.length) {
+        setGuiaDetalles(detalle.detalles.map((row) => detalleFacturaToGuiaDetalle(row)));
+      }
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo cargar el detalle completo de la factura.';
+      setDirectoryMessage({ type: 'info', text });
     }
   };
 
@@ -4943,6 +5262,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       setDirectoryMessage({ type: 'error', text: 'Selecciona un transportista para la guia.' });
       return;
     }
+    if (!guiaCliente && !guiaFactura) {
+      setDirectoryMessage({ type: 'error', text: 'Selecciona un destinatario o vincula una factura para cargarlo.' });
+      return;
+    }
     if (guiaDetalles.length === 0) {
       setDirectoryMessage({ type: 'error', text: 'Agrega al menos un detalle de traslado.' });
       return;
@@ -4990,6 +5313,39 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       const text = error instanceof ApiError ? error.message : 'No se pudo enviar el correo.';
       setDirectoryMessage({ type: 'error', text });
     }
+  };
+
+  const emitGuiaSri = async (guia: GuiaRemisionListItem) => {
+    if (!catalogUserId) return;
+    try {
+      await emitirGuiaRemision(catalogUserId, guia.codGuia);
+      setDirectoryMessage({ type: 'success', text: 'Guia de remision enviada al SRI correctamente.' });
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo emitir la guia de remision.';
+      setDirectoryMessage({ type: 'error', text });
+    }
+  };
+
+  const confirmAnularGuia = (guia: GuiaRemisionListItem) => {
+    if (!catalogUserId) return;
+    Alert.alert('Anular guia de remision', `Deseas anular ${guia.numero ?? 'esta guia de remision'}?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Anular',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await anularGuiaRemision(catalogUserId, guia.codGuia);
+            setDirectoryMessage({ type: 'success', text: 'Guia de remision anulada correctamente.' });
+            setReloadKey((value) => value + 1);
+          } catch (error) {
+            const text = error instanceof ApiError ? error.message : 'No se pudo anular la guia de remision.';
+            setDirectoryMessage({ type: 'error', text });
+          }
+        },
+      },
+    ]);
   };
 
   const sendRetencionCorreo = async (retencion: RetencionListItem) => {
@@ -5182,6 +5538,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   const hasActiveEmisor = emisores.some((emisor) => emisor.estado !== false);
   const hasConfiguredFirma = emisores.some(hasFirmaConfigured);
+  const documentPlan = getDocumentPlanStatus(compraDocumentosEstado);
+  const firmaSummary = getFirmaSummary(emisores, firmaEstados);
   const moduleByView = new Map<WorkspaceView, MobileModule>(modules.map((module) => [module.view, module]));
   const menuNode = (view: WorkspaceView, label?: string): DrawerMenuNode => {
     const module = moduleByView.get(view);
@@ -5276,7 +5634,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         menuNode('punto-emision', 'Pto. Emision'),
         menuNode('centro-normativo', 'Centro normativo'),
         menuNode('firma', 'Firma'),
-        menuNode('e-rubrica', 'E-Rúbrica'),
       ],
     },
   ];
@@ -5346,80 +5703,36 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   return (
     <SafeAreaView edges={['top', 'bottom']} style={[styles.workspaceSafeArea, activeView === 'portal' && styles.portalSafeArea]}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.workspaceCanvasWithBottomNav, { paddingBottom: 88 + insets.bottom }]}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        nestedScrollEnabled
-        automaticallyAdjustKeyboardInsets={activeView !== 'bot'}
-        refreshControl={<RefreshControl refreshing={loadingMenus} onRefresh={() => setReloadKey((value) => value + 1)} tintColor={EFACT_THEME.colors.primary} colors={[EFACT_THEME.colors.primary]} />}
-      >
-        {activeView === 'portal' ? (
-          <View style={styles.dashboardHeader}>
-            <View style={styles.dashboardBrandBlock}>
-              <PortalHeaderAvatar />
-              <View style={styles.dashboardBrandText}>
-                <Text style={styles.dashboardBrandTitle}>{getWorkspaceTitle(activeView)}</Text>
-              </View>
-            </View>
-            <View style={styles.dashboardHeaderActions}>
-              <Pressable style={styles.dashboardIconButton} onPress={() => { setGlobalSearchQuery(''); setGlobalSearchOpen(true); }} accessibilityLabel="Buscar en toda la operación">
-                <MaterialCommunityIcons name="magnify" size={22} color="#FFFFFF" />
-              </Pressable>
-              <Pressable style={styles.dashboardIconButton} onPress={() => setNotificationsOpen(true)}>
-                <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
-                {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
-              </Pressable>
-              <Pressable style={styles.dashboardIconButton} onPress={() => setMenuOpen(true)}>
-                <MaterialCommunityIcons name="menu" size={25} color="#FFFFFF" />
-              </Pressable>
-            </View>
-          </View>
-        ) : activeView === 'dashboard' ? (
-          <View style={styles.dashboardHeader}>
-            <View style={styles.dashboardBrandBlock}>
-              <PortalHeaderAvatar />
-              <View style={styles.dashboardBrandText}>
-                <Text style={styles.dashboardBrandTitle}>{getWorkspaceTitle(activeView)}</Text>
-              </View>
-            </View>
-            <View style={styles.dashboardHeaderActions}>
-              <Pressable style={styles.dashboardIconButton} onPress={() => { setGlobalSearchQuery(''); setGlobalSearchOpen(true); }} accessibilityLabel="Buscar en toda la operación">
-                <MaterialCommunityIcons name="magnify" size={22} color="#FFFFFF" />
-              </Pressable>
-              <Pressable style={styles.dashboardIconButton} onPress={() => setNotificationsOpen(true)}>
-                <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
-                {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
-              </Pressable>
-              <Pressable style={styles.dashboardIconButton} onPress={() => setMenuOpen(true)}>
-                <MaterialCommunityIcons name="menu" size={25} color="#FFFFFF" />
-              </Pressable>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.workspaceHeader}>
-            <View style={styles.workspaceBrand}>
-              <BrandMark />
-              <View style={styles.workspaceBrandText}>
-                <Text style={styles.workspaceTitle}>{getWorkspaceTitle(activeView)}</Text>
-              </View>
-            </View>
-            <View style={styles.workspaceHeaderActions}>
-              <Pressable style={styles.menuButton} onPress={() => { setGlobalSearchQuery(''); setGlobalSearchOpen(true); }} accessibilityLabel="Buscar en toda la operación">
-                <MaterialCommunityIcons name="magnify" size={22} color="#FFFFFF" />
-              </Pressable>
-              <Pressable style={styles.menuButton} onPress={() => setNotificationsOpen(true)}>
-                <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
-                {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
-              </Pressable>
-              <Pressable style={styles.menuButton} onPress={() => setMenuOpen(true)}>
-                <Text style={styles.menuButtonIcon}>☰</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
+      <View style={styles.workspaceChrome}>
+        <GlobalWorkspaceHeader
+          title={getWorkspaceTitle(activeView)}
+          subtitle={activeView === 'firma' ? 'Gestiona tu firma y certificados' : activeView === 'portal' ? 'Selecciona el modulo al que deseas ingresar' : 'Resumen y accesos de tu sistema'}
+          unreadNotifications={unreadNotifications}
+          documentPlan={documentPlan}
+          firmaSummary={firmaSummary}
+          onSearch={() => { setGlobalSearchQuery(''); setGlobalSearchOpen(true); }}
+          onNotifications={() => setNotificationsOpen(true)}
+          onMenu={() => setMenuOpen(true)}
+          onDocuments={() => openView('comprar-documentos')}
+          onFirma={() => openView('firma')}
+        />
 
+        <View style={styles.workspaceBodyFrame}>
+        <ScrollView
+          style={styles.workspaceBodyScroll}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.workspaceCanvasWithBottomNav, { paddingBottom: 88 + insets.bottom }]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          nestedScrollEnabled
+          automaticallyAdjustKeyboardInsets={activeView !== 'bot'}
+          horizontal={false}
+          bounces={false}
+          alwaysBounceHorizontal={false}
+          directionalLockEnabled
+          overScrollMode="never"
+          refreshControl={<RefreshControl refreshing={loadingMenus} onRefresh={() => setReloadKey((value) => value + 1)} tintColor={EFACT_THEME.colors.primary} colors={[EFACT_THEME.colors.primary]} />}
+        >
         <ScreenTransition key={activeView}>
         {menuMessage ? <MessageBox message={menuMessage} /> : null}
 
@@ -6172,6 +6485,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     ...current,
                     clienteBusqueda: getClienteDisplayName(cliente),
                     tipoIdentificacion: String(cliente.tipoidentificacion ?? ''),
+                    numeroIdentificacion: getClienteIdentification(cliente),
                     tipoCliente: String(cliente.tipoCliente ?? ''),
                     obligadoContabilidad: cliente.oblgconta ?? '',
                     direccion: cliente.direccion ?? '',
@@ -6197,6 +6511,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onPdf={(factura) => catalogUserId && openPdfPreview(() => getFacturaPdf(catalogUserId, factura.codfactura), `${factura.numeroCompleto ?? 'factura'}.pdf`)}
                 onXml={(factura) => catalogUserId && openFacturaAsset(() => getFacturaXml(catalogUserId, factura.codfactura))}
                 onEmail={sendFacturaCorreo}
+                onRetrySri={retryFacturaSri}
                 onAnular={confirmAnularFactura}
               />
             ) : null}
@@ -6220,6 +6535,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onUpdateLinea={updateNotaCreditoLinea}
                 onRemoveLinea={removeNotaCreditoLinea}
                 onClear={clearNotaCreditoForm}
+                onHistory={() => openView('mis-notas-credito')}
                 onSave={saveNuevaNotaCredito}
               />
             ) : null}
@@ -6233,6 +6549,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onPdf={(nota) => catalogUserId && openPdfPreview(() => getNotaCreditoPdf(catalogUserId, nota.codNotaCredito), 'nota-credito.pdf')}
                 onXml={(nota) => catalogUserId && openFacturaAsset(() => getNotaCreditoXml(catalogUserId, nota.codNotaCredito))}
                 onEmail={sendNotaCreditoCorreo}
+                onEmitir={emitNotaCreditoSri}
+                onAnular={confirmAnularNotaCredito}
               />
             ) : null}
 
@@ -6255,6 +6573,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onUpdateLinea={updateNotaDebitoLinea}
                 onRemoveLinea={removeNotaDebitoLinea}
                 onClear={clearNotaDebitoForm}
+                onHistory={() => openView('mis-notas-debito')}
                 onSave={saveNuevaNotaDebito}
               />
             ) : null}
@@ -6268,6 +6587,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onPdf={(nota) => catalogUserId && openPdfPreview(() => getNotaDebitoPdf(catalogUserId, nota.codNotaDebito), 'nota-debito.pdf')}
                 onXml={(nota) => catalogUserId && openFacturaAsset(() => getNotaDebitoXml(catalogUserId, nota.codNotaDebito))}
                 onEmail={sendNotaDebitoCorreo}
+                onEmitir={emitNotaDebitoSri}
+                onAnular={confirmAnularNotaDebito}
               />
             ) : null}
 
@@ -6291,6 +6612,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onUpdateLinea={updateLiquidacionLinea}
                 onRemoveLinea={removeLiquidacionLinea}
                 onClear={clearLiquidacionForm}
+                onHistory={() => openView('mis-liquidaciones-compra')}
                 onSave={saveNuevaLiquidacion}
               />
             ) : null}
@@ -6304,6 +6626,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onPdf={(liquidacion) => catalogUserId && openPdfPreview(() => getLiquidacionCompraPdf(catalogUserId, liquidacion.codLiquidacion), 'liquidacion-compra.pdf')}
                 onXml={(liquidacion) => catalogUserId && openFacturaAsset(() => getLiquidacionCompraXml(catalogUserId, liquidacion.codLiquidacion))}
                 onEmail={sendLiquidacionCorreo}
+                onEmitir={emitLiquidacionSri}
               />
             ) : null}
 
@@ -6326,6 +6649,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onChange={updateGuiaForm}
                 onSearchTransportistas={searchGuiaTransportistas}
                 onSelectTransportista={selectGuiaTransportista}
+                onNewTransportista={openNewProveedor}
                 onSearchClientes={searchGuiaClientes}
                 onSelectCliente={selectGuiaCliente}
                 onSearchFacturas={searchGuiaFacturas}
@@ -6335,6 +6659,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onUpdateDetalle={updateGuiaDetalle}
                 onRemoveDetalle={removeGuiaDetalle}
                 onClear={clearGuiaForm}
+                onHistory={() => openView('mis-guias-remision')}
                 onSave={saveNuevaGuia}
               />
             ) : null}
@@ -6348,6 +6673,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onPdf={(guia) => catalogUserId && openPdfPreview(() => getGuiaRemisionPdf(catalogUserId, guia.codGuia), 'guia-remision.pdf')}
                 onXml={(guia) => catalogUserId && openFacturaAsset(() => getGuiaRemisionXml(catalogUserId, guia.codGuia))}
                 onEmail={sendGuiaCorreo}
+                onEmitir={emitGuiaSri}
+                onAnular={confirmAnularGuia}
               />
             ) : null}
 
@@ -6424,14 +6751,16 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         ) : null}
         </ScreenTransition>
 
-      </ScrollView>
+        </ScrollView>
+        </View>
+      </View>
       </KeyboardAvoidingView>
       <PortalBottomNav
         bottomInset={insets.bottom}
         activeView={activeView}
         onHome={() => openView('dashboard')}
         onServices={() => canUsePortal ? openView('portal') : setMenuOpen(true)}
-        onBot={() => openView('bot')}
+        onBot={() => openView('firma')}
         onNewInvoice={() => openView('nueva-factura')}
         onProfile={() => openView('perfil')}
       />
@@ -6883,6 +7212,120 @@ function numberValue(value: unknown) {
   return 0;
 }
 
+function textValue(value: unknown) {
+  if (value === null || value === undefined) return '';
+  return String(value);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function pickRecordValue(row: Record<string, unknown> | null | undefined, keys: string[]) {
+  if (!row) return undefined;
+  for (const key of keys) {
+    if (row[key] !== null && row[key] !== undefined) return row[key];
+  }
+  const normalized = keys.map((key) => key.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  return Object.entries(row).find(([key, value]) => value !== null && value !== undefined && normalized.includes(key.toLowerCase().replace(/[^a-z0-9]/g, '')))?.[1];
+}
+
+function buildClienteFromFactura(factura: FacturaListItem, cliente?: Cliente | null, facturaRow?: Record<string, unknown> | null): Cliente {
+  const clienteRow = isPlainRecord(cliente) ? cliente as Cliente & Record<string, unknown> : null;
+  return {
+    ...(cliente ?? {}),
+    codcliente: numberValue(cliente?.codcliente ?? pickRecordValue(clienteRow, ['codcliente', 'Codcliente', 'CodCliente']) ?? pickRecordValue(facturaRow, ['codclientes', 'Codclientes', 'codClientes', 'CodClientes'])),
+    nombrerazonsocial: (cliente?.nombrerazonsocial ?? textValue(pickRecordValue(clienteRow, ['nombrerazonsocial', 'NombreRazonSocial', 'razonSocial', 'RazonSocial']) ?? factura.cliente)) || null,
+    numeroidentificacion: (cliente?.numeroidentificacion ?? textValue(pickRecordValue(clienteRow, ['numeroidentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc']) ?? factura.identificacionCliente)) || null,
+    tipoidentificacion: (cliente?.tipoidentificacion ?? textValue(pickRecordValue(clienteRow, ['tipoidentificacion', 'Tipoidentificacion', 'tipoIdentificacion', 'TipoIdentificacion']))) || null,
+    direccion: (cliente?.direccion ?? textValue(pickRecordValue(clienteRow, ['direccion', 'Direccion']))) || null,
+    celular: (cliente?.celular ?? textValue(pickRecordValue(clienteRow, ['celular', 'Celular', 'telefono', 'Telefono']))) || null,
+    telefonoconvencional: (cliente?.telefonoconvencional ?? textValue(pickRecordValue(clienteRow, ['telefonoconvencional', 'TelefonoConvencional']))) || null,
+    correo: (cliente?.correo ?? textValue(pickRecordValue(clienteRow, ['correo', 'Correo', 'email', 'Email']))) || null,
+    tipoCliente: cliente?.tipoCliente ?? numberValue(pickRecordValue(clienteRow, ['tipoCliente', 'TipoCliente'])),
+    oblgconta: (cliente?.oblgconta ?? textValue(pickRecordValue(clienteRow, ['oblgconta', 'Oblgconta', 'obligadoContabilidad', 'ObligadoContabilidad']))) || null,
+  };
+}
+
+function mergeFacturaDetalle(factura: FacturaListItem, facturaRow?: Record<string, unknown> | null): FacturaListItem {
+  return {
+    ...factura,
+    codfactura: numberValue(pickRecordValue(facturaRow, ['codfactura', 'Codfactura', 'CodFactura']) ?? factura.codfactura) || factura.codfactura,
+    numfactura: textValue(pickRecordValue(facturaRow, ['numfactura', 'Numfactura', 'NumFactura']) ?? factura.numfactura) || factura.numfactura,
+    serie: textValue(pickRecordValue(facturaRow, ['serie', 'Serie']) ?? factura.serie) || factura.serie,
+    fechaEmision: textValue(pickRecordValue(facturaRow, ['fechaentrega', 'Fechaentrega', 'fechaEntrega', 'FechaEntrega', 'fechaEmision', 'FechaEmision']) ?? factura.fechaEmision) || factura.fechaEmision,
+    total: numberValue(pickRecordValue(facturaRow, ['valortotal', 'Valortotal', 'valorTotal', 'ValorTotal']) ?? factura.total) || factura.total,
+  };
+}
+
+function detalleFacturaToGuiaDetalle(row: Record<string, unknown>): GuiaRemisionDetalle {
+  return {
+    producto: {
+      codproducto: numberValue(pickRecordValue(row, ['codproducto', 'Codproducto', 'codProducto', 'CodProducto'])),
+      codprincipal: textValue(pickRecordValue(row, ['codprincipal', 'Codprincipal', 'codPrincipal', 'CodPrincipal'])) || null,
+      codauxiliar: textValue(pickRecordValue(row, ['codauxiliar', 'Codauxiliar', 'codAuxiliar', 'CodAuxiliar'])) || null,
+      descripcion: textValue(pickRecordValue(row, ['descripproducto', 'Descripproducto', 'descripcion', 'Descripcion'])) || null,
+    },
+    cantidad: String(numberValue(pickRecordValue(row, ['cantproducto', 'Cantproducto', 'cantidad', 'Cantidad'])) || 1),
+  };
+}
+
+function detalleFacturaToNotaCreditoLinea(row: Record<string, unknown>): NuevaFacturaLinea {
+  return {
+    producto: {
+      codproducto: numberValue(pickRecordValue(row, ['codproducto', 'Codproducto', 'codProducto', 'CodProducto'])),
+      codprincipal: textValue(pickRecordValue(row, ['codprincipal', 'Codprincipal', 'codPrincipal', 'CodPrincipal'])) || null,
+      codauxiliar: textValue(pickRecordValue(row, ['codauxiliar', 'Codauxiliar', 'codAuxiliar', 'CodAuxiliar'])) || null,
+      descripcion: textValue(pickRecordValue(row, ['descripproducto', 'Descripproducto', 'descripcion', 'Descripcion'])) || null,
+      precioUnitario: numberValue(pickRecordValue(row, ['preciounitario', 'Preciounitario', 'precioUnitario', 'PrecioUnitario'])),
+      tarifaIva: numberValue(pickRecordValue(row, ['iva', 'Iva', 'tarifaIva', 'TarifaIva'])),
+    },
+    cantidad: String(numberValue(pickRecordValue(row, ['cantidadDisponible', 'CantidadDisponible', 'cantproducto', 'Cantproducto', 'cantidad', 'Cantidad'])) || 1),
+    precio: String(numberValue(pickRecordValue(row, ['preciounitario', 'Preciounitario', 'precioUnitario', 'PrecioUnitario']))),
+    descuento: String(numberValue(pickRecordValue(row, ['descuento', 'Descuento']))),
+    tarifa: String(numberValue(pickRecordValue(row, ['iva', 'Iva', 'tarifaIva', 'TarifaIva']))),
+  };
+}
+
+function detalleFacturaToNotaDebitoLinea(row: Record<string, unknown>): NotaDebitoLinea {
+  return {
+    descripcion: textValue(pickRecordValue(row, ['descripproducto', 'Descripproducto', 'descripcion', 'Descripcion'])) || 'Cargo adicional',
+    precio: String(numberValue(pickRecordValue(row, ['preciounitario', 'Preciounitario', 'subtotal', 'Subtotal']))),
+    tarifa: String(numberValue(pickRecordValue(row, ['iva', 'Iva', 'tarifaIva', 'TarifaIva']))),
+    impuestoIce: '',
+    valorIce: String(numberValue(pickRecordValue(row, ['valorIce', 'ValorIce', 'ice', 'Ice']))),
+  };
+}
+
+function manualClienteFromForm(form: NuevaFacturaFormState): Cliente {
+  return {
+    codcliente: 0,
+    nombrerazonsocial: form.clienteBusqueda.trim() || 'Cliente manual',
+    numeroidentificacion: form.numeroIdentificacion.trim() || null,
+    tipoidentificacion: form.tipoIdentificacion.trim() || null,
+    tipoCliente: Number(form.tipoCliente) || null,
+    oblgconta: form.obligadoContabilidad.trim() || null,
+    direccion: form.direccion.trim() || null,
+    celular: form.telefono.trim() || null,
+    correo: form.correoPrincipal.trim() || null,
+  };
+}
+
+function manualFacturaFromForm(form: NotaCreditoFormState | NotaDebitoFormState): FacturaListItem | null {
+  const numero = form.facturaBusqueda.trim() || form.numeroFactura.trim();
+  if (!numero) return null;
+
+  return {
+    codfactura: 0,
+    numeroCompleto: numero,
+    numfactura: numero,
+    cliente: form.clienteBusqueda.trim() || null,
+    identificacionCliente: form.numeroIdentificacion.trim() || null,
+    fechaEmision: new Date().toISOString(),
+    total: 0,
+  };
+}
+
 function getClienteKey(cliente: Cliente, index: number) {
   const row = cliente as Cliente & Record<string, unknown>;
   return String(cliente.codcliente || row.Codcliente || row.CodCliente || getClienteIdentification(cliente) || `${getClienteDisplayName(cliente)}-${index}`);
@@ -6948,6 +7391,7 @@ function NuevaFacturaMobileScreen({
   onUpdateLinea,
   onRemoveLinea,
   onClear,
+  onHistory,
   onSave,
 }: {
   form: NuevaFacturaFormState;
@@ -6969,6 +7413,7 @@ function NuevaFacturaMobileScreen({
   onUpdateLinea: (index: number, field: keyof Omit<NuevaFacturaLinea, 'producto'>, value: string) => void;
   onRemoveLinea: (index: number) => void;
   onClear: () => void;
+  onHistory: () => void;
   onSave: () => void;
 }) {
   const toNumber = (value: string) => Number(value.replace(',', '.')) || 0;
@@ -7061,7 +7506,7 @@ function NuevaFacturaMobileScreen({
         </View>
         <View style={styles.invoiceGrid}>
           <Field label="Tipo identificacion" value={form.tipoIdentificacion} onChangeText={(value) => onChange('tipoIdentificacion', value)} />
-          <Field label="Numero de identificacion" value={cliente?.numeroidentificacion ?? ''} onChangeText={() => undefined} />
+          <Field label="Numero de identificacion" value={cliente?.numeroidentificacion ?? form.numeroIdentificacion} onChangeText={(value) => onChange('numeroIdentificacion', value)} />
         </View>
         <View style={styles.invoiceGrid}>
           <Field label="Tipo cliente" value={form.tipoCliente} onChangeText={(value) => onChange('tipoCliente', value)} />
@@ -7229,6 +7674,7 @@ function NuevaNotaCreditoMobileScreen({
   onUpdateLinea,
   onRemoveLinea,
   onClear,
+  onHistory,
   onSave,
 }: {
   form: NotaCreditoFormState;
@@ -7243,11 +7689,12 @@ function NuevaNotaCreditoMobileScreen({
   message?: MessageState;
   onChange: (field: keyof NotaCreditoFormState, value: string) => void;
   onSearchFacturas: () => void;
-  onSelectFactura: (factura: FacturaListItem) => void;
+  onSelectFactura: (factura: FacturaListItem) => void | Promise<void>;
   onAddLinea: (producto: FacturaProducto) => void;
   onUpdateLinea: (index: number, field: keyof Omit<NuevaFacturaLinea, 'producto'>, value: string) => void;
   onRemoveLinea: (index: number) => void;
   onClear: () => void;
+  onHistory: () => void;
   onSave: () => void;
 }) {
   const toNumber = (value: string) => Number(value.replace(',', '.')) || 0;
@@ -7279,9 +7726,15 @@ function NuevaNotaCreditoMobileScreen({
     tarifaIva: 0,
   });
   const [step, setStep] = useState(0);
+  const [manualMode, setManualMode] = useState(false);
   const handleClear = () => {
     onClear();
+    setManualMode(false);
     setStep(0);
+  };
+  const selectXml = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ type: ['text/xml', 'application/xml'], copyToCacheDirectory: true });
+    if (!result.canceled) Alert.alert('XML seleccionado', 'El archivo fue seleccionado, pero falta exponer en E-Fact web el endpoint móvil para leer el XML y precargar este formulario.');
   };
 
   return (
@@ -7305,7 +7758,7 @@ function NuevaNotaCreditoMobileScreen({
             <Text style={styles.invoiceMiniLabel}>Nota de credito</Text>
             <Text style={styles.invoiceHeaderValue}>{notaNumber}</Text>
           </View>
-          <SecondaryButton label="Historial" onPress={handleClear} />
+          <SecondaryButton label="Historial" onPress={onHistory} />
           <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
@@ -7322,35 +7775,43 @@ function NuevaNotaCreditoMobileScreen({
         <Text style={styles.clientFormSubtitle}>Opciones de emision</Text>
         <Text style={styles.invoiceSectionHelp}>Tambien puedes emitir la nota de credito de estas formas</Text>
         <View style={styles.invoiceGrid}>
-          <View style={styles.invoiceHeaderBox}>
+          <Pressable style={styles.invoiceHeaderBox} onPress={() => { setManualMode(true); setStep(1); }}>
             <Text style={styles.invoiceHeaderValue}>Manual</Text>
             <Text style={styles.invoiceSectionHelp}>Ingresa cliente, motivo y detalle sin partir del buscador.</Text>
-          </View>
-          <View style={styles.invoiceHeaderBox}>
+          </Pressable>
+          <Pressable style={styles.invoiceHeaderBox} onPress={selectXml}>
             <Text style={styles.invoiceHeaderValue}>Desde XML</Text>
             <Text style={styles.invoiceSectionHelp}>Carga el XML de la factura para precargar datos y ajustar el detalle.</Text>
-          </View>
+          </Pressable>
         </View>
       </View>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Buscador de factura</Text>
         <Text style={styles.invoiceSectionHelp}>Encuentra la Factura Modificada para emitir la nota de credito</Text>
         <SearchField label="Encontrar factura" placeholder="Numero completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} predictive suggestions={facturas.slice(0, 5).map((item, index) => ({ id: `nota-factura-${item.codfactura}-${index}`, title: item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`, subtitle: item.cliente ?? 'Consumidor final' }))} onSelectSuggestion={(suggestion) => { const item = facturas.find((candidate, index) => `nota-factura-${candidate.codfactura}-${index}` === suggestion.id); if (item) onSelectFactura(item); }} />
+        <View style={styles.listStack}>
+          {facturas.map((item, index) => (
+            <Pressable key={`nota-factura-${item.codfactura}-${index}`} style={styles.clientCard} onPress={() => onSelectFactura(item)}>
+              <Text style={styles.clientName}>{item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`}</Text>
+              <Text style={styles.clientMeta}>{item.cliente ?? 'Consumidor final'} - {formatMoney(item.total)}</Text>
+            </Pressable>
+          ))}
+        </View>
         {factura ? <Text style={styles.profileValue}>Factura modificada: {factura.numeroCompleto ?? factura.numfactura}</Text> : null}
       </View>
       <View style={styles.formActions}>
-        <PrimaryButton label="Continuar con cliente" loading={false} onPress={() => factura ? setStep(1) : Alert.alert('Factura requerida', 'Selecciona primero la factura modificada.')} />
+        <PrimaryButton label="Continuar con cliente" loading={false} onPress={() => factura || manualMode ? setStep(1) : Alert.alert('Factura requerida', 'Selecciona primero la factura modificada o usa modo manual.')} />
       </View>
       </> : null}
       {step === 1 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Informacion del Cliente</Text>
-          <Text style={styles.invoicePanelPill}>Cargado desde factura</Text>
+          <Text style={styles.invoicePanelPill}>{manualMode ? 'Ingreso manual' : 'Cargado desde factura'}</Text>
         </View>
         <View style={styles.invoiceGrid}>
           <Field label="Tipo identificacion" value={form.tipoIdentificacion} onChangeText={(value) => onChange('tipoIdentificacion', value)} />
-          <Field label="Numero identificacion" value={cliente?.numeroidentificacion ?? ''} onChangeText={() => undefined} />
+          <Field label="Numero identificacion" value={cliente?.numeroidentificacion ?? form.numeroIdentificacion} onChangeText={(value) => onChange('numeroIdentificacion', value)} />
         </View>
         <View style={styles.invoiceGrid}>
           <Field label="Tipo cliente" value={form.tipoCliente} onChangeText={(value) => onChange('tipoCliente', value)} />
@@ -7449,6 +7910,8 @@ function MisNotasCreditoMobileScreen({
   onPdf,
   onXml,
   onEmail,
+  onEmitir,
+  onAnular,
 }: {
   notas: NotaCreditoListItem[];
   loading: boolean;
@@ -7457,6 +7920,8 @@ function MisNotasCreditoMobileScreen({
   onPdf: (nota: NotaCreditoListItem) => void;
   onXml: (nota: NotaCreditoListItem) => void;
   onEmail: (nota: NotaCreditoListItem) => void;
+  onEmitir: (nota: NotaCreditoListItem) => void;
+  onAnular: (nota: NotaCreditoListItem) => void;
 }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(1);
@@ -7535,6 +8000,8 @@ function MisNotasCreditoMobileScreen({
                 { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(nota) },
                 { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(nota) },
                 { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(nota) },
+                { label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary', onPress: () => onEmitir(nota) },
+                { label: 'Anular', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(nota) },
               ]} />
             </View>
           );
@@ -7562,6 +8029,7 @@ function NuevaNotaDebitoMobileScreen({
   onUpdateLinea,
   onRemoveLinea,
   onClear,
+  onHistory,
   onSave,
 }: {
   form: NotaDebitoFormState;
@@ -7576,11 +8044,12 @@ function NuevaNotaDebitoMobileScreen({
   message?: MessageState;
   onChange: (field: keyof NotaDebitoFormState, value: string) => void;
   onSearchFacturas: () => void;
-  onSelectFactura: (factura: FacturaListItem) => void;
+  onSelectFactura: (factura: FacturaListItem) => void | Promise<void>;
   onAddLinea: () => void;
   onUpdateLinea: (index: number, field: keyof NotaDebitoLinea, value: string) => void;
   onRemoveLinea: (index: number) => void;
   onClear: () => void;
+  onHistory: () => void;
   onSave: () => void;
 }) {
   const toNumber = (value: string) => Number(value.replace(',', '.')) || 0;
@@ -7606,9 +8075,15 @@ function NuevaNotaDebitoMobileScreen({
   const optionNotaNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
   const notaNumber = effectiveSerie ? form.numeroFactura || optionNotaNumber || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie, 1158)) : '';
   const [step, setStep] = useState(0);
+  const [manualMode, setManualMode] = useState(false);
   const handleClear = () => {
     onClear();
+    setManualMode(false);
     setStep(0);
+  };
+  const selectXml = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ type: ['text/xml', 'application/xml'], copyToCacheDirectory: true });
+    if (!result.canceled) Alert.alert('XML seleccionado', 'El archivo fue seleccionado, pero falta exponer en E-Fact web el endpoint móvil para leer el XML y precargar este formulario.');
   };
 
   return (
@@ -7632,7 +8107,7 @@ function NuevaNotaDebitoMobileScreen({
             <Text style={styles.invoiceMiniLabel}>Nota de debito</Text>
             <Text style={styles.invoiceHeaderValue}>{notaNumber}</Text>
           </View>
-          <SecondaryButton label="Historial" onPress={handleClear} />
+          <SecondaryButton label="Historial" onPress={onHistory} />
           <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
@@ -7649,35 +8124,43 @@ function NuevaNotaDebitoMobileScreen({
         <Text style={styles.clientFormSubtitle}>Opciones de emision</Text>
         <Text style={styles.invoiceSectionHelp}>Tambien puedes emitir la nota de debito de estas formas</Text>
         <View style={styles.invoiceGrid}>
-          <View style={styles.invoiceHeaderBox}>
+          <Pressable style={styles.invoiceHeaderBox} onPress={() => { setManualMode(true); setStep(1); }}>
             <Text style={styles.invoiceHeaderValue}>Manual</Text>
             <Text style={styles.invoiceSectionHelp}>Ingresa cliente, factura modificada, motivo y detalle directamente.</Text>
-          </View>
-          <View style={styles.invoiceHeaderBox}>
+          </Pressable>
+          <Pressable style={styles.invoiceHeaderBox} onPress={selectXml}>
             <Text style={styles.invoiceHeaderValue}>Desde XML</Text>
             <Text style={styles.invoiceSectionHelp}>Carga el XML de la factura para precargar datos y editar valores.</Text>
-          </View>
+          </Pressable>
         </View>
       </View>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Buscador de factura</Text>
         <Text style={styles.invoiceSectionHelp}>Encuentra la Factura Modificada para emitir la nota de debito</Text>
         <SearchField label="Encontrar factura" placeholder="Numero completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} predictive suggestions={facturas.slice(0, 5).map((item, index) => ({ id: `debito-factura-${item.codfactura}-${index}`, title: item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`, subtitle: item.cliente ?? 'Consumidor final' }))} onSelectSuggestion={(suggestion) => { const item = facturas.find((candidate, index) => `debito-factura-${candidate.codfactura}-${index}` === suggestion.id); if (item) onSelectFactura(item); }} />
+        <View style={styles.listStack}>
+          {facturas.map((item, index) => (
+            <Pressable key={`debito-factura-${item.codfactura}-${index}`} style={styles.clientCard} onPress={() => onSelectFactura(item)}>
+              <Text style={styles.clientName}>{item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`}</Text>
+              <Text style={styles.clientMeta}>{item.cliente ?? 'Consumidor final'} - {formatMoney(item.total)}</Text>
+            </Pressable>
+          ))}
+        </View>
         {factura ? <Text style={styles.profileValue}>Factura modificada: {factura.numeroCompleto ?? factura.numfactura}</Text> : null}
       </View>
       <View style={styles.formActions}>
-        <PrimaryButton label="Continuar con cliente" loading={false} onPress={() => factura ? setStep(1) : Alert.alert('Factura requerida', 'Selecciona primero la factura modificada.')} />
+        <PrimaryButton label="Continuar con cliente" loading={false} onPress={() => factura || manualMode ? setStep(1) : Alert.alert('Factura requerida', 'Selecciona primero la factura modificada o usa modo manual.')} />
       </View>
       </> : null}
       {step === 1 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Informacion del Cliente</Text>
-          <Text style={styles.invoicePanelPill}>Datos del documento</Text>
+          <Text style={styles.invoicePanelPill}>{manualMode ? 'Ingreso manual' : 'Datos del documento'}</Text>
         </View>
         <View style={styles.invoiceGrid}>
           <Field label="Tipo identificacion" value={form.tipoIdentificacion} onChangeText={(value) => onChange('tipoIdentificacion', value)} />
-          <Field label="Numero identificacion" value={cliente?.numeroidentificacion ?? ''} onChangeText={() => undefined} />
+          <Field label="Numero identificacion" value={cliente?.numeroidentificacion ?? form.numeroIdentificacion} onChangeText={(value) => onChange('numeroIdentificacion', value)} />
         </View>
         <View style={styles.invoiceGrid}>
           <Field label="Tipo cliente" value={form.tipoCliente} onChangeText={(value) => onChange('tipoCliente', value)} />
@@ -7763,6 +8246,8 @@ function MisNotasDebitoMobileScreen({
   onPdf,
   onXml,
   onEmail,
+  onEmitir,
+  onAnular,
 }: {
   notas: NotaDebitoListItem[];
   loading: boolean;
@@ -7771,6 +8256,8 @@ function MisNotasDebitoMobileScreen({
   onPdf: (nota: NotaDebitoListItem) => void;
   onXml: (nota: NotaDebitoListItem) => void;
   onEmail: (nota: NotaDebitoListItem) => void;
+  onEmitir: (nota: NotaDebitoListItem) => void;
+  onAnular: (nota: NotaDebitoListItem) => void;
 }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(1);
@@ -7843,6 +8330,8 @@ function MisNotasDebitoMobileScreen({
                 { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(nota) },
                 { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(nota) },
                 { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(nota) },
+                { label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary', onPress: () => onEmitir(nota) },
+                { label: 'Anular', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(nota) },
               ]} />
             </View>
           );
@@ -7936,7 +8425,7 @@ function NuevaLiquidacionCompraMobileScreen({
             <Text style={styles.invoiceMiniLabel}>Liquidacion</Text>
             <Text style={styles.invoiceHeaderValue}>{liquidacionNumber}</Text>
           </View>
-          <SecondaryButton label="Historial" onPress={handleClear} />
+          <SecondaryButton label="Historial" onPress={onHistory} />
           <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
@@ -7952,7 +8441,7 @@ function NuevaLiquidacionCompraMobileScreen({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Buscador de proveedor</Text>
         <Text style={styles.invoiceSectionHelp}>Encuentra o completa el proveedor de la liquidacion</Text>
-        <SearchField label="Encontrar proveedor" placeholder="Identificacion o nombre" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} resultCount={proveedores.length} onSubmit={onSearchProveedores} />
+        <SearchField label="Encontrar proveedor" placeholder="Identificacion o nombre" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} resultCount={proveedores.length} onSubmit={onSearchProveedores} predictive suggestions={proveedores.slice(0, 5).map((item, index) => ({ id: `liquidacion-proveedor-${getClienteKey(item, index)}`, title: getClienteDisplayName(item), subtitle: getClienteIdentification(item) || 'Sin identificacion' }))} onSelectSuggestion={(suggestion) => { const item = proveedores.find((candidate, index) => `liquidacion-proveedor-${getClienteKey(candidate, index)}` === suggestion.id); if (item) onSelectProveedor(item); }} />
         <View style={styles.formActions}>
           <SecondaryButton label="Nuevo Proveedor" onPress={onSearchProveedores} />
         </View>
@@ -8007,7 +8496,7 @@ function NuevaLiquidacionCompraMobileScreen({
           <Text style={styles.invoicePanelTitle}>Detalle de la Liquidacion</Text>
           <Text style={styles.invoicePanelPill}>Registra los productos o servicios adquiridos.</Text>
         </View>
-        <SearchField label="Encontrar producto o servicio" placeholder="Codigo, nombre o descripcion" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} resultCount={productos.length} onSubmit={onSearchProductos} />
+        <SearchField label="Encontrar producto o servicio" placeholder="Codigo, nombre o descripcion" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} resultCount={productos.length} onSubmit={onSearchProductos} predictive suggestions={productos.slice(0, 5).map((item) => ({ id: `liquidacion-producto-${item.codproducto}`, title: item.descripcion ?? item.codprincipal ?? 'Producto', subtitle: item.codprincipal ?? 'Sin codigo' }))} onSelectSuggestion={(suggestion) => { const item = productos.find((candidate) => `liquidacion-producto-${candidate.codproducto}` === suggestion.id); if (item) onAddProducto(item); }} />
         <View style={styles.formActions}>
           <SecondaryButton label="Registrar nuevo producto" onPress={onSearchProductos} />
         </View>
@@ -8076,6 +8565,7 @@ function MisLiquidacionesCompraMobileScreen({
   onPdf,
   onXml,
   onEmail,
+  onEmitir,
 }: {
   liquidaciones: LiquidacionCompraListItem[];
   loading: boolean;
@@ -8084,6 +8574,7 @@ function MisLiquidacionesCompraMobileScreen({
   onPdf: (liquidacion: LiquidacionCompraListItem) => void;
   onXml: (liquidacion: LiquidacionCompraListItem) => void;
   onEmail: (liquidacion: LiquidacionCompraListItem) => void;
+  onEmitir: (liquidacion: LiquidacionCompraListItem) => void;
 }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(1);
@@ -8160,6 +8651,7 @@ function MisLiquidacionesCompraMobileScreen({
                 { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(liquidacion) },
                 { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(liquidacion) },
                 { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(liquidacion) },
+                { label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary', onPress: () => onEmitir(liquidacion) },
               ]} />
             </View>
           );
@@ -8187,6 +8679,7 @@ function NuevaGuiaRemisionMobileScreen({
   onChange,
   onSearchTransportistas,
   onSelectTransportista,
+  onNewTransportista,
   onSearchClientes,
   onSelectCliente,
   onSearchFacturas,
@@ -8196,6 +8689,7 @@ function NuevaGuiaRemisionMobileScreen({
   onUpdateDetalle,
   onRemoveDetalle,
   onClear,
+  onHistory,
   onSave,
 }: {
   form: GuiaRemisionFormState;
@@ -8215,6 +8709,7 @@ function NuevaGuiaRemisionMobileScreen({
   onChange: (field: keyof GuiaRemisionFormState, value: string | boolean) => void;
   onSearchTransportistas: () => void;
   onSelectTransportista: (transportista: Cliente) => void;
+  onNewTransportista: () => void;
   onSearchClientes: () => void;
   onSelectCliente: (cliente: Cliente) => void;
   onSearchFacturas: () => void;
@@ -8224,6 +8719,7 @@ function NuevaGuiaRemisionMobileScreen({
   onUpdateDetalle: (index: number, value: string) => void;
   onRemoveDetalle: (index: number) => void;
   onClear: () => void;
+  onHistory: () => void;
   onSave: () => void;
 }) {
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'guia');
@@ -8260,7 +8756,7 @@ function NuevaGuiaRemisionMobileScreen({
             <Text style={styles.invoiceMiniLabel}>Numero de guia</Text>
             <Text style={styles.invoiceHeaderValue}>{guiaNumber}</Text>
           </View>
-          <SecondaryButton label="Historial" onPress={handleClear} />
+          <SecondaryButton label="Historial" onPress={onHistory} />
           <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
@@ -8278,9 +8774,9 @@ function NuevaGuiaRemisionMobileScreen({
           <Text style={styles.invoicePanelTitle}>Datos operativos de la guia</Text>
           <Text style={styles.invoicePanelPill}>Selecciona transportista</Text>
         </View>
-        <SearchField label="Encontrar transportista" placeholder="Identificacion o razon social" value={form.transportistaBusqueda} onChangeText={(value) => onChange('transportistaBusqueda', value)} resultCount={transportistas.length} onSubmit={onSearchTransportistas} />
+        <SearchField label="Encontrar transportista" placeholder="Identificacion o razon social" value={form.transportistaBusqueda} onChangeText={(value) => onChange('transportistaBusqueda', value)} resultCount={transportistas.length} onSubmit={onSearchTransportistas} predictive suggestions={transportistas.slice(0, 5).map((item, index) => ({ id: `guia-transportista-${getClienteKey(item, index)}`, title: getClienteDisplayName(item), subtitle: getClienteIdentification(item) || 'Sin identificacion' }))} onSelectSuggestion={(suggestion) => { const item = transportistas.find((candidate, index) => `guia-transportista-${getClienteKey(candidate, index)}` === suggestion.id); if (item) onSelectTransportista(item); }} />
         <View style={styles.formActions}>
-          <SecondaryButton label="Nuevo Transportista" onPress={onSearchTransportistas} />
+          <SecondaryButton label="Nuevo Transportista" onPress={onNewTransportista} />
         </View>
         <View style={styles.listStack}>
           {transportistas.map((item, index) => (
@@ -8302,7 +8798,7 @@ function NuevaGuiaRemisionMobileScreen({
           <Text style={styles.invoicePanelTitle}>Destino y traslado</Text>
           <Text style={styles.invoicePanelPill}>Cliente, factura y fechas</Text>
         </View>
-        <SearchField label="Encontrar destinatario" placeholder="Identificacion o nombre del cliente" value={form.clienteBusquedaGuia} onChangeText={(value) => onChange('clienteBusquedaGuia', value)} resultCount={clientes.length} onSubmit={onSearchClientes} />
+        <SearchField label="Encontrar destinatario" placeholder="Identificacion o nombre del cliente" value={form.clienteBusquedaGuia} onChangeText={(value) => onChange('clienteBusquedaGuia', value)} resultCount={clientes.length} onSubmit={onSearchClientes} predictive suggestions={clientes.slice(0, 5).map((item, index) => ({ id: `guia-cliente-${getClienteKey(item, index)}`, title: getClienteDisplayName(item), subtitle: getClienteIdentification(item) || 'Sin identificacion' }))} onSelectSuggestion={(suggestion) => { const item = clientes.find((candidate, index) => `guia-cliente-${getClienteKey(candidate, index)}` === suggestion.id); if (item) onSelectCliente(item); }} />
         <SearchField label="Vincular factura (opcional)" placeholder="Numero completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} predictive suggestions={facturas.slice(0, 5).map((item, index) => ({ id: `guia-factura-${item.codfactura}-${index}`, title: item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`, subtitle: item.cliente ?? 'Consumidor final' }))} onSelectSuggestion={(suggestion) => { const item = facturas.find((candidate, index) => `guia-factura-${candidate.codfactura}-${index}` === suggestion.id); if (item) onSelectFactura(item); }} />
         <View style={styles.invoiceGrid}>
           <DropdownField
@@ -8349,7 +8845,7 @@ function NuevaGuiaRemisionMobileScreen({
           <Text style={styles.invoicePanelTitle}>Detalles de traslado</Text>
           <Text style={styles.invoicePanelPill}>Se cargan automaticamente desde la factura y puedes ajustar cantidades.</Text>
         </View>
-        <SearchField label="Encontrar producto o detalle" placeholder="Codigo, nombre o descripcion" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} resultCount={productos.length} onSubmit={onSearchProductos} />
+        <SearchField label="Encontrar producto o detalle" placeholder="Codigo, nombre o descripcion" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} resultCount={productos.length} onSubmit={onSearchProductos} predictive suggestions={productos.slice(0, 5).map((item) => ({ id: `guia-producto-${item.codproducto}`, title: item.descripcion ?? item.codprincipal ?? 'Producto', subtitle: item.codprincipal ?? 'Sin codigo' }))} onSelectSuggestion={(suggestion) => { const item = productos.find((candidate) => `guia-producto-${candidate.codproducto}` === suggestion.id); if (item) onAddProducto(item); }} />
         <View style={styles.formActions}>
           <SecondaryButton label="Agregar detalle" onPress={onSearchProductos} />
         </View>
@@ -8406,6 +8902,8 @@ function MisGuiasRemisionMobileScreen({
   onPdf,
   onXml,
   onEmail,
+  onEmitir,
+  onAnular,
 }: {
   guias: GuiaRemisionListItem[];
   loading: boolean;
@@ -8414,6 +8912,8 @@ function MisGuiasRemisionMobileScreen({
   onPdf: (guia: GuiaRemisionListItem) => void;
   onXml: (guia: GuiaRemisionListItem) => void;
   onEmail: (guia: GuiaRemisionListItem) => void;
+  onEmitir: (guia: GuiaRemisionListItem) => void;
+  onAnular: (guia: GuiaRemisionListItem) => void;
 }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(1);
@@ -8485,6 +8985,8 @@ function MisGuiasRemisionMobileScreen({
                 { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(guia) },
                 { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(guia) },
                 { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(guia) },
+                { label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary', onPress: () => onEmitir(guia) },
+                { label: 'Anular', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(guia) },
               ]} />
             </View>
           );
@@ -8629,6 +9131,7 @@ function MisFacturasMobileScreen({
   onPdf,
   onXml,
   onEmail,
+  onRetrySri,
   onAnular,
 }: {
   facturas: FacturaListItem[];
@@ -8638,6 +9141,7 @@ function MisFacturasMobileScreen({
   onPdf: (factura: FacturaListItem) => void;
   onXml: (factura: FacturaListItem) => void;
   onEmail: (factura: FacturaListItem) => void;
+  onRetrySri: (factura: FacturaListItem) => void;
   onAnular: (factura: FacturaListItem) => void;
 }) {
   const [filter, setFilter] = useState('');
@@ -8770,6 +9274,7 @@ function MisFacturasMobileScreen({
                 { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(factura) },
                 { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(factura) },
                 { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(factura) },
+                { label: 'Reintentar SRI', icon: 'send-check-outline', tone: 'primary', onPress: () => onRetrySri(factura) },
                 { label: 'Anular factura', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(factura) },
               ]} />
             </View>
@@ -9216,6 +9721,7 @@ function AccountsReceivableScreen({
   const activeClients = new Set(items.map((item) => getAccountStatementClientId(item) || item.title).filter(Boolean)).size;
   const averageDays = Math.round(items.reduce((total, item) => total + getAccountStatementNumber(item, ['diasCobro', 'DiasCobro', 'diasPromedio', 'DiasPromedio', 'diasMora', 'DiasMora'], 0), 0) / Math.max(items.length, 1));
   const selectedTab = activeTab || 'Cuentas por cobrar';
+  const activeStepIndex = formMode ? 1 : 0;
 
   return (
     <>
@@ -9242,14 +9748,19 @@ function AccountsReceivableScreen({
       </ScrollView>
 
       {formMode ? (
-        <OperationalForm
-          title={formMode === 'edit' ? `Editar ${selectedTab}` : `Registrar ${selectedTab}`}
-          form={form}
-          saving={saving}
-          onCancel={onCancel}
-          onChange={onChange}
-          onSave={onSave}
-        />
+        <View style={styles.receivableFormFlow}>
+          <View style={styles.receivableFormColumn}>
+            <OperationalForm
+              title={formMode === 'edit' ? `Editar ${selectedTab}` : `Registrar ${selectedTab}`}
+              form={form}
+              saving={saving}
+              onCancel={onCancel}
+              onChange={onChange}
+              onSave={onSave}
+            />
+          </View>
+          <AccountsReceivableSteps activeIndex={activeStepIndex} compact />
+        </View>
       ) : null}
 
       <View style={styles.receivableSearchPanel}>
@@ -9299,23 +9810,29 @@ function AccountsReceivableScreen({
         ) : null}
       </View>
 
-      <View style={styles.receivableSteps}>
-        {[
-          ['1', 'Identificar cliente', 'Buscar por cedula, RUC o nombre'],
-          ['2', 'Registrar pago', 'Monto recibido y observacion'],
-          ['3', 'Distribuir', 'Aplicar el abono por factura'],
-          ['4', 'Confirmar', 'Registrar el abono final'],
-        ].map(([number, title, text], index) => (
-          <View key={number} style={[styles.receivableStep, index === (formMode ? 1 : 0) && styles.receivableStepActive]}>
-            <Text style={[styles.receivableStepNumber, index === (formMode ? 1 : 0) && styles.receivableStepNumberActive]}>{number}</Text>
-            <View style={styles.receivableStepCopy}>
-              <Text style={styles.receivableStepTitle}>{title}</Text>
-              <Text style={styles.receivableStepText}>{text}</Text>
-            </View>
-          </View>
-        ))}
-      </View>
+      {!formMode ? <AccountsReceivableSteps activeIndex={activeStepIndex} /> : null}
     </>
+  );
+}
+
+function AccountsReceivableSteps({ activeIndex, compact }: { activeIndex: number; compact?: boolean }) {
+  return (
+    <View style={[styles.receivableSteps, compact && styles.receivableStepsCompact]}>
+      {[
+        ['1', 'Identificar cliente', 'Buscar por cedula, RUC o nombre'],
+        ['2', 'Registrar pago', 'Monto recibido y observacion'],
+        ['3', 'Distribuir', 'Aplicar el abono por factura'],
+        ['4', 'Confirmar', 'Registrar el abono final'],
+      ].map(([number, title, text], index) => (
+        <View key={number} style={[styles.receivableStep, compact && styles.receivableStepCompact, index === activeIndex && styles.receivableStepActive]}>
+          <Text style={[styles.receivableStepNumber, index === activeIndex && styles.receivableStepNumberActive]}>{number}</Text>
+          <View style={styles.receivableStepCopy}>
+            <Text style={styles.receivableStepTitle}>{title}</Text>
+            <Text style={styles.receivableStepText}>{text}</Text>
+          </View>
+        </View>
+      ))}
+    </View>
   );
 }
 

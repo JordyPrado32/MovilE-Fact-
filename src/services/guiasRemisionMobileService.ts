@@ -65,6 +65,7 @@ export async function buscarGuiaClientes(userId: number, filtro: string) {
 export async function buscarGuiaTransportistas(userId: number, filtro: string) {
   try {
     const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
+      `/api/guias-remision/transportistas?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
       `/api/guias-remision/transportistas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
       `/api/guia-remision/transportistas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
     ]);
@@ -78,6 +79,7 @@ export async function buscarGuiaTransportistas(userId: number, filtro: string) {
 export async function buscarGuiaFacturas(userId: number, filtro: string) {
   try {
     const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
+      `/api/facturas/buscar?idUsuario=${userId}&texto=${encodeURIComponent(filtro)}`,
       `/api/guias-remision/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
       `/api/guia-remision/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
     ]);
@@ -93,33 +95,26 @@ export function buscarGuiaProductos(userId: number, filtro: string) {
   return buscarFacturaProductos(userId, filtro);
 }
 
-export function guardarGuiaRemision(input: GuiaRemisionGuardarInput) {
+export async function guardarGuiaRemision(input: GuiaRemisionGuardarInput) {
+  const transportistaRow = input.transportista as Cliente & Record<string, unknown>;
+  const placaTransportista = text(pickValue(transportistaRow, ['placa', 'Placa']));
   const guia = {
-    codemisor: input.codemisor,
-    coddocumento: 6,
-    tipodocumento: 6,
-    serie: input.serie?.replace(/-/g, '') || null,
-    codfactura: input.factura?.codfactura || null,
-    numeroFactura: input.factura?.numeroCompleto ?? input.factura?.numfactura ?? null,
-    placa: input.placa || null,
-    contribuyenteEspecial: input.contribuyenteEspecial || null,
-    obligadoContabilidad: input.obligadoContabilidad ?? false,
-    fechaEmision: input.fechaEmision || new Date().toISOString(),
-    fechaInicioTraslado: input.fechaInicioTraslado || null,
-    fechaFinTraslado: input.fechaFinTraslado || null,
-    detalle: input.detalle || null,
-    direccionOrigen: input.direccionOrigen || null,
-    puntoEmision: input.puntoEmision || null,
-    estado: true,
-    autorizado: false,
+    CodEmisor: input.codemisor,
+    Serie: input.serie?.replace(/-/g, '') || null,
+    Placa: input.placa || placaTransportista || null,
+    Fecha: input.fechaEmision || new Date().toISOString(),
+    FechaIniTransporte: input.fechaInicioTraslado || input.fechaEmision || new Date().toISOString(),
+    FechaFinTransporte: input.fechaFinTraslado || input.fechaInicioTraslado || input.fechaEmision || new Date().toISOString(),
+    DireccionPartida: input.direccionOrigen || input.transportista.direccion || null,
+    Codfactura: input.factura?.codfactura || null,
+    Ambiente: 2,
   };
 
   const detalles = input.detalles.map((item) => ({
-    codproducto: item.producto.codproducto,
-    codprincipal: item.producto.codprincipal,
-    codauxiliar: item.producto.codauxiliar,
-    descripcion: item.producto.descripcion,
-    cantidad: item.cantidad,
+    CodInterno: item.producto.codprincipal || String(item.producto.codproducto || ''),
+    CodAdicional: item.producto.codauxiliar || null,
+    Descripcion: item.producto.descripcion,
+    Cantidad: Math.max(1, Math.round(item.cantidad)),
   }));
 
   return apiRequest<{ mensaje?: string; secGuiaRemision?: number; codGuia?: number; numeroComprobante?: string | null }>(
@@ -127,15 +122,39 @@ export function guardarGuiaRemision(input: GuiaRemisionGuardarInput) {
     {
       method: 'POST',
       body: JSON.stringify({
-        idUsuario: input.idUsuario,
-        guia,
-        transportista: input.transportista,
-        destinatario: input.destinatario,
-        factura: input.factura,
-        detalles,
+        IdUsuario: input.idUsuario,
+        CodFactura: input.factura?.codfactura || null,
+        CodEmisor: input.codemisor,
+        Transportista: {
+          Codigo: input.transportista.codcliente || 0,
+          RazonSocial: input.transportista.nombrerazonsocial || input.transportista.nombrecomercial || null,
+          TipoIdentificacion: input.transportista.tipoidentificacion || null,
+          NumeroIdentificacion: input.transportista.numeroidentificacion || null,
+          Correo: input.transportista.correo || null,
+          Placa: input.placa || placaTransportista || null,
+          OblCont: input.obligadoContabilidad ? 'SI' : 'NO',
+          ContribuyenteEsp: input.contribuyenteEspecial || null,
+          Direccion: input.transportista.direccion || null,
+          Telefono: input.transportista.celular || input.transportista.telefonoconvencional || null,
+        },
+        Guia: guia,
+        Destinatario: {
+          IdDestinatario: input.destinatario?.numeroidentificacion || input.factura?.identificacionCliente || null,
+          RazonSocial: input.destinatario?.nombrerazonsocial || input.factura?.cliente || null,
+          Direccion: input.destinatario?.direccion || null,
+          MotivoTraslado: input.detalle || 'Traslado de mercaderia',
+          NumDocSustento: input.factura?.numeroCompleto ?? input.factura?.numfactura ?? null,
+          FechaEmiSustento: input.factura?.fechaEmision || null,
+          SerieDocSustento: input.factura?.serie || null,
+          CodDocSustento: input.factura ? '01' : null,
+        },
+        Detalles: detalles,
       }),
     },
   );
+
+  const sec = response.sec ?? response.Sec ?? response.codGuia ?? response.CodGuia;
+  return { mensaje: response.mensaje ?? 'Guia de remision guardada correctamente.', codGuia: sec, numeroComprobante: response.numeroComprobante ?? null };
 }
 
 export function emitirGuiaRemision(userId: number, sec: number) {
@@ -153,8 +172,16 @@ export function getGuiaRemisionXml(userId: number, codGuia: number) {
 export function enviarGuiaRemisionCorreo(userId: number, codGuia: number) {
   return apiRequest<void>(`/api/guias-remision/${codGuia}/enviar-correo`, {
     method: 'POST',
-    body: JSON.stringify({ idUsuario: userId, forzarReenvio: true, correosCopia: [] }),
+    body: JSON.stringify({ IdUsuario: userId, ForzarReenvio: true }),
   });
+}
+
+export function emitirGuiaRemision(userId: number, codGuia: number) {
+  return apiRequest<void>(`/api/guias-remision/${codGuia}/emitir?idUsuario=${userId}`, { method: 'POST' });
+}
+
+export function anularGuiaRemision(userId: number, codGuia: number) {
+  return apiRequest<void>(`/api/guias-remision/${codGuia}?idUsuario=${userId}`, { method: 'DELETE' });
 }
 
 async function requestWithFallback<T>(paths: string[]) {
@@ -190,7 +217,7 @@ function normalizeFacturaRows(response: ApiRow[] | Record<string, unknown>): Fac
     codfactura: numberValue(pickValue(row, ['codfactura', 'CodFactura', 'codFactura', 'idFactura', 'IdFactura', 'id', 'Id'])) ?? 0,
     numfactura: text(pickValue(row, ['numfactura', 'NumFactura', 'numeroFactura', 'NumeroFactura', 'numero', 'Numero'])) || null,
     numeroCompleto: text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento'])) || null,
-    cliente: text(pickValue(row, ['cliente', 'Cliente', 'nombreCliente', 'NombreCliente', 'razonSocial', 'RazonSocial'])) || null,
+    cliente: text(pickValue(row, ['cliente', 'Cliente', 'clienteNombre', 'ClienteNombre', 'nombreCliente', 'NombreCliente', 'razonSocial', 'RazonSocial'])) || null,
     identificacionCliente: text(pickValue(row, ['identificacionCliente', 'IdentificacionCliente', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc'])) || null,
   }));
 }
