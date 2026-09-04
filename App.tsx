@@ -8202,35 +8202,50 @@ function MisNotasCreditoMobileScreen({
       <View style={styles.listStack}>
         {visibleNotas.map((nota, index) => {
           const notaKey = listItemKey('mis-notas-credito', [nota.codNotaCredito, nota.numeroNota, nota.facturaModificada], index);
+          const statusLabel = nota.estadoSri ?? (nota.autorizado ? 'AUTORIZADO' : 'NO AUTORIZADO');
           return (
             <View key={notaKey} style={styles.invoiceHistoryCard}>
-              <View style={styles.clientCardHeader}>
-                <View style={styles.clientInfo}>
-                  <Text style={styles.clientName}>{nota.numeroNota ?? `Nota ${nota.codNotaCredito}`}</Text>
-                  <Text style={styles.clientMeta}>Factura modificada: {nota.facturaModificada ?? '-'} - {nota.cliente ?? 'Consumidor final'}</Text>
+              <View style={styles.invoiceHistoryCardHeader}>
+                <View style={styles.invoiceHistoryIdentityRow}>
+                  <View style={styles.invoiceHistoryDocIcon}>
+                    <MaterialCommunityIcons name="file-undo-outline" size={21} color="#0072BD" />
+                  </View>
+                  <View style={styles.invoiceHistoryCardInfo}>
+                    <Text style={styles.invoiceHistoryNumber} numberOfLines={1} adjustsFontSizeToFit>{nota.numeroNota ?? `Nota ${nota.codNotaCredito}`}</Text>
+                    <View style={[styles.invoiceHistoryStatusPill, getInvoiceStatusStyle(statusLabel)]}>
+                      <Text style={[styles.invoiceHistoryStatusText, getInvoiceStatusTextStyle(statusLabel)]}>{statusLabel}</Text>
+                    </View>
+                  </View>
                 </View>
-                <View style={styles.systemPill}>
-                  <Text style={styles.systemPillText}>{nota.estadoSri ?? (nota.autorizado ? 'AUTORIZADO' : 'NO AUTORIZADO')}</Text>
-                </View>
-              </View>
-              <View style={styles.clientDetailGrid}>
-                <View style={styles.clientDetailItem}>
-                  <Text style={styles.clientDetailLabel}>Fecha sustento</Text>
-                  <Text style={styles.clientDetailValue}>{formatDocumentDate(nota.fechaSustento)}</Text>
-                </View>
-                <View style={styles.clientDetailItem}>
-                  <Text style={styles.clientDetailLabel}>Total</Text>
-                  <Text style={styles.clientDetailValue}>{formatMoney(nota.total)}</Text>
+                <View style={styles.invoiceHistoryClientBlock}>
+                  <Text style={styles.invoiceHistoryClient} numberOfLines={1}>{nota.cliente ?? 'Consumidor final'}</Text>
+                  <Text style={styles.invoiceHistoryId}>Factura modificada: {nota.facturaModificada ?? '-'}</Text>
                 </View>
               </View>
-              <DocumentActionsMenu actions={[
-                { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(nota) },
-                { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(nota) },
-                { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(nota) },
-                { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(nota) },
-                { label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary', onPress: () => onEmitir(nota) },
-                { label: 'Anular', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(nota) },
-              ]} />
+              <View style={styles.invoiceHistoryDetailGrid}>
+                <View style={styles.invoiceHistoryDetailItem}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Fecha sustento</Text>
+                  <Text style={styles.invoiceHistoryDetailValue}>{formatDocumentDate(nota.fechaSustento)}</Text>
+                </View>
+                <View style={styles.invoiceHistoryDetailItem}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Total</Text>
+                  <Text style={styles.invoiceHistoryAmount}>{formatMoney(nota.total)}</Text>
+                </View>
+              </View>
+              <View style={styles.invoiceHistoryAuthorization}>
+                <View style={styles.invoiceHistoryAuthorizationTextBlock}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Motivo</Text>
+                  <Text style={styles.invoiceHistoryAuthorizationText} numberOfLines={2}>Documento modificado {nota.facturaModificada ?? 'no disponible'}</Text>
+                </View>
+                <DocumentActionsMenu actions={[
+                  { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(nota) },
+                  { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(nota) },
+                  { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(nota) },
+                  { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(nota) },
+                  { label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary', onPress: () => onEmitir(nota) },
+                  { label: 'Anular', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(nota) },
+                ]} />
+              </View>
             </View>
           );
         })}
@@ -8538,35 +8553,50 @@ function MisNotasDebitoMobileScreen({
       <View style={styles.listStack}>
         {visibleNotas.map((nota, index) => {
           const notaKey = listItemKey('mis-notas-debito', [nota.codNotaDebito, nota.numeroNota, nota.facturaModificada], index);
+          const statusLabel = nota.estadoSri ?? (nota.autorizado ? 'AUTORIZADO' : 'PENDIENTE');
           return (
             <View key={notaKey} style={styles.invoiceHistoryCard}>
-              <View style={styles.clientCardHeader}>
-                <View style={styles.clientInfo}>
-                  <Text style={styles.clientName}>{nota.numeroNota ?? `Nota ${nota.codNotaDebito}`}</Text>
-                  <Text style={styles.clientMeta}>Factura modificada: {nota.facturaModificada ?? '-'} - {nota.cliente ?? 'Consumidor final'}</Text>
+              <View style={styles.invoiceHistoryCardHeader}>
+                <View style={styles.invoiceHistoryIdentityRow}>
+                  <View style={styles.invoiceHistoryDocIcon}>
+                    <MaterialCommunityIcons name="file-plus-outline" size={21} color="#0072BD" />
+                  </View>
+                  <View style={styles.invoiceHistoryCardInfo}>
+                    <Text style={styles.invoiceHistoryNumber} numberOfLines={1} adjustsFontSizeToFit>{nota.numeroNota ?? `Nota ${nota.codNotaDebito}`}</Text>
+                    <View style={[styles.invoiceHistoryStatusPill, getInvoiceStatusStyle(statusLabel)]}>
+                      <Text style={[styles.invoiceHistoryStatusText, getInvoiceStatusTextStyle(statusLabel)]}>{statusLabel}</Text>
+                    </View>
+                  </View>
                 </View>
-                <View style={styles.systemPill}>
-                  <Text style={styles.systemPillText}>{nota.estadoSri ?? (nota.autorizado ? 'AUTORIZADO' : 'PENDIENTE')}</Text>
-                </View>
-              </View>
-              <View style={styles.clientDetailGrid}>
-                <View style={styles.clientDetailItem}>
-                  <Text style={styles.clientDetailLabel}>Fecha sustento</Text>
-                  <Text style={styles.clientDetailValue}>{formatDocumentDate(nota.fechaSustento)}</Text>
-                </View>
-                <View style={styles.clientDetailItem}>
-                  <Text style={styles.clientDetailLabel}>Total</Text>
-                  <Text style={styles.clientDetailValue}>{formatMoney(nota.total)}</Text>
+                <View style={styles.invoiceHistoryClientBlock}>
+                  <Text style={styles.invoiceHistoryClient} numberOfLines={1}>{nota.cliente ?? 'Consumidor final'}</Text>
+                  <Text style={styles.invoiceHistoryId}>Factura modificada: {nota.facturaModificada ?? '-'}</Text>
                 </View>
               </View>
-              <DocumentActionsMenu actions={[
-                { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(nota) },
-                { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(nota) },
-                { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(nota) },
-                { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(nota) },
-                { label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary', onPress: () => onEmitir(nota) },
-                { label: 'Anular', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(nota) },
-              ]} />
+              <View style={styles.invoiceHistoryDetailGrid}>
+                <View style={styles.invoiceHistoryDetailItem}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Fecha sustento</Text>
+                  <Text style={styles.invoiceHistoryDetailValue}>{formatDocumentDate(nota.fechaSustento)}</Text>
+                </View>
+                <View style={styles.invoiceHistoryDetailItem}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Total</Text>
+                  <Text style={styles.invoiceHistoryAmount}>{formatMoney(nota.total)}</Text>
+                </View>
+              </View>
+              <View style={styles.invoiceHistoryAuthorization}>
+                <View style={styles.invoiceHistoryAuthorizationTextBlock}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Motivo</Text>
+                  <Text style={styles.invoiceHistoryAuthorizationText} numberOfLines={2}>Documento modificado {nota.facturaModificada ?? 'no disponible'}</Text>
+                </View>
+                <DocumentActionsMenu actions={[
+                  { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(nota) },
+                  { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(nota) },
+                  { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(nota) },
+                  { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(nota) },
+                  { label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary', onPress: () => onEmitir(nota) },
+                  { label: 'Anular', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(nota) },
+                ]} />
+              </View>
             </View>
           );
         })}
@@ -8853,22 +8883,37 @@ function MisLiquidacionesCompraMobileScreen({
       <View style={styles.listStack}>
         {visibleLiquidaciones.map((liquidacion, index) => {
           const key = listItemKey('mis-liquidaciones', [liquidacion.codLiquidacion, liquidacion.numero, liquidacion.identificacionProveedor], index);
+          const statusLabel = liquidacion.estadoSri ?? (liquidacion.autorizado ? 'AUTORIZADO' : 'NO AUTORIZADO');
           return (
             <View key={key} style={styles.invoiceHistoryCard}>
-              <View style={styles.clientCardHeader}>
-                <View style={styles.clientInfo}>
-                  <Text style={styles.clientName}>{liquidacion.numero ?? `Liquidacion ${liquidacion.codLiquidacion}`}</Text>
-                  <Text style={styles.clientMeta}>{liquidacion.proveedor ?? 'Proveedor'} - {liquidacion.identificacionProveedor ?? 'Sin identificacion'}</Text>
+              <View style={styles.invoiceHistoryCardHeader}>
+                <View style={styles.invoiceHistoryIdentityRow}>
+                  <View style={styles.invoiceHistoryDocIcon}>
+                    <MaterialCommunityIcons name="file-percent-outline" size={21} color="#0072BD" />
+                  </View>
+                  <View style={styles.invoiceHistoryCardInfo}>
+                    <Text style={styles.invoiceHistoryNumber} numberOfLines={1} adjustsFontSizeToFit>{liquidacion.numero ?? `Liquidacion ${liquidacion.codLiquidacion}`}</Text>
+                    <View style={[styles.invoiceHistoryStatusPill, getInvoiceStatusStyle(statusLabel)]}>
+                      <Text style={[styles.invoiceHistoryStatusText, getInvoiceStatusTextStyle(statusLabel)]}>{statusLabel}</Text>
+                    </View>
+                  </View>
                 </View>
-                <View style={styles.systemPill}>
-                  <Text style={styles.systemPillText}>{liquidacion.estadoSri ?? (liquidacion.autorizado ? 'AUTORIZADO' : 'NO AUTORIZADO')}</Text>
+                <View style={styles.invoiceHistoryClientBlock}>
+                  <Text style={styles.invoiceHistoryClient} numberOfLines={1}>{liquidacion.proveedor ?? 'Proveedor'}</Text>
+                  <Text style={styles.invoiceHistoryId}>{liquidacion.identificacionProveedor ?? 'Sin identificacion'}</Text>
+                </View>
+              </View>
+              <View style={styles.invoiceHistoryDetailGrid}>
+                <View style={styles.invoiceHistoryDetailItem}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Fecha</Text>
+                  <Text style={styles.invoiceHistoryDetailValue}>{formatDocumentDate(liquidacion.fecha)}</Text>
+                </View>
+                <View style={styles.invoiceHistoryDetailItem}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Total</Text>
+                  <Text style={styles.invoiceHistoryAmount}>{formatMoney(liquidacion.total)}</Text>
                 </View>
               </View>
               <View style={styles.clientDetailGrid}>
-                <View style={styles.clientDetailItem}>
-                  <Text style={styles.clientDetailLabel}>Fecha</Text>
-                  <Text style={styles.clientDetailValue}>{formatDocumentDate(liquidacion.fecha)}</Text>
-                </View>
                 <View style={styles.clientDetailItem}>
                   <Text style={styles.clientDetailLabel}>Base</Text>
                   <Text style={styles.clientDetailValue}>{formatMoney(liquidacion.base)}</Text>
@@ -8877,18 +8922,20 @@ function MisLiquidacionesCompraMobileScreen({
                   <Text style={styles.clientDetailLabel}>IVA</Text>
                   <Text style={styles.clientDetailValue}>{formatMoney(liquidacion.iva)}</Text>
                 </View>
-                <View style={styles.clientDetailItem}>
-                  <Text style={styles.clientDetailLabel}>Total</Text>
-                  <Text style={styles.clientDetailValue}>{formatMoney(liquidacion.total)}</Text>
-                </View>
               </View>
-              <DocumentActionsMenu actions={[
-                { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(liquidacion) },
-                { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(liquidacion) },
-                { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(liquidacion) },
-                { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(liquidacion) },
-                { label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary', onPress: () => onEmitir(liquidacion) },
-              ]} />
+              <View style={styles.invoiceHistoryAuthorization}>
+                <View style={styles.invoiceHistoryAuthorizationTextBlock}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Autorizacion</Text>
+                  <Text style={styles.invoiceHistoryAuthorizationText} numberOfLines={2}>{liquidacion.autorizado ? 'Autorizado' : 'No disponible'} · Retencion {liquidacion.retencionDisponible ? 'disponible' : 'no disponible'}</Text>
+                </View>
+                <DocumentActionsMenu actions={[
+                  { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(liquidacion) },
+                  { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(liquidacion) },
+                  { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(liquidacion) },
+                  { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(liquidacion) },
+                  { label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary', onPress: () => onEmitir(liquidacion) },
+                ]} />
+              </View>
             </View>
           );
         })}
@@ -9191,39 +9238,50 @@ function MisGuiasRemisionMobileScreen({
       <View style={styles.listStack}>
         {visibleGuias.map((guia, index) => {
           const key = listItemKey('mis-guias', [guia.codGuia, guia.numero, guia.identificacionDestinatario], index);
+          const statusLabel = guia.estadoSri ?? (guia.autorizado ? 'AUTORIZADO' : 'PENDIENTE');
           return (
             <View key={key} style={styles.invoiceHistoryCard}>
-              <View style={styles.clientCardHeader}>
-                <View style={styles.clientInfo}>
-                  <Text style={styles.clientName}>{guia.numero ?? `Guia ${guia.codGuia}`}</Text>
-                  <Text style={styles.clientMeta}>{guia.destinatario ?? 'Destinatario'} - {guia.identificacionDestinatario ?? 'Sin identificacion'}</Text>
+              <View style={styles.invoiceHistoryCardHeader}>
+                <View style={styles.invoiceHistoryIdentityRow}>
+                  <View style={styles.invoiceHistoryDocIcon}>
+                    <MaterialCommunityIcons name="truck-delivery-outline" size={21} color="#0072BD" />
+                  </View>
+                  <View style={styles.invoiceHistoryCardInfo}>
+                    <Text style={styles.invoiceHistoryNumber} numberOfLines={1} adjustsFontSizeToFit>{guia.numero ?? `Guia ${guia.codGuia}`}</Text>
+                    <View style={[styles.invoiceHistoryStatusPill, getInvoiceStatusStyle(statusLabel)]}>
+                      <Text style={[styles.invoiceHistoryStatusText, getInvoiceStatusTextStyle(statusLabel)]}>{statusLabel}</Text>
+                    </View>
+                  </View>
                 </View>
-                <View style={styles.systemPill}>
-                  <Text style={styles.systemPillText}>{guia.estadoSri ?? (guia.autorizado ? 'AUTORIZADO' : 'PENDIENTE')}</Text>
-                </View>
-              </View>
-              <View style={styles.clientDetailGrid}>
-                <View style={styles.clientDetailItem}>
-                  <Text style={styles.clientDetailLabel}>Fecha</Text>
-                  <Text style={styles.clientDetailValue}>{formatDocumentDate(guia.fecha)}</Text>
-                </View>
-                <View style={styles.clientDetailItem}>
-                  <Text style={styles.clientDetailLabel}>Transportista</Text>
-                  <Text style={styles.clientDetailValue}>{guia.transportista ?? '-'}</Text>
-                </View>
-                <View style={styles.clientDetailItem}>
-                  <Text style={styles.clientDetailLabel}>Traslado</Text>
-                  <Text style={styles.clientDetailValue}>{formatDocumentDate(guia.fechaTraslado)}</Text>
+                <View style={styles.invoiceHistoryClientBlock}>
+                  <Text style={styles.invoiceHistoryClient} numberOfLines={1}>{guia.destinatario ?? 'Destinatario'}</Text>
+                  <Text style={styles.invoiceHistoryId}>{guia.identificacionDestinatario ?? 'Sin identificacion'}</Text>
                 </View>
               </View>
-              <DocumentActionsMenu actions={[
-                { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(guia) },
-                { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(guia) },
-                { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(guia) },
-                { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(guia) },
-                { label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary', onPress: () => onEmitir(guia) },
-                { label: 'Anular', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(guia) },
-              ]} />
+              <View style={styles.invoiceHistoryDetailGrid}>
+                <View style={styles.invoiceHistoryDetailItem}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Fecha</Text>
+                  <Text style={styles.invoiceHistoryDetailValue}>{formatDocumentDate(guia.fecha)}</Text>
+                </View>
+                <View style={styles.invoiceHistoryDetailItem}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Traslado</Text>
+                  <Text style={styles.invoiceHistoryDetailValue}>{formatDocumentDate(guia.fechaTraslado)}</Text>
+                </View>
+              </View>
+              <View style={styles.invoiceHistoryAuthorization}>
+                <View style={styles.invoiceHistoryAuthorizationTextBlock}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Transportista</Text>
+                  <Text style={styles.invoiceHistoryAuthorizationText} numberOfLines={2}>{guia.transportista ?? 'No disponible'}</Text>
+                </View>
+                <DocumentActionsMenu actions={[
+                  { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(guia) },
+                  { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(guia) },
+                  { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(guia) },
+                  { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(guia) },
+                  { label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary', onPress: () => onEmitir(guia) },
+                  { label: 'Anular', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(guia) },
+                ]} />
+              </View>
             </View>
           );
         })}
@@ -9231,7 +9289,6 @@ function MisGuiasRemisionMobileScreen({
     </>
   );
 }
-
 function DocumentHistoryHero({
   eyebrow,
   title,
@@ -9243,17 +9300,25 @@ function DocumentHistoryHero({
   text: string;
   metrics: Array<{ value: string | number; label: string }>;
 }) {
+  const primaryMetric = metrics[0];
   return (
     <View style={styles.invoiceHistoryHeader}>
       <View style={styles.invoiceHistoryHeaderTop}>
         <View style={styles.invoiceHistoryHeaderIcon}>
-          <MaterialCommunityIcons name="file-document-multiple-outline" size={25} color="#FFFFFF" />
+          <MaterialCommunityIcons name="file-document-multiple-outline" size={22} color="#0072BD" />
         </View>
         <View style={styles.invoiceHistoryHeaderCopy}>
-          <Text style={styles.invoiceHistoryEyebrow}>{eyebrow}</Text>
+          <Text style={styles.invoiceHistoryEyebrow}>LISTADO</Text>
           <Text style={styles.invoiceHistoryTitle}>{title}</Text>
           <Text style={styles.invoiceHistoryText}>{description}</Text>
         </View>
+        {primaryMetric ? (
+          <View style={styles.invoiceHistoryRecordsControl}>
+            <Text style={styles.invoiceHistoryRecordsLabel}>Ver</Text>
+            <Text style={styles.invoiceHistoryRecordsValue}>{primaryMetric.value}</Text>
+            <Text style={styles.invoiceHistoryRecordsLabel}>registros</Text>
+          </View>
+        ) : null}
       </View>
       <View style={styles.invoiceHistoryStats}>
         {metrics.map((metric) => <InvoiceHistoryMetric key={metric.label} value={metric.value} label={metric.label} />)}
@@ -9318,36 +9383,47 @@ function MisRetencionesMobileScreen({
       <View style={styles.listStack}>
         {visibleRetenciones.map((retencion, index) => {
           const key = listItemKey('mis-retenciones', [retencion.codRetencion, retencion.numero, retencion.documentoSustento, retencion.identificacionProveedor], index);
+          const statusLabel = retencion.estadoSri ?? (retencion.autorizado ? 'AUTORIZADO' : 'PENDIENTE');
           return (
             <View key={key} style={styles.invoiceHistoryCard}>
-              <View style={styles.clientCardHeader}>
-                <View style={styles.clientInfo}>
-                  <Text style={styles.clientName}>{retencion.numero ?? `Retencion ${retencion.codRetencion}`}</Text>
-                  <Text style={styles.clientMeta}>{retencion.documentoSustento ?? 'Sin sustento'} - {retencion.proveedor ?? 'Proveedor'}</Text>
+              <View style={styles.invoiceHistoryCardHeader}>
+                <View style={styles.invoiceHistoryIdentityRow}>
+                  <View style={styles.invoiceHistoryDocIcon}>
+                    <MaterialCommunityIcons name="file-check-outline" size={21} color="#0072BD" />
+                  </View>
+                  <View style={styles.invoiceHistoryCardInfo}>
+                    <Text style={styles.invoiceHistoryNumber} numberOfLines={1} adjustsFontSizeToFit>{retencion.numero ?? `Retencion ${retencion.codRetencion}`}</Text>
+                    <View style={[styles.invoiceHistoryStatusPill, getInvoiceStatusStyle(statusLabel)]}>
+                      <Text style={[styles.invoiceHistoryStatusText, getInvoiceStatusTextStyle(statusLabel)]}>{statusLabel}</Text>
+                    </View>
+                  </View>
                 </View>
-                <View style={styles.systemPill}>
-                  <Text style={styles.systemPillText}>{retencion.estadoSri ?? (retencion.autorizado ? 'AUTORIZADO' : 'PENDIENTE')}</Text>
-                </View>
-              </View>
-              <View style={styles.clientDetailGrid}>
-                <View style={styles.clientDetailItem}>
-                  <Text style={styles.clientDetailLabel}>Fecha</Text>
-                  <Text style={styles.clientDetailValue}>{formatDocumentDate(retencion.fecha)}</Text>
-                </View>
-                <View style={styles.clientDetailItem}>
-                  <Text style={styles.clientDetailLabel}>Base</Text>
-                  <Text style={styles.clientDetailValue}>{formatMoney(retencion.base)}</Text>
-                </View>
-                <View style={styles.clientDetailItem}>
-                  <Text style={styles.clientDetailLabel}>Retenido</Text>
-                  <Text style={styles.clientDetailValue}>{formatMoney(retencion.retenido)}</Text>
+                <View style={styles.invoiceHistoryClientBlock}>
+                  <Text style={styles.invoiceHistoryClient} numberOfLines={1}>{retencion.proveedor ?? 'Proveedor'}</Text>
+                  <Text style={styles.invoiceHistoryId}>{retencion.identificacionProveedor ?? 'Sin identificacion'}</Text>
                 </View>
               </View>
-              <DocumentActionsMenu actions={[
-                { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(retencion) },
-                { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(retencion) },
-                { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(retencion) },
-              ]} />
+              <View style={styles.invoiceHistoryDetailGrid}>
+                <View style={styles.invoiceHistoryDetailItem}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Fecha</Text>
+                  <Text style={styles.invoiceHistoryDetailValue}>{formatDocumentDate(retencion.fecha)}</Text>
+                </View>
+                <View style={styles.invoiceHistoryDetailItem}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Retenido</Text>
+                  <Text style={styles.invoiceHistoryAmount}>{formatMoney(retencion.retenido)}</Text>
+                </View>
+              </View>
+              <View style={styles.invoiceHistoryAuthorization}>
+                <View style={styles.invoiceHistoryAuthorizationTextBlock}>
+                  <Text style={styles.invoiceHistoryDetailLabel}>Documento sustento</Text>
+                  <Text style={styles.invoiceHistoryAuthorizationText} numberOfLines={2}>{retencion.documentoSustento ?? 'No disponible'} · Base {formatMoney(retencion.base)}</Text>
+                </View>
+                <DocumentActionsMenu actions={[
+                  { label: 'Ver', icon: 'eye-outline', tone: 'primary', onPress: () => onPdf(retencion) },
+                  { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(retencion) },
+                  { label: 'Descargar PDF', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(retencion) },
+                ]} />
+              </View>
             </View>
           );
         })}
@@ -9413,10 +9489,10 @@ function MisFacturasMobileScreen({
       <View style={styles.invoiceHistoryHeader}>
         <View style={styles.invoiceHistoryHeaderTop}>
           <View style={styles.invoiceHistoryHeaderIcon}>
-            <MaterialCommunityIcons name="file-document-multiple-outline" size={25} color="#FFFFFF" />
+            <MaterialCommunityIcons name="file-document-multiple-outline" size={22} color="#0072BD" />
           </View>
           <View style={styles.invoiceHistoryHeaderCopy}>
-            <Text style={styles.invoiceHistoryEyebrow}>Panel comercial</Text>
+            <Text style={styles.invoiceHistoryEyebrow}>LISTADO</Text>
             <Text style={styles.invoiceHistoryTitle}>Mis facturas</Text>
             <Text style={styles.invoiceHistoryText}>Consulta tus comprobantes emitidos y ejecuta acciones del documento.</Text>
           </View>
