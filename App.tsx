@@ -4848,6 +4848,70 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
   };
 
+  const importNotaCreditoXml = async (uri: string) => {
+    try {
+      const parsed = parseFacturaXml(await FileSystem.readAsStringAsync(uri));
+      if (!parsed) {
+        setDirectoryMessage({ type: 'error', text: 'No se pudo leer la informacion de la factura en el XML.' });
+        return;
+      }
+      setNotaCreditoFactura(parsed.factura);
+      setNotaCreditoCliente(parsed.cliente);
+      setNotaCreditoFacturas([]);
+      setNotaCreditoLineas(parsed.detalles.length ? parsed.detalles : []);
+      setNotaCreditoForm((current) => ({
+        ...current,
+        facturaBusqueda: parsed.factura.numeroCompleto ?? parsed.factura.numfactura ?? '',
+        clienteBusqueda: getClienteDisplayName(parsed.cliente),
+        correoPrincipal: getClienteEmail(parsed.cliente),
+        tipoIdentificacion: String(parsed.cliente.tipoidentificacion ?? ''),
+        numeroIdentificacion: getClienteIdentification(parsed.cliente),
+        tipoCliente: String(parsed.cliente.tipoCliente ?? ''),
+        obligadoContabilidad: parsed.cliente.oblgconta ?? '',
+        direccion: parsed.cliente.direccion ?? '',
+        telefono: parsed.cliente.celular || parsed.cliente.telefonoconvencional || '',
+      }));
+      setDirectoryMessage({ type: 'success', text: 'XML cargado correctamente. Revisa los datos antes de guardar.' });
+    } catch {
+      setDirectoryMessage({ type: 'error', text: 'No se pudo procesar el XML seleccionado.' });
+    }
+  };
+
+  const importNotaDebitoXml = async (uri: string) => {
+    try {
+      const parsed = parseFacturaXml(await FileSystem.readAsStringAsync(uri));
+      if (!parsed) {
+        setDirectoryMessage({ type: 'error', text: 'No se pudo leer la informacion de la factura en el XML.' });
+        return;
+      }
+      setNotaDebitoFactura(parsed.factura);
+      setNotaDebitoCliente(parsed.cliente);
+      setNotaDebitoFacturas([]);
+      setNotaDebitoLineas(parsed.detalles.length ? parsed.detalles.map((linea) => ({
+        descripcion: linea.producto.descripcion ?? 'Cargo adicional',
+        precio: linea.precio,
+        tarifa: linea.tarifa,
+        impuestoIce: '',
+        valorIce: '0',
+      })) : [initialNotaDebitoLinea]);
+      setNotaDebitoForm((current) => ({
+        ...current,
+        facturaBusqueda: parsed.factura.numeroCompleto ?? parsed.factura.numfactura ?? '',
+        clienteBusqueda: getClienteDisplayName(parsed.cliente),
+        correoPrincipal: getClienteEmail(parsed.cliente),
+        tipoIdentificacion: String(parsed.cliente.tipoidentificacion ?? ''),
+        numeroIdentificacion: getClienteIdentification(parsed.cliente),
+        tipoCliente: String(parsed.cliente.tipoCliente ?? ''),
+        obligadoContabilidad: parsed.cliente.oblgconta ?? '',
+        direccion: parsed.cliente.direccion ?? '',
+        telefono: parsed.cliente.celular || parsed.cliente.telefonoconvencional || '',
+      }));
+      setDirectoryMessage({ type: 'success', text: 'XML cargado correctamente. Revisa los datos antes de guardar.' });
+    } catch {
+      setDirectoryMessage({ type: 'error', text: 'No se pudo procesar el XML seleccionado.' });
+    }
+  };
+
   const updateNotaDebitoLinea = (index: number, field: keyof NotaDebitoLinea, value: string) => {
     setNotaDebitoLineas((current) => current.map((linea, currentIndex) => currentIndex === index ? { ...linea, [field]: value } : linea));
   };
@@ -6530,6 +6594,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onChange={updateNotaCreditoForm}
                 onSearchFacturas={searchNotaCreditoFacturas}
                 onSelectFactura={selectNotaCreditoFactura}
+                onImportXml={importNotaCreditoXml}
                 onAddLinea={addNotaCreditoProducto}
                 onUpdateLinea={updateNotaCreditoLinea}
                 onRemoveLinea={removeNotaCreditoLinea}
@@ -6568,6 +6633,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onChange={updateNotaDebitoForm}
                 onSearchFacturas={searchNotaDebitoFacturas}
                 onSelectFactura={selectNotaDebitoFactura}
+                onImportXml={importNotaDebitoXml}
                 onAddLinea={addNotaDebitoLinea}
                 onUpdateLinea={updateNotaDebitoLinea}
                 onRemoveLinea={removeNotaDebitoLinea}
@@ -7325,6 +7391,86 @@ function manualFacturaFromForm(form: NotaCreditoFormState | NotaDebitoFormState)
   };
 }
 
+function decodeXmlValue(value: string) {
+  return value
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .trim();
+}
+
+function xmlTag(source: string, tag: string) {
+  const match = source.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+  return match ? decodeXmlValue(match[1]) : '';
+}
+
+function xmlSections(source: string, tag: string) {
+  return Array.from(source.matchAll(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'gi'))).map((match) => match[1]);
+}
+
+function numberFromXml(value: string) {
+  const parsed = Number(value.replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseFacturaXml(xml: string) {
+  const estab = xmlTag(xml, 'estab');
+  const ptoEmi = xmlTag(xml, 'ptoEmi');
+  const secuencial = xmlTag(xml, 'secuencial');
+  const numeroCompleto = [estab, ptoEmi, secuencial].filter(Boolean).join('-');
+  const razonSocial = xmlTag(xml, 'razonSocialComprador');
+  const identificacion = xmlTag(xml, 'identificacionComprador');
+  if (!razonSocial && !identificacion && !numeroCompleto) return null;
+
+  const cliente: Cliente = {
+    codcliente: 0,
+    tipoidentificacion: xmlTag(xml, 'tipoIdentificacionComprador') || null,
+    numeroidentificacion: identificacion || null,
+    nombrerazonsocial: razonSocial || null,
+    nombrecomercial: razonSocial || null,
+    direccion: xmlTag(xml, 'direccionComprador') || null,
+    correo: xmlTag(xml, 'email') || xmlTag(xml, 'correo') || null,
+    oblgconta: '',
+  } as Cliente;
+  const factura: FacturaListItem = {
+    codfactura: 0,
+    numfactura: secuencial || numeroCompleto || null,
+    numeroCompleto: numeroCompleto || secuencial || null,
+    serie: [estab, ptoEmi].filter(Boolean).join('-') || null,
+    fechaEmision: xmlTag(xml, 'fechaEmision') || null,
+    total: numberFromXml(xmlTag(xml, 'importeTotal') || xmlTag(xml, 'valorModificacion')),
+    cliente: razonSocial || null,
+    identificacionCliente: identificacion || null,
+    autorizado: true,
+  };
+  const detalles = xmlSections(xml, 'detalle')
+    .filter((section) => xmlTag(section, 'descripcion'))
+    .map((section, index) => {
+      const precio = numberFromXml(xmlTag(section, 'precioUnitario'));
+      const tarifa = numberFromXml(xmlTag(section, 'tarifa'));
+      const producto: FacturaProducto = {
+        codproducto: 0,
+        codprincipal: xmlTag(section, 'codigoPrincipal') || `XML-${index + 1}`,
+        codauxiliar: xmlTag(section, 'codigoAuxiliar') || null,
+        descripcion: xmlTag(section, 'descripcion') || 'Producto XML',
+        precioUnitario: precio,
+        tarifaIva: tarifa,
+      };
+      return {
+        producto,
+        cantidad: String(numberFromXml(xmlTag(section, 'cantidad')) || 1),
+        precio: String(precio),
+        descuento: String(numberFromXml(xmlTag(section, 'descuento'))),
+        tarifa: String(tarifa),
+      };
+    });
+
+  return { cliente, factura, detalles };
+}
+
 function getClienteKey(cliente: Cliente, index: number) {
   const row = cliente as Cliente & Record<string, unknown>;
   return String(cliente.codcliente || row.Codcliente || row.CodCliente || getClienteIdentification(cliente) || `${getClienteDisplayName(cliente)}-${index}`);
@@ -7667,6 +7813,7 @@ function NuevaNotaCreditoMobileScreen({
   onChange,
   onSearchFacturas,
   onSelectFactura,
+  onImportXml,
   onAddLinea,
   onUpdateLinea,
   onRemoveLinea,
@@ -7687,6 +7834,7 @@ function NuevaNotaCreditoMobileScreen({
   onChange: (field: keyof NotaCreditoFormState, value: string) => void;
   onSearchFacturas: () => void;
   onSelectFactura: (factura: FacturaListItem) => void | Promise<void>;
+  onImportXml: (uri: string) => Promise<void>;
   onAddLinea: (producto: FacturaProducto) => void;
   onUpdateLinea: (index: number, field: keyof Omit<NuevaFacturaLinea, 'producto'>, value: string) => void;
   onRemoveLinea: (index: number) => void;
@@ -7731,7 +7879,11 @@ function NuevaNotaCreditoMobileScreen({
   };
   const selectXml = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: ['text/xml', 'application/xml'], copyToCacheDirectory: true });
-    if (!result.canceled) Alert.alert('XML seleccionado', 'El archivo fue seleccionado, pero falta exponer en E-Fact web el endpoint móvil para leer el XML y precargar este formulario.');
+    if (!result.canceled) {
+      await onImportXml(result.assets[0].uri);
+      setManualMode(false);
+      setStep(1);
+    }
   };
 
   return (
@@ -8022,6 +8174,7 @@ function NuevaNotaDebitoMobileScreen({
   onChange,
   onSearchFacturas,
   onSelectFactura,
+  onImportXml,
   onAddLinea,
   onUpdateLinea,
   onRemoveLinea,
@@ -8042,6 +8195,7 @@ function NuevaNotaDebitoMobileScreen({
   onChange: (field: keyof NotaDebitoFormState, value: string) => void;
   onSearchFacturas: () => void;
   onSelectFactura: (factura: FacturaListItem) => void | Promise<void>;
+  onImportXml: (uri: string) => Promise<void>;
   onAddLinea: () => void;
   onUpdateLinea: (index: number, field: keyof NotaDebitoLinea, value: string) => void;
   onRemoveLinea: (index: number) => void;
@@ -8080,7 +8234,11 @@ function NuevaNotaDebitoMobileScreen({
   };
   const selectXml = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: ['text/xml', 'application/xml'], copyToCacheDirectory: true });
-    if (!result.canceled) Alert.alert('XML seleccionado', 'El archivo fue seleccionado, pero falta exponer en E-Fact web el endpoint móvil para leer el XML y precargar este formulario.');
+    if (!result.canceled) {
+      await onImportXml(result.assets[0].uri);
+      setManualMode(false);
+      setStep(1);
+    }
   };
 
   return (
