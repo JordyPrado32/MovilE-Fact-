@@ -97,6 +97,22 @@ export async function guardarNotaCredito(input: NotaCreditoGuardarInput) {
   }, 0);
 
   const notaCredito = {
+    codemisor: input.codemisor,
+    coddocumento: 4,
+    tipodocumento: 4,
+    serie: input.serie?.replace(/-/g, '') || null,
+    codfactura: input.facturaModificada?.codfactura || null,
+    codClientes: input.cliente.codcliente || null,
+    facturaModificada: input.facturaModificada?.numeroCompleto ?? input.facturaModificada?.numfactura ?? null,
+    motivo: input.motivo || null,
+    observacion: input.observacion || null,
+    estado: true,
+    autorizado: false,
+    fechaemision: new Date().toISOString(),
+    subtotal,
+    descuentos: input.detalles.reduce((sum, item) => sum + item.descuento, 0),
+    iva,
+    valortotal: subtotal + iva,
     CodEmisor: input.codemisor,
     CodClientes: input.cliente.codcliente || null,
     CodDocumento: '04',
@@ -119,22 +135,20 @@ export async function guardarNotaCredito(input: NotaCreditoGuardarInput) {
     const base = Math.max(item.cantidad * item.precio - item.descuento, 0);
     const valorIva = base * (item.tarifa / 100);
     return {
-      Codproducto: item.producto.codproducto,
-      Codprincipal: item.producto.codprincipal,
-      Codauxiliar: item.producto.codauxiliar,
-      Descripcion: item.producto.descripcion,
-      Detalle: item.producto.descripcion,
-      Cantidad: item.cantidad,
-      Preciounitario: item.precio,
-      Descuento: item.descuento,
-      PorcentajeDescuento: item.cantidad * item.precio > 0 ? item.descuento / (item.cantidad * item.precio) * 100 : 0,
-      Subtotal: base,
-      Iva: item.tarifa,
-      Total: base + valorIva,
+      codproducto: item.producto.codproducto,
+      codprincipal: item.producto.codprincipal,
+      codauxiliar: item.producto.codauxiliar,
+      descripcion: item.producto.descripcion ?? 'Producto',
+      cantidad: item.cantidad,
+      preciounitario: item.precio,
+      descuento: item.descuento,
+      subtotal: base,
+      iva: item.tarifa,
+      total: base + valorIva,
     };
   });
 
-  const response = await apiRequest<{ sec?: number; Sec?: number; mensaje?: string; numeroComprobante?: string | null }>(
+  return apiRequest<{ mensaje?: string; sec?: number; codNotaCredito?: number; numeroComprobante?: string | null }>(
     '/api/notas-credito',
     {
       method: 'POST',
@@ -146,9 +160,6 @@ export async function guardarNotaCredito(input: NotaCreditoGuardarInput) {
       }),
     },
   );
-
-  const sec = response.sec ?? response.Sec;
-  return { mensaje: response.mensaje ?? 'Nota de credito guardada correctamente.', codNotaCredito: sec, numeroComprobante: response.numeroComprobante ?? null };
 }
 
 export function emitirNotaCredito(userId: number, sec: number) {
@@ -165,6 +176,10 @@ export function getNotaCreditoXml(userId: number, codNotaCredito: number) {
 
 export function enviarNotaCreditoCorreo(userId: number, codNotaCredito: number) {
   return apiRequest<void>(`/api/notas-credito/${codNotaCredito}/enviar-correo?idUsuario=${userId}`, { method: 'POST' });
+}
+
+export function emitirNotaCredito(userId: number, codNotaCredito: number) {
+  return apiRequest<void>(`/api/notas-credito/${codNotaCredito}/emitir?idUsuario=${userId}`, { method: 'POST' });
 }
 
 export function anularNotaCredito(userId: number, codNotaCredito: number) {
