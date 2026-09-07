@@ -124,6 +124,7 @@ type WorkspaceView =
   | 'portal'
   | 'dashboard'
   | 'perfil'
+  | 'perfil-e-rubrica'
   | 'emisor'
   | 'firma'
   | 'e-rubrica'
@@ -1342,6 +1343,7 @@ function GlobalWorkspaceHeader({
   documentPlan,
   firmaSummary,
   portalMode = false,
+  erubricaMode = false,
   onSearch,
   onNotifications,
   onMenu,
@@ -1355,6 +1357,7 @@ function GlobalWorkspaceHeader({
   documentPlan: ReturnType<typeof getDocumentPlanStatus>;
   firmaSummary: ReturnType<typeof getFirmaSummary>;
   portalMode?: boolean;
+  erubricaMode?: boolean;
   onSearch: () => void;
   onNotifications: () => void;
   onMenu: () => void;
@@ -1365,24 +1368,28 @@ function GlobalWorkspaceHeader({
   const documentTone = statusToneStyles(documentPlan.tone);
   const firmaTone = statusToneStyles(firmaSummary.tone);
   return (
-    <View style={styles.unifiedTopBar}>
+    <View style={[styles.unifiedTopBar, erubricaMode && styles.erubricaTopBar]}>
       <View style={styles.unifiedHeaderRow}>
         <View style={styles.unifiedBrandBlock}>
-          <PortalHeaderAvatar />
+          <PortalHeaderAvatar service={erubricaMode ? 'erubrica' : 'efact'} />
           <View style={styles.unifiedTitleBlock}>
             <Text style={styles.unifiedTitle} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
-            <Text style={styles.unifiedSubtitle} numberOfLines={1}>{subtitle}</Text>
+            <Text style={[styles.unifiedSubtitle, erubricaMode && styles.erubricaHeaderSubtitle]} numberOfLines={1}>{subtitle}</Text>
           </View>
         </View>
         {!portalMode ? (
           <View style={styles.unifiedHeaderActions}>
-            <Pressable style={styles.unifiedIconButton} onPress={onSearch} accessibilityLabel="Buscar en toda la operación">
-              <MaterialCommunityIcons name="magnify" size={22} color="#FFFFFF" />
-            </Pressable>
-            <Pressable style={styles.unifiedIconButton} onPress={onNotifications} accessibilityLabel="Notificaciones">
-              <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
-              {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
-            </Pressable>
+            {!erubricaMode ? (
+              <>
+                <Pressable style={styles.unifiedIconButton} onPress={onSearch} accessibilityLabel="Buscar en toda la operación">
+                  <MaterialCommunityIcons name="magnify" size={22} color="#FFFFFF" />
+                </Pressable>
+                <Pressable style={styles.unifiedIconButton} onPress={onNotifications} accessibilityLabel="Notificaciones">
+                  <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
+                  {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
+                </Pressable>
+              </>
+            ) : null}
             <Pressable style={styles.unifiedIconButton} onPress={onMenu} accessibilityLabel="Menu">
               <MaterialCommunityIcons name="menu" size={25} color="#FFFFFF" />
             </Pressable>
@@ -1395,7 +1402,7 @@ function GlobalWorkspaceHeader({
         )}
       </View>
       {!portalMode ? <View style={styles.unifiedStatusGrid}>
-        <Pressable style={[styles.unifiedStatusCard, documentTone.card]} onPress={onDocuments}>
+        {!erubricaMode ? <Pressable style={[styles.unifiedStatusCard, documentTone.card]} onPress={onDocuments}>
           <View style={[styles.unifiedStatusIcon, documentTone.icon]}>
             <MaterialCommunityIcons name="file-document-outline" size={20} color={documentTone.color} />
           </View>
@@ -1404,13 +1411,13 @@ function GlobalWorkspaceHeader({
             <Text style={[styles.unifiedStatusValue, { color: documentTone.color }]}>{documentPlan.label}</Text>
             <Text style={styles.unifiedStatusCaption}>{documentPlan.caption}</Text>
           </View>
-        </Pressable>
-        <Pressable style={[styles.unifiedStatusCard, firmaTone.card]} onPress={onFirma}>
+        </Pressable> : null}
+        <Pressable style={[styles.unifiedStatusCard, erubricaMode && styles.unifiedStatusCardFull, firmaTone.card]} onPress={onFirma}>
           <View style={[styles.unifiedStatusIcon, styles.unifiedFirmaIcon, firmaTone.icon]}>
             <MaterialCommunityIcons name="shield-check-outline" size={20} color={firmaTone.color} />
           </View>
           <View style={styles.unifiedStatusCopy}>
-            <Text style={styles.unifiedStatusLabel}>Firma electronica</Text>
+            <Text style={styles.unifiedStatusLabel}>{erubricaMode ? 'Estado de firma' : 'Firma electronica'}</Text>
             <Text style={[styles.unifiedStatusValue, { color: firmaTone.color }]}>{firmaSummary.label}</Text>
             <Text style={styles.unifiedStatusCaption}>{firmaSummary.caption}</Text>
           </View>
@@ -2817,7 +2824,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       activeView !== 'no-autorizado' &&
       activeView !== 'nuevo-cliente' &&
       activeView !== 'nuevo-producto' &&
-       !(activeView === 'e-rubrica' ? canUseERubrica : authorizedViews.has(activeView))
+       !(['e-rubrica', 'perfil-e-rubrica'].includes(activeView) ? canUseERubrica : authorizedViews.has(activeView))
     ) {
       setActiveView('no-autorizado');
     }
@@ -3062,7 +3069,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   }, [authorizedViews, catalogUserId, reloadKey]);
 
   useEffect(() => {
-    if (!userId || !authorizedViews.has('perfil')) return;
+    if (!userId || (!authorizedViews.has('perfil') && !canUseERubrica)) return;
 
     let mounted = true;
     setLoadingPerfil(true);
@@ -3085,7 +3092,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     return () => {
       mounted = false;
     };
-  }, [authorizedViews, reloadKey, userId]);
+  }, [authorizedViews, canUseERubrica, reloadKey, userId]);
 
   useEffect(() => {
     const needsPuntos = authorizedViews.has('punto-emision') || ['nueva-factura', 'nueva-nota-credito', 'nueva-nota-debito', 'nueva-liquidacion-compra', 'nueva-guia-remision'].includes(activeView);
@@ -3113,7 +3120,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   }, [activeView, authorizedViews, catalogUserId, reloadKey]);
 
   useEffect(() => {
-    const isInsideEfact = activeView !== 'portal' && activeView !== 'e-rubrica' && activeView !== 'no-autorizado';
+    const isInsideEfact = activeView !== 'portal' && activeView !== 'e-rubrica' && activeView !== 'perfil-e-rubrica' && activeView !== 'no-autorizado';
     if ((!authorizedViews.has('firma') && !authorizedViews.has('emisor')) || !isInsideEfact) return;
 
     let mounted = true;
@@ -5695,6 +5702,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
          'firma',
          'e-rubrica',
         'perfil',
+        'perfil-e-rubrica',
         'punto-emision',
         'cuentas-cobrar',
         'estado-cuenta',
@@ -5736,6 +5744,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
 
     if (view === 'e-rubrica' && canUseERubrica) {
+      setActiveView(view);
+      return;
+    }
+
+    if (view === 'perfil-e-rubrica' && canUseERubrica) {
       setActiveView(view);
       return;
     }
@@ -5923,7 +5936,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo cargar la previsualización del PDF.' });
     }
   };
-  const drawerMenu: DrawerMenuNode[] = activeView === 'e-rubrica' ? [
+  const isERubricaWorkspace = activeView === 'e-rubrica' || activeView === 'perfil-e-rubrica';
+  const drawerMenu: DrawerMenuNode[] = isERubricaWorkspace ? [
     { key: 'erubrica-inicio', label: 'Inicio', view: 'e-rubrica', disabled: !canUseERubrica },
     { key: 'erubrica-solicitudes', label: 'Solicitudes', action: () => openERubricaTab('solicitudes') },
     { key: 'erubrica-firmar', label: 'Firmar PDF', action: () => openERubricaTab('firmar') },
@@ -5933,6 +5947,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     { key: 'erubrica-catalogos', label: 'Productos y saldo', action: () => openERubricaTab('catalogos') },
     { key: 'erubrica-proveedor', label: 'Solicitudes proveedor', action: () => openERubricaTab('proveedor') },
     { key: 'erubrica-soporte', label: 'Soporte', action: () => openERubricaTab('soporte') },
+    { key: 'erubrica-perfil', label: 'Mi perfil', view: 'perfil-e-rubrica', disabled: !canUseERubrica },
     { key: 'erubrica-volver', label: 'Volver a servicios', action: () => openView('portal'), },
   ] : efactDrawerMenu;
   const renderDrawerNode = (node: DrawerMenuNode, inset = false) => {
@@ -5945,6 +5960,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     return (
       <View key={node.key} style={node.children?.length ? styles.menuSection : undefined}>
         <MenuItem
+          accentColor={isERubricaWorkspace ? ERUBRICA_COLORS.primary : undefined}
           active={active}
           disabled={disabled}
           expanded={expanded}
@@ -5971,21 +5987,22 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   };
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={[styles.workspaceSafeArea, activeView === 'portal' && styles.portalSafeArea]}>
+    <SafeAreaView edges={['top', 'bottom']} style={[styles.workspaceSafeArea, activeView === 'portal' && styles.portalSafeArea, isERubricaWorkspace && styles.erubricaSafeArea]}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
       <View style={styles.workspaceChrome}>
         <GlobalWorkspaceHeader
           title={getWorkspaceTitle(activeView)}
-          subtitle={activeView === 'firma' ? 'Gestiona tu firma y certificados' : activeView === 'portal' ? 'Selecciona tu servicio' : 'Resumen y accesos de tu sistema'}
+          subtitle={activeView === 'firma' ? 'Gestiona tu firma y certificados' : activeView === 'portal' ? 'Selecciona tu servicio' : activeView === 'e-rubrica' ? 'Firma y valida tus documentos' : activeView === 'perfil-e-rubrica' ? 'Mi cuenta de firma electronica' : 'Resumen y accesos de tu sistema'}
           unreadNotifications={unreadNotifications}
           documentPlan={documentPlan}
           firmaSummary={firmaSummary}
           portalMode={activeView === 'portal'}
+          erubricaMode={isERubricaWorkspace}
           onSearch={() => { setGlobalSearchQuery(''); setGlobalSearchOpen(true); }}
           onNotifications={() => setNotificationsOpen(true)}
           onMenu={() => setMenuOpen(true)}
           onDocuments={() => openView('comprar-documentos')}
-          onFirma={() => openView('firma')}
+          onFirma={() => isERubricaWorkspace ? openERubricaTab('firmas') : openView('firma')}
           onLogout={onLogout}
         />
 
@@ -5993,7 +6010,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         <ScrollView
           style={styles.workspaceBodyScroll}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.workspaceCanvasWithBottomNav, { paddingBottom: activeView === 'portal' ? 20 + insets.bottom : 88 + insets.bottom }]}
+          contentContainerStyle={[styles.workspaceCanvasWithBottomNav, activeView === 'dashboard' && styles.efactHomeWorkspaceCanvas, { paddingBottom: activeView === 'portal' ? 20 + insets.bottom : 88 + insets.bottom }]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
           nestedScrollEnabled
@@ -6003,7 +6020,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           alwaysBounceHorizontal={false}
           directionalLockEnabled
           overScrollMode="never"
-          refreshControl={<RefreshControl refreshing={loadingMenus} onRefresh={() => setReloadKey((value) => value + 1)} tintColor={EFACT_THEME.colors.primary} colors={[EFACT_THEME.colors.primary]} />}
+          refreshControl={<RefreshControl refreshing={loadingMenus} onRefresh={() => setReloadKey((value) => value + 1)} tintColor={isERubricaWorkspace ? ERUBRICA_COLORS.primary : EFACT_THEME.colors.primary} colors={[isERubricaWorkspace ? ERUBRICA_COLORS.primary : EFACT_THEME.colors.primary]} />}
         >
         <ScreenTransition key={activeView}>
         {menuMessage ? <MessageBox message={menuMessage} /> : null}
@@ -6091,6 +6108,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             requestedTab={erubricaTabRequest}
             loading={loadingErubrica}
             message={directoryMessage}
+            onTabChange={setErubricaTabRequest}
             onRefresh={() => setReloadKey((value) => value + 1)}
             onSync={async () => {
               try {
@@ -6669,7 +6687,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </>
             ) : null}
 
-            {activeView === 'perfil' ? (
+            {(activeView === 'perfil' || activeView === 'perfil-e-rubrica') ? (
               <>
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingPerfil ? (
@@ -6680,6 +6698,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 ) : null}
                 {!loadingPerfil ? (
                   <PerfilForm
+                    service={activeView === 'perfil-e-rubrica' ? 'erubrica' : 'efact'}
                     form={perfilForm}
                     lookup={perfilData}
                     saving={savingPerfil}
@@ -7018,12 +7037,16 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       {activeView !== 'portal' ? (
         <PortalBottomNav
           bottomInset={insets.bottom}
-          activeView={activeView}
+          activeView={activeView === 'e-rubrica' ? `e-rubrica-${erubricaTabRequest ?? 'solicitudes'}` : activeView}
+          mode={isERubricaWorkspace ? 'erubrica' : 'efact'}
           onServices={() => canUsePortal ? openView('portal') : setMenuOpen(true)}
           onHome={() => openView('dashboard')}
           onNew={() => openView('nueva-factura')}
           onFirma={() => openView('firma')}
-          onProfile={() => openView('perfil')}
+          onProfile={() => isERubricaWorkspace ? openView('perfil-e-rubrica') : openView('perfil')}
+          onSolicitudes={() => openERubricaTab('solicitudes')}
+          onFirmar={() => openERubricaTab('firmar')}
+          onValidar={() => openERubricaTab('validar')}
         />
       ) : null}
       <InitialSequenceModal
@@ -7173,12 +7196,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               { transform: [{ translateX: drawerProgress.interpolate({ inputRange: [0, 1], outputRange: [36, 0] }) }] },
             ]}
           >
-            <View style={styles.menuHeader}>
+            <View style={[styles.menuHeader, isERubricaWorkspace && styles.erubricaMenuHeader]}>
               <View>
                 <Text style={styles.menuTitle}>Menu</Text>
-                <Text style={styles.menuSubtitle}>Numérica Software</Text>
+                <Text style={[styles.menuSubtitle, isERubricaWorkspace && styles.erubricaMenuSubtitle]}>{isERubricaWorkspace ? 'E-Rubrica' : 'Numérica Software'}</Text>
               </View>
-              <Pressable accessibilityLabel="Cerrar menu" accessibilityRole="button" hitSlop={6} style={styles.menuCloseButton} onPress={() => setMenuOpen(false)}>
+              <Pressable accessibilityLabel="Cerrar menu" accessibilityRole="button" hitSlop={6} style={[styles.menuCloseButton, isERubricaWorkspace && styles.erubricaMenuCloseButton]} onPress={() => setMenuOpen(false)}>
                 <Text style={styles.menuCloseText}>×</Text>
               </Pressable>
             </View>
@@ -7230,6 +7253,7 @@ function getWorkspaceTitle(view: WorkspaceView) {
     portal: 'Portal de Servicios',
     dashboard: 'Inicio',
     perfil: 'Perfil',
+    'perfil-e-rubrica': 'Mi perfil',
     emisor: 'Emisor',
     firma: 'Mi firma',
     'e-rubrica': 'E-Rúbrica',
@@ -11807,6 +11831,7 @@ function ERubricaMobileScreen({
   requestedTab,
   loading,
   message,
+  onTabChange,
   onRefresh,
   onSync,
 }: {
@@ -11815,6 +11840,7 @@ function ERubricaMobileScreen({
   requestedTab?: ERubricaTab | null;
   loading: boolean;
   message: MessageState;
+  onTabChange: (tab: ERubricaTab) => void;
   onRefresh: () => void;
   onSync: () => Promise<void>;
 }) {
@@ -11836,10 +11862,14 @@ function ERubricaMobileScreen({
   const [signaturePage, setSignaturePage] = useState(1);
   const [signaturePosition, setSignaturePosition] = useState({ x: 0.68, y: 0.82 });
   const [signaturePageSize, setSignaturePageSize] = useState({ widthMm: 210, heightMm: 297 });
+  const selectTab = (nextTab: ERubricaTab) => {
+    setTab(nextTab);
+    onTabChange(nextTab);
+  };
   useEffect(() => {
     if (initialPdf) {
       setPdfFile(initialPdf);
-      setTab('firmar');
+      selectTab('firmar');
     }
   }, [initialPdf]);
   useEffect(() => {
@@ -11870,7 +11900,7 @@ function ERubricaMobileScreen({
     <View style={styles.portalStack}>
       <View style={[styles.portalHeroPanel, { backgroundColor: ERUBRICA_COLORS.dark }]}>
         <View style={styles.portalHeroCopy}>
-          <Text style={styles.dashboardPanelLabel}>Firma electrónica</Text>
+          <Text style={[styles.dashboardPanelLabel, { color: '#DDF6E8' }]}>Firma electrónica</Text>
           <Text style={styles.portalHeroTitle}>E-Rúbrica</Text>
           <Text style={styles.portalHeroText}>Gestiona solicitudes, documentos firmados y validaciones desde tu móvil.</Text>
         </View>
@@ -11902,10 +11932,10 @@ function ERubricaMobileScreen({
       ) : null}
 
       <View style={styles.segment}>
-        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'solicitudes'} label={`Solicitudes (${solicitudes.length})`} onPress={() => setTab('solicitudes')} />
-        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'firmas'} label={`Mis firmas (${firmas.length})`} onPress={() => setTab('firmas')} />
-        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'firmar'} label="Firmar PDF" onPress={() => setTab('firmar')} />
-        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'validar'} label="Validar" onPress={() => setTab('validar')} />
+        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'solicitudes'} label={`Solicitudes (${solicitudes.length})`} onPress={() => selectTab('solicitudes')} />
+        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'firmas'} label={`Mis firmas (${firmas.length})`} onPress={() => selectTab('firmas')} />
+        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'firmar'} label="Firmar PDF" onPress={() => selectTab('firmar')} />
+        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'validar'} label="Validar" onPress={() => selectTab('validar')} />
       </View>
 
       <View style={styles.portalSectionHeader}>
@@ -13059,6 +13089,7 @@ function FirmaCard({ emisor, estado, onView, onEdit, onDelete }: { emisor: Emiso
 }
 
 function PerfilForm({
+  service = 'efact',
   form,
   lookup,
   saving,
@@ -13069,6 +13100,7 @@ function PerfilForm({
   onSelectPresetAvatar,
   onSave,
 }: {
+  service?: 'efact' | 'erubrica';
   form: PerfilFormState;
   lookup: PerfilLookup | null;
   saving: boolean;
@@ -13093,6 +13125,9 @@ function PerfilForm({
   const displayName = esEmpresa
     ? form.nombreEmpresa || 'Empresa'
     : [form.nombres, form.apellidos].filter(Boolean).join(' ') || 'Usuario';
+  const erubrica = service === 'erubrica';
+  const accentColor = erubrica ? ERUBRICA_COLORS.primary : EFACT_THEME.colors.primary;
+  const profileLabel = erubrica ? 'Perfil E-RUBRICA' : getTipoClienteLabel(form.tipoCliente) || 'Perfil E-FACT';
   const identificationLabel = identificaciones.find((item) => item.idTipoIdentificacion === form.idTipoIdentificacion)?.descripcion
     ?? identificaciones.find((item) => item.idTipoIdentificacion === form.idTipoIdentificacion)?.nombreTipo
     ?? 'Identificacion';
@@ -13100,7 +13135,7 @@ function PerfilForm({
   if (!editing) {
     return (
       <View style={styles.profileOverview}>
-        <View style={styles.profileHeroCard}>
+        <View style={[styles.profileHeroCard, erubrica && styles.erubricaProfileHeroCard]}>
           <View style={styles.profileHeroTop}>
             {usesInitials ? (
               <InitialsAvatar initials={initials} size={88} />
@@ -13108,19 +13143,19 @@ function PerfilForm({
               <Image source={{ uri: resolveImageUrl(form.avatarUrl) }} style={styles.profileHeroImage} />
             )}
             <View style={styles.profileHeroCopy}>
-              <Text style={styles.profileHeroEyebrow}>{getTipoClienteLabel(form.tipoCliente) || 'Perfil E-FACT'}</Text>
+              <Text style={[styles.profileHeroEyebrow, erubrica && styles.erubricaProfileHeroEyebrow]}>{profileLabel}</Text>
               <Text style={styles.profileHeroName} numberOfLines={2}>{displayName}</Text>
               <Text style={styles.profileHeroMeta} numberOfLines={1}>{form.email || 'Correo no registrado'}</Text>
             </View>
           </View>
           <View style={styles.profileHeroActions}>
-            <Pressable style={styles.profileMainAction} onPress={() => setEditing(true)}>
+            <Pressable style={[styles.profileMainAction, erubrica && styles.erubricaProfileMainAction]} onPress={() => setEditing(true)}>
               <MaterialCommunityIcons name="account-edit-outline" size={19} color="#FFFFFF" />
               <Text style={styles.profileMainActionText}>Editar perfil</Text>
             </Pressable>
             <Pressable style={styles.profileSecondaryAction} onPress={onSelectAvatar}>
-              <MaterialCommunityIcons name="camera-outline" size={18} color={EFACT_THEME.colors.primary} />
-              <Text style={styles.profileSecondaryActionText}>Foto</Text>
+              <MaterialCommunityIcons name="camera-outline" size={18} color={accentColor} />
+              <Text style={[styles.profileSecondaryActionText, erubrica && styles.erubricaProfileSecondaryActionText]}>Foto</Text>
             </Pressable>
           </View>
         </View>
@@ -13131,13 +13166,13 @@ function PerfilForm({
           <ProfileInfoTile icon="map-marker-outline" label="Direccion" value={form.direccionEmpresa || 'Sin direccion'} full />
         </View>
 
-        <View style={styles.profileSecurityCard}>
-          <View style={styles.profileSecurityIcon}>
-            <MaterialCommunityIcons name="shield-check-outline" size={22} color={EFACT_THEME.colors.success} />
+        <View style={[styles.profileSecurityCard, erubrica && styles.erubricaProfileSecurityCard]}>
+          <View style={[styles.profileSecurityIcon, erubrica && styles.erubricaProfileSecurityIcon]}>
+            <MaterialCommunityIcons name="shield-check-outline" size={22} color={accentColor} />
           </View>
           <View style={styles.profileSecurityCopy}>
-            <Text style={styles.profileSecurityTitle}>Cuenta protegida</Text>
-            <Text style={styles.profileSecurityText}>Tu clave no se muestra. Puedes cambiarla desde editar perfil.</Text>
+            <Text style={[styles.profileSecurityTitle, erubrica && styles.erubricaProfileSecurityTitle]}>Cuenta protegida</Text>
+            <Text style={[styles.profileSecurityText, erubrica && styles.erubricaProfileSecurityText]}>Tu clave y tus accesos de firma se mantienen separados de tus comprobantes.</Text>
           </View>
         </View>
         <View style={styles.infoNotice}>
@@ -13145,8 +13180,8 @@ function PerfilForm({
             <Text style={styles.infoNoticeIconText}>i</Text>
           </View>
           <View style={styles.infoNoticeBody}>
-            <Text style={styles.infoNoticeTitle}>Datos para facturacion</Text>
-            <Text style={styles.infoNoticeText}>Esta informacion se utilizara para emitir correctamente tus comprobantes.</Text>
+            <Text style={styles.infoNoticeTitle}>{erubrica ? 'Datos para firma electronica' : 'Datos para facturacion'}</Text>
+            <Text style={styles.infoNoticeText}>{erubrica ? 'Esta informacion se utilizara para validar tu identidad dentro de E-Rubrica.' : 'Esta informacion se utilizara para emitir correctamente tus comprobantes.'}</Text>
           </View>
         </View>
       </View>
@@ -13156,11 +13191,11 @@ function PerfilForm({
     <View style={styles.clientFormCard}>
       <View style={styles.profileEditHeader}>
         <View style={styles.profileEditTitleBlock}>
-          <Text style={styles.clientFormTitle}>Editar perfil</Text>
+          <Text style={styles.clientFormTitle}>{erubrica ? 'Editar perfil E-Rubrica' : 'Editar perfil'}</Text>
           <Text style={styles.profileEditHint}>Actualiza solo los datos que necesites cambiar.</Text>
         </View>
         <Pressable style={styles.profileCloseEditButton} onPress={() => setEditing(false)}>
-          <MaterialCommunityIcons name="close" size={20} color={EFACT_THEME.colors.primary} />
+          <MaterialCommunityIcons name="close" size={20} color={accentColor} />
         </Pressable>
       </View>
       <View style={styles.profileAvatarPanel}>
@@ -13200,12 +13235,12 @@ function PerfilForm({
           <Text style={styles.infoNoticeIconText}>i</Text>
         </View>
         <View style={styles.infoNoticeBody}>
-          <Text style={styles.infoNoticeTitle}>Datos para facturacion</Text>
-          <Text style={styles.infoNoticeText}>Esta informacion se utilizara para emitir correctamente tus comprobantes.</Text>
+          <Text style={styles.infoNoticeTitle}>{erubrica ? 'Datos para firma electronica' : 'Datos para facturacion'}</Text>
+          <Text style={styles.infoNoticeText}>{erubrica ? 'Esta informacion se utilizara para validar tu identidad dentro de E-Rubrica.' : 'Esta informacion se utilizara para emitir correctamente tus comprobantes.'}</Text>
         </View>
       </View>
       <View style={styles.formSectionBox}>
-        <Text style={styles.clientFormSubtitle}>Cuenta</Text>
+        <Text style={styles.clientFormSubtitle}>{erubrica ? 'Cuenta E-Rubrica' : 'Cuenta'}</Text>
         <Field label="Correo Electronico" value={form.email} onChangeText={(value) => onChange('email', value)} autoCapitalize="none" keyboardType="email-address" />
         <DropdownField
           label="Tipo de cliente *"

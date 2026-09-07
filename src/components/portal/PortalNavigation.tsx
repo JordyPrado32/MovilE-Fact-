@@ -1,31 +1,46 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image, Pressable, Text, View } from 'react-native';
 
-import { EFACT_THEME } from '../../styles/theme';
+import { EFACT_THEME, ERUBRICA_COLORS } from '../../styles/theme';
 import { styles } from '../../styles/appStyles';
 
 type PortalView = string;
 type PortalIcon = 'home' | 'grid' | 'document' | 'profile' | 'settings' | 'bot' | 'signature' | 'new';
 
-export function PortalHeaderAvatar() {
-  return <Image source={require('../../../assets/logo-numerica.png')} style={styles.portalHeaderLogo} />;
+export function PortalHeaderAvatar({ service = 'efact' }: { service?: 'efact' | 'erubrica' }) {
+  const source = service === 'erubrica'
+    ? require('../../../assets/logo-numerica-rubrica.png')
+    : require('../../../assets/logo-numerica.png');
+  return <Image source={source} style={styles.portalHeaderLogo} />;
 }
 
-export function PortalBottomNav({ bottomInset, activeView, onServices, onHome, onNew, onFirma, onProfile }: {
+export function PortalBottomNav({ bottomInset, activeView, mode = 'efact', onServices, onHome, onNew, onFirma, onProfile, onSolicitudes, onFirmar, onValidar }: {
   bottomInset: number;
   activeView: PortalView;
+  mode?: 'efact' | 'erubrica';
   onServices: () => void;
   onHome: () => void;
   onNew: () => void;
   onFirma: () => void;
   onProfile: () => void;
+  onSolicitudes?: () => void;
+  onFirmar?: () => void;
+  onValidar?: () => void;
 }) {
-  return <View style={[styles.portalBottomNav, { bottom: Math.max(8, bottomInset + 4) }]}><PortalTabButton active={activeView === 'portal'} icon="grid" label="Portal" onPress={onServices} /><PortalTabButton active={activeView === 'dashboard'} icon="home" label="Inicio" onPress={onHome} /><PortalTabButton active={activeView === 'nueva-factura'} icon="new" label="Nuevo" featured onPress={onNew} /><PortalTabButton active={activeView === 'firma'} icon="signature" label="Firma" onPress={onFirma} /><PortalTabButton active={activeView === 'perfil'} icon="profile" label="Perfil" onPress={onProfile} /></View>;
+  const erubrica = mode === 'erubrica';
+  const accentColor = erubrica ? ERUBRICA_COLORS.primary : EFACT_THEME.colors.primary;
+  return <View style={[styles.portalBottomNav, erubrica && styles.portalBottomNavERubrica, { bottom: Math.max(8, bottomInset + 4) }]}>
+    <PortalTabButton accentColor={accentColor} active={activeView === 'portal'} icon="grid" label="Portal" onPress={onServices} />
+    {erubrica ? <PortalTabButton accentColor={accentColor} active={activeView === 'e-rubrica-solicitudes'} icon="document" label="Solicitudes" onPress={onSolicitudes ?? onHome} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'dashboard'} icon="home" label="Inicio" onPress={onHome} />}
+    {erubrica ? <PortalTabButton accentColor={accentColor} active={activeView === 'e-rubrica-firmar'} icon="signature" label="Firmar" featured onPress={onFirmar ?? onNew} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'nueva-factura'} icon="new" label="Nuevo" featured onPress={onNew} />}
+    {erubrica ? <PortalTabButton accentColor={accentColor} active={activeView === 'e-rubrica-validar'} icon="shield-check" label="Validar" onPress={onValidar ?? onFirma} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'firma'} icon="signature" label="Firma" onPress={onFirma} />}
+    <PortalTabButton accentColor={accentColor} active={activeView === 'perfil' || activeView === 'perfil-e-rubrica'} icon="profile" label="Perfil" onPress={onProfile} />
+  </View>;
 }
 
-function PortalTabButton({ active, featured, icon, label, onPress }: { active: boolean; featured?: boolean; icon: PortalIcon; label: string; onPress: () => void }) {
-  const iconName: React.ComponentProps<typeof MaterialCommunityIcons>['name'] = icon === 'home' ? 'home-variant-outline' : icon === 'grid' ? 'view-grid-outline' : icon === 'document' ? 'file-document-outline' : icon === 'signature' ? 'draw-pen' : icon === 'profile' ? 'account-circle-outline' : icon === 'settings' ? 'cog-outline' : icon === 'new' ? 'file-document-plus-outline' : 'robot-outline';
-  return <Pressable hitSlop={6} accessibilityRole="button" accessibilityLabel={label} style={[styles.portalTabButton, active && !featured && styles.portalTabButtonActive, featured && styles.portalTabButtonFeatured]} onPress={onPress}><View style={[styles.portalTabIcon, active && styles.portalTabIconBubble, featured && styles.portalTabIconFeatured]}><MaterialCommunityIcons name={iconName} size={featured ? 25 : 22} color={active || featured ? '#FFFFFF' : EFACT_THEME.colors.textMuted} /></View><Text style={[styles.portalTabText, active && styles.portalTabTextActive, featured && styles.portalTabTextFeatured]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{label}</Text></Pressable>;
+function PortalTabButton({ accentColor, active, featured, icon, label, onPress }: { accentColor: string; active: boolean; featured?: boolean; icon: PortalIcon | 'shield-check'; label: string; onPress: () => void }) {
+  const iconName: React.ComponentProps<typeof MaterialCommunityIcons>['name'] = icon === 'home' ? 'home-variant-outline' : icon === 'grid' ? 'view-grid-outline' : icon === 'document' ? 'file-document-outline' : icon === 'signature' ? 'draw-pen' : icon === 'shield-check' ? 'shield-check-outline' : icon === 'profile' ? 'account-circle-outline' : icon === 'settings' ? 'cog-outline' : icon === 'new' ? 'file-document-plus-outline' : 'robot-outline';
+  return <Pressable hitSlop={6} accessibilityRole="button" accessibilityLabel={label} style={[styles.portalTabButton, active && !featured && styles.portalTabButtonActive, active && !featured && { backgroundColor: `${accentColor}18` }, featured && styles.portalTabButtonFeatured]} onPress={onPress}><View style={[styles.portalTabIcon, active && styles.portalTabIconBubble, featured && styles.portalTabIconFeatured, (active || featured) && { backgroundColor: accentColor, shadowColor: accentColor }]}><MaterialCommunityIcons name={iconName} size={featured ? 25 : 22} color={active || featured ? '#FFFFFF' : EFACT_THEME.colors.textMuted} /></View><Text style={[styles.portalTabText, active && styles.portalTabTextActive, featured && styles.portalTabTextFeatured, (active || featured) && { color: accentColor }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{label}</Text></Pressable>;
 }
 
 export function ModuleCard({ title, description, count, enabled, onPress }: { title: string; description: string; count?: number; enabled: boolean; onPress: () => void }) {

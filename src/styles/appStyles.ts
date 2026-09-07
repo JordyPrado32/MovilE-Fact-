@@ -1233,6 +1233,9 @@ export const styles = StyleSheet.create({
   portalSafeArea: {
     backgroundColor: EFACT_THEME.colors.primaryDark,
   },
+  erubricaSafeArea: {
+    backgroundColor: ERUBRICA_COLORS.dark,
+  },
   workspaceCanvas: {
     flexGrow: 1,
     padding: 12,
@@ -1266,12 +1269,19 @@ export const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 96,
   },
+  efactHomeWorkspaceCanvas: {
+    paddingHorizontal: 0,
+    paddingTop: 0,
+  },
   unifiedTopBar: {
     backgroundColor: EFACT_THEME.colors.primaryDark,
     gap: 10,
     paddingBottom: 12,
     paddingHorizontal: 16,
     paddingTop: 10,
+  },
+  erubricaTopBar: {
+    backgroundColor: ERUBRICA_COLORS.dark,
   },
   unifiedHeaderRow: {
     alignItems: 'center',
@@ -1301,6 +1311,9 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 15,
     marginTop: 1,
+  },
+  erubricaHeaderSubtitle: {
+    color: '#DDF6E8',
   },
   unifiedHeaderActions: {
     alignItems: 'center',
@@ -1354,6 +1367,10 @@ export const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 3,
+  },
+  unifiedStatusCardFull: {
+    flex: 0,
+    width: '100%',
   },
   unifiedStatusCardSuccess: {
     backgroundColor: '#ECFBF3',
@@ -1717,6 +1734,9 @@ export const styles = StyleSheet.create({
     padding: 18,
     paddingTop: 48,
   },
+  erubricaMenuHeader: {
+    backgroundColor: ERUBRICA_COLORS.dark,
+  },
   menuTitle: {
     color: '#FFFFFF',
     fontSize: 22,
@@ -1728,15 +1748,22 @@ export const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 2,
   },
+  erubricaMenuSubtitle: {
+    color: '#CFF5DD',
+  },
   menuCloseButton: {
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.14)',
     borderColor: 'rgba(255,255,255,0.22)',
-    borderWidth: 1,
     borderRadius: 12,
+    borderWidth: 1,
     height: 40,
     justifyContent: 'center',
     width: 40,
+  },
+  erubricaMenuCloseButton: {
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderColor: 'rgba(207,245,221,0.34)',
   },
   menuCloseText: {
     color: '#FFFFFF',
@@ -3459,6 +3486,10 @@ export const styles = StyleSheet.create({
     shadowOpacity: 0.13,
     shadowRadius: 16,
     elevation: 10,
+  },
+  portalBottomNavERubrica: {
+    borderColor: ERUBRICA_COLORS.border,
+    shadowColor: ERUBRICA_COLORS.dark,
   },
   portalTabButton: {
     alignItems: 'center',
@@ -7024,6 +7055,11 @@ export const styles = StyleSheet.create({
     gap: EFACT_THEME.spacing.lg,
     padding: EFACT_THEME.spacing.lg,
   },
+  erubricaProfileHeroCard: {
+    backgroundColor: ERUBRICA_COLORS.dark,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1,
+  },
   profileHeroTop: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -7046,6 +7082,9 @@ export const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
+  },
+  erubricaProfileHeroEyebrow: {
+    color: '#CFF5DD',
   },
   profileHeroName: {
     color: '#FFFFFF',
@@ -7075,6 +7114,9 @@ export const styles = StyleSheet.create({
     minHeight: 46,
     paddingHorizontal: EFACT_THEME.spacing.md,
   },
+  erubricaProfileMainAction: {
+    backgroundColor: ERUBRICA_COLORS.primary,
+  },
   profileMainActionText: {
     color: '#FFFFFF',
     fontSize: 13,
@@ -7094,6 +7136,9 @@ export const styles = StyleSheet.create({
     color: EFACT_THEME.colors.primary,
     fontSize: 13,
     fontWeight: '900',
+  },
+  erubricaProfileSecondaryActionText: {
+    color: ERUBRICA_COLORS.primary,
   },
   profileInfoGrid: {
     flexDirection: 'row',
@@ -7150,6 +7195,10 @@ export const styles = StyleSheet.create({
     gap: EFACT_THEME.spacing.md,
     padding: EFACT_THEME.spacing.md,
   },
+  erubricaProfileSecurityCard: {
+    backgroundColor: '#ECFAF2',
+    borderColor: ERUBRICA_COLORS.border,
+  },
   profileSecurityIcon: {
     alignItems: 'center',
     backgroundColor: '#E8F7EF',
@@ -7157,6 +7206,9 @@ export const styles = StyleSheet.create({
     height: 42,
     justifyContent: 'center',
     width: 42,
+  },
+  erubricaProfileSecurityIcon: {
+    backgroundColor: '#DDF6E8',
   },
   profileSecurityCopy: {
     flex: 1,
@@ -7167,12 +7219,18 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
   },
+  erubricaProfileSecurityTitle: {
+    color: ERUBRICA_COLORS.text,
+  },
   profileSecurityText: {
     color: '#32724E',
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 17,
     marginTop: 2,
+  },
+  erubricaProfileSecurityText: {
+    color: '#256D49',
   },
   profileEditHeader: {
     alignItems: 'flex-start',
