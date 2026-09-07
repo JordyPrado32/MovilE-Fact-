@@ -172,6 +172,7 @@ type WorkspaceView =
   | 'centro-normativo'
   | 'no-autorizado';
 type ERubricaTab =
+  | 'inicio'
   | 'solicitudes'
   | 'firmas'
   | 'documentos-por-firmar'
@@ -5762,6 +5763,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
 
     if (view === 'e-rubrica' && canUseERubrica) {
+      setErubricaTabRequest(null);
       setActiveView(view);
       return;
     }
@@ -5940,7 +5942,13 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   ];
   const openERubricaTab = (tab: ERubricaTab) => {
     setErubricaTabRequest(tab);
-    openView('e-rubrica');
+    setMenuOpen(false);
+    setSearch('');
+    if (canUseERubrica) {
+      setActiveView('e-rubrica');
+      return;
+    }
+    setActiveView('no-autorizado');
   };
 
   const openPdfPreview = async (loader: () => Promise<{ url?: string | null } | string>, fileName: string) => {
@@ -5957,7 +5965,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   };
   const isERubricaWorkspace = activeView === 'e-rubrica' || activeView === 'perfil-e-rubrica';
   const drawerMenu: DrawerMenuNode[] = isERubricaWorkspace ? [
-    { key: 'erubrica-inicio', label: 'Inicio', view: 'e-rubrica', icon: 'home', activeWhen: activeView === 'e-rubrica' && !erubricaTabRequest, disabled: !canUseERubrica },
     {
       key: 'erubrica-documentos',
       label: 'Documentos Electrónicos',
@@ -7089,13 +7096,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       {activeView !== 'portal' ? (
         <PortalBottomNav
           bottomInset={insets.bottom}
-          activeView={activeView === 'e-rubrica' ? `e-rubrica-${erubricaTabRequest ?? 'solicitudes'}` : activeView}
+          activeView={activeView === 'e-rubrica' ? `e-rubrica-${erubricaTabRequest ?? 'inicio'}` : activeView}
           mode={isERubricaWorkspace ? 'erubrica' : 'efact'}
           onServices={() => canUsePortal ? openView('portal') : setMenuOpen(true)}
-          onHome={() => openView('dashboard')}
+          onHome={() => isERubricaWorkspace ? openView('e-rubrica') : openView('dashboard')}
           onNew={() => openView('nueva-factura')}
-          onFirma={() => openView('firma')}
+          onFirma={() => isERubricaWorkspace ? openERubricaTab('firma-config') : openView('firma')}
           onProfile={() => isERubricaWorkspace ? openView('perfil-e-rubrica') : openView('perfil')}
+          onMenu={() => setMenuOpen(true)}
           onSolicitudes={() => openERubricaTab('solicitudes')}
           onFirmar={() => openERubricaTab('firmar')}
           onValidar={() => openERubricaTab('validar')}
@@ -11898,7 +11906,7 @@ function ERubricaMobileScreen({
   onPreviewPdf: (file: { uri: string; name: string; mimeType?: string }) => void;
   onSync: () => Promise<void>;
 }) {
-  const [tab, setTab] = useState<ERubricaTab>('solicitudes');
+  const [tab, setTab] = useState<ERubricaTab>('inicio');
   const [qrInput, setQrInput] = useState('');
   const [qrResult, setQrResult] = useState<unknown>(null);
   const [validatingQr, setValidatingQr] = useState(false);
@@ -11930,7 +11938,7 @@ function ERubricaMobileScreen({
     }
   }, [initialPdf]);
   useEffect(() => {
-    if (requestedTab) setTab(requestedTab);
+    setTab(requestedTab ?? 'inicio');
   }, [requestedTab]);
   const solicitudes = Array.isArray(data?.solicitudes) ? data.solicitudes : [];
   const firmas = Array.isArray(data?.firmas) ? data.firmas : [];
@@ -12079,30 +12087,17 @@ function ERubricaMobileScreen({
         <View style={styles.portalMetricItem}><Text style={[styles.portalMetricValue, { color: ERUBRICA_COLORS.primary }]}>{notificaciones.length}</Text><Text style={styles.portalMetricLabel}>AVISOS</Text></View>
       </View>
 
-      {menus.length > 0 ? (
+      {tab === 'inicio' ? (
         <View style={styles.clientCard}>
-          <Text style={styles.clientDetailLabel}>Menú autorizado</Text>
-          <Text style={styles.clientMeta}>Opciones disponibles según el rol de tu usuario.</Text>
-          <View style={styles.segment}>
-            {menus.map((item, index) => (
-              <Text key={`erubrica-menu-${index}`} style={styles.adminTabText}>{label(item, ['nombre', 'Nombre', 'nombremenu'], 'Opción')}</Text>
-            ))}
-          </View>
+          <Text style={styles.clientDetailLabel}>Resumen de E-Rúbrica</Text>
+          <Text style={styles.clientMeta}>Abre el menú hamburguesa para ingresar a cada módulo de E-Rúbrica.</Text>
         </View>
       ) : null}
 
-      <View style={styles.segment}>
-        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'solicitudes'} label={`Solicitudes (${solicitudes.length})`} onPress={() => selectTab('solicitudes')} />
-        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'ver-mis-firmas'} label={`Mis firmas (${firmas.length})`} onPress={() => selectTab('ver-mis-firmas')} />
-        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'historial-documentos'} label="Historial" onPress={() => selectTab('historial-documentos')} />
-        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'firmar'} label="Firmar PDF" onPress={() => selectTab('firmar')} />
-        <SegmentButton accentColor={ERUBRICA_COLORS.primary} active={tab === 'validar'} label="Validar" onPress={() => selectTab('validar')} />
-      </View>
-
-      <View style={styles.portalSectionHeader}>
+      {tab !== 'inicio' ? <View style={styles.portalSectionHeader}>
         <View style={styles.portalSectionTitleWrap}><Text style={styles.portalSectionTitle}>Actividad reciente</Text></View>
         <Pressable style={styles.portalSectionAction} onPress={onRefresh}><MaterialCommunityIcons name="refresh" size={22} color={ERUBRICA_COLORS.primary} /></Pressable>
-      </View>
+      </View> : null}
 
       {loading ? <View style={styles.directoryLoading}><ActivityIndicator color={ERUBRICA_COLORS.primary} /><Text style={styles.mutedText}>Cargando E-Rúbrica...</Text></View> : null}
       {tab === 'firmar' ? (

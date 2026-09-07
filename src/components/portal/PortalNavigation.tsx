@@ -14,7 +14,7 @@ export function PortalHeaderAvatar({ service = 'efact' }: { service?: 'efact' | 
   return <Image source={source} style={styles.portalHeaderLogo} />;
 }
 
-export function PortalBottomNav({ bottomInset, activeView, mode = 'efact', onServices, onHome, onNew, onFirma, onProfile, onSolicitudes, onFirmar, onValidar }: {
+export function PortalBottomNav({ bottomInset, activeView, mode = 'efact', onServices, onHome, onNew, onFirma, onProfile, onMenu, onSolicitudes, onFirmar, onValidar }: {
   bottomInset: number;
   activeView: PortalView;
   mode?: 'efact' | 'erubrica';
@@ -23,6 +23,7 @@ export function PortalBottomNav({ bottomInset, activeView, mode = 'efact', onSer
   onNew: () => void;
   onFirma: () => void;
   onProfile: () => void;
+  onMenu?: () => void;
   onSolicitudes?: () => void;
   onFirmar?: () => void;
   onValidar?: () => void;
@@ -31,15 +32,15 @@ export function PortalBottomNav({ bottomInset, activeView, mode = 'efact', onSer
   const accentColor = erubrica ? ERUBRICA_COLORS.primary : EFACT_THEME.colors.primary;
   return <View style={[styles.portalBottomNav, erubrica && styles.portalBottomNavERubrica, { bottom: Math.max(8, bottomInset + 4) }]}>
     <PortalTabButton accentColor={accentColor} active={activeView === 'portal'} icon="grid" label="Portal" onPress={onServices} />
-    {erubrica ? <PortalTabButton accentColor={accentColor} active={activeView === 'e-rubrica-solicitudes'} icon="document" label="Solicitudes" onPress={onSolicitudes ?? onHome} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'dashboard'} icon="home" label="Inicio" onPress={onHome} />}
-    {erubrica ? <PortalTabButton accentColor={accentColor} active={activeView === 'e-rubrica-firmar'} icon="signature" label="Firmar" featured onPress={onFirmar ?? onNew} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'nueva-factura'} icon="new" label="Nuevo" featured onPress={onNew} />}
-    {erubrica ? <PortalTabButton accentColor={accentColor} active={activeView === 'e-rubrica-validar'} icon="shield-check" label="Validar" onPress={onValidar ?? onFirma} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'firma'} icon="signature" label="Firma" onPress={onFirma} />}
+    {erubrica ? <PortalTabButton accentColor={accentColor} active={activeView === 'e-rubrica-inicio'} icon="home" label="Inicio" onPress={onHome} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'dashboard'} icon="home" label="Inicio" onPress={onHome} />}
+    {erubrica ? <PortalTabButton accentColor={accentColor} active={false} icon="menu" label="Menú" featured onPress={onMenu ?? onFirmar ?? onNew} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'nueva-factura'} icon="new" label="Nuevo" featured onPress={onNew} />}
+    {erubrica ? <PortalTabButton accentColor={accentColor} active={false} icon="settings" label="Config." onPress={onFirma} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'firma'} icon="signature" label="Firma" onPress={onFirma} />}
     <PortalTabButton accentColor={accentColor} active={activeView === 'perfil' || activeView === 'perfil-e-rubrica'} icon="profile" label="Perfil" onPress={onProfile} />
   </View>;
 }
 
-function PortalTabButton({ accentColor, active, featured, icon, label, onPress }: { accentColor: string; active: boolean; featured?: boolean; icon: PortalIcon | 'shield-check'; label: string; onPress: () => void }) {
-  const iconName: React.ComponentProps<typeof MaterialCommunityIcons>['name'] = icon === 'home' ? 'home-variant-outline' : icon === 'grid' ? 'view-grid-outline' : icon === 'document' ? 'file-document-outline' : icon === 'signature' ? 'draw-pen' : icon === 'shield-check' ? 'shield-check-outline' : icon === 'profile' ? 'account-circle-outline' : icon === 'settings' ? 'cog-outline' : icon === 'new' ? 'file-document-plus-outline' : 'robot-outline';
+function PortalTabButton({ accentColor, active, featured, icon, label, onPress }: { accentColor: string; active: boolean; featured?: boolean; icon: PortalIcon | 'shield-check' | 'menu'; label: string; onPress: () => void }) {
+  const iconName: React.ComponentProps<typeof MaterialCommunityIcons>['name'] = icon === 'home' ? 'home-variant-outline' : icon === 'grid' ? 'view-grid-outline' : icon === 'document' ? 'file-document-outline' : icon === 'signature' ? 'draw-pen' : icon === 'shield-check' ? 'shield-check-outline' : icon === 'profile' ? 'account-circle-outline' : icon === 'settings' ? 'cog-outline' : icon === 'menu' ? 'menu' : icon === 'new' ? 'file-document-plus-outline' : 'robot-outline';
   return <Pressable hitSlop={6} accessibilityRole="button" accessibilityLabel={label} style={[styles.portalTabButton, active && !featured && styles.portalTabButtonActive, active && !featured && { backgroundColor: `${accentColor}18` }, featured && styles.portalTabButtonFeatured]} onPress={onPress}><View style={[styles.portalTabIcon, active && styles.portalTabIconBubble, featured && styles.portalTabIconFeatured, (active || featured) && { backgroundColor: accentColor, shadowColor: accentColor }]}><MaterialCommunityIcons name={iconName} size={featured ? 25 : 22} color={active || featured ? '#FFFFFF' : EFACT_THEME.colors.textMuted} /></View><Text style={[styles.portalTabText, active && styles.portalTabTextActive, featured && styles.portalTabTextFeatured, (active || featured) && { color: accentColor }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{label}</Text></Pressable>;
 }
 
