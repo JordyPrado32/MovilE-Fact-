@@ -3074,7 +3074,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   }, [activeView, authorizedViews, catalogUserId, reloadKey]);
 
   useEffect(() => {
-    if (!authorizedViews.has('firma') || activeView !== 'firma') return;
+    const isInsideEfact = activeView !== 'portal' && activeView !== 'e-rubrica' && activeView !== 'no-autorizado';
+    if ((!authorizedViews.has('firma') && !authorizedViews.has('emisor')) || !isInsideEfact) return;
 
     let mounted = true;
     setLoadingFirma(true);
@@ -4428,6 +4429,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       .map(mapProductoToFacturaProducto);
   };
 
+  const getUsableFacturaProductos = (items: FacturaProducto[]) =>
+    items.filter((producto) => {
+      const descripcion = normalizeText(producto.descripcion);
+      return Boolean(producto.codprincipal || producto.codauxiliar || (producto.codproducto && producto.codproducto > 0) || (descripcion && descripcion !== 'producto'));
+    });
+
   const ensureFacturaProducto = (producto: FacturaProducto): FacturaProducto => ({
     ...producto,
     codproducto: producto.codproducto || 0,
@@ -4457,7 +4464,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setDirectoryMessage(null);
     try {
       const remoteProductos = await buscarFacturaProductos(catalogUserId, facturaForm.productoBusqueda);
-      setFacturaProductos(remoteProductos.length > 0 ? remoteProductos : searchLocalFacturaProductos(facturaForm.productoBusqueda));
+      const usableRemote = getUsableFacturaProductos(remoteProductos);
+      setFacturaProductos(usableRemote.length > 0 ? usableRemote : searchLocalFacturaProductos(facturaForm.productoBusqueda));
     } catch (error) {
       const localProductos = searchLocalFacturaProductos(facturaForm.productoBusqueda);
       if (localProductos.length > 0) {
@@ -5120,7 +5128,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setDirectoryMessage(null);
     try {
       const remoteProductos = await buscarLiquidacionProductos(catalogUserId, liquidacionForm.productoBusqueda);
-      setLiquidacionProductos(remoteProductos.length > 0 ? remoteProductos : searchLocalFacturaProductos(liquidacionForm.productoBusqueda));
+      const usableRemote = getUsableFacturaProductos(remoteProductos);
+      setLiquidacionProductos(usableRemote.length > 0 ? usableRemote : searchLocalFacturaProductos(liquidacionForm.productoBusqueda));
     } catch (error) {
       const localProductos = searchLocalFacturaProductos(liquidacionForm.productoBusqueda);
       if (localProductos.length > 0) {
@@ -5296,7 +5305,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setDirectoryMessage(null);
     try {
       const remoteProductos = await buscarGuiaProductos(catalogUserId, guiaForm.productoBusqueda);
-      setGuiaProductos(remoteProductos.length > 0 ? remoteProductos : searchLocalFacturaProductos(guiaForm.productoBusqueda));
+      const usableRemote = getUsableFacturaProductos(remoteProductos);
+      setGuiaProductos(usableRemote.length > 0 ? usableRemote : searchLocalFacturaProductos(guiaForm.productoBusqueda));
     } catch (error) {
       const localProductos = searchLocalFacturaProductos(guiaForm.productoBusqueda);
       if (localProductos.length > 0) {
@@ -5863,24 +5873,26 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     <SafeAreaView edges={['top', 'bottom']} style={[styles.workspaceSafeArea, activeView === 'portal' && styles.portalSafeArea]}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
       <View style={styles.workspaceChrome}>
-        <GlobalWorkspaceHeader
-          title={getWorkspaceTitle(activeView)}
-          subtitle={activeView === 'firma' ? 'Gestiona tu firma y certificados' : activeView === 'portal' ? 'Selecciona el modulo al que deseas ingresar' : 'Resumen y accesos de tu sistema'}
-          unreadNotifications={unreadNotifications}
-          documentPlan={documentPlan}
-          firmaSummary={firmaSummary}
-          onSearch={() => { setGlobalSearchQuery(''); setGlobalSearchOpen(true); }}
-          onNotifications={() => setNotificationsOpen(true)}
-          onMenu={() => setMenuOpen(true)}
-          onDocuments={() => openView('comprar-documentos')}
-          onFirma={() => openView('firma')}
-        />
+        {activeView !== 'portal' ? (
+          <GlobalWorkspaceHeader
+            title={getWorkspaceTitle(activeView)}
+            subtitle={activeView === 'firma' ? 'Gestiona tu firma y certificados' : 'Resumen y accesos de tu sistema'}
+            unreadNotifications={unreadNotifications}
+            documentPlan={documentPlan}
+            firmaSummary={firmaSummary}
+            onSearch={() => { setGlobalSearchQuery(''); setGlobalSearchOpen(true); }}
+            onNotifications={() => setNotificationsOpen(true)}
+            onMenu={() => setMenuOpen(true)}
+            onDocuments={() => openView('comprar-documentos')}
+            onFirma={() => openView('firma')}
+          />
+        ) : null}
 
         <View style={styles.workspaceBodyFrame}>
         <ScrollView
           style={styles.workspaceBodyScroll}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.workspaceCanvasWithBottomNav, { paddingBottom: 88 + insets.bottom }]}
+          contentContainerStyle={[styles.workspaceCanvasWithBottomNav, { paddingBottom: activeView === 'portal' ? 20 + insets.bottom : 88 + insets.bottom }]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
           nestedScrollEnabled
@@ -5910,27 +5922,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   <Image source={require('./assets/logo-numerica.png')} style={styles.portalWebLogo} />
                 </View>
                 <View style={styles.portalWebTitleCopy}>
-                  <Text style={styles.portalWebTitle}>Servicios Disponibles</Text>
-                  <Text style={styles.portalWebSubtitle}>Selecciona el modulo al que deseas ingresar</Text>
-                </View>
-              </View>
-              <View style={styles.portalWebSessionCard}>
-                <Image source={{ uri: resolveImageUrl(portalAvatarUrl) }} style={styles.portalWebSessionAvatar} />
-                <View style={styles.portalWebSessionCopy}>
-                  <Text style={styles.portalWebSessionName}>{portalFirstName}</Text>
-                  <View style={styles.portalWebSessionStatusRow}>
-                    <View style={styles.portalWebStatusDot} />
-                    <Text style={styles.portalWebSessionStatus}>Sesion activa</Text>
-                  </View>
-                </View>
-              </View>
-              <View style={styles.portalWelcomePanel}>
-                <View style={styles.portalWelcomeCopy}>
                   <Text style={styles.portalWelcomeEyebrow}>Numerica Software</Text>
-                  <Text style={styles.portalWelcomeTitle}>Bienvenido, {portalFirstName}</Text>
-                  <Text style={styles.portalWelcomeText}>Tus servicios activos estan listos para usarse</Text>
+                  <Text style={styles.portalWebTitle}>Bienvenido, {portalFirstName}</Text>
+                  <Text style={styles.portalWebSubtitle}>Tus servicios activos estan listos para usarse</Text>
                 </View>
-      </View>
+              </View>
             </View>
 
             <View style={styles.portalServiceGrid}>
@@ -6893,15 +6889,17 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         </View>
       </View>
       </KeyboardAvoidingView>
-      <PortalBottomNav
-        bottomInset={insets.bottom}
-        activeView={activeView}
-        onServices={() => canUsePortal ? openView('portal') : setMenuOpen(true)}
-        onHome={() => openView('dashboard')}
-        onBot={() => openView('bot')}
-        onFirma={() => openView('firma')}
-        onProfile={() => openView('perfil')}
-      />
+      {activeView !== 'portal' ? (
+        <PortalBottomNav
+          bottomInset={insets.bottom}
+          activeView={activeView}
+          onServices={() => canUsePortal ? openView('portal') : setMenuOpen(true)}
+          onHome={() => openView('dashboard')}
+          onNew={() => openView('nueva-factura')}
+          onFirma={() => openView('firma')}
+          onProfile={() => openView('perfil')}
+        />
+      ) : null}
       <InitialSequenceModal
         visible={Boolean(sequencePrompt)}
         documentLabel={sequencePrompt?.documentLabel ?? 'documentos'}
@@ -7989,20 +7987,10 @@ function NuevaNotaCreditoMobileScreen({
     precioUnitario: Number(factura?.total ?? 0.01),
     tarifaIva: 0,
   });
-  const [step, setStep] = useState(0);
-  const [manualMode, setManualMode] = useState(false);
+  const [step, setStep] = useState(1);
   const handleClear = () => {
     onClear();
-    setManualMode(false);
-    setStep(0);
-  };
-  const selectXml = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ type: ['text/xml', 'application/xml'], copyToCacheDirectory: true });
-    if (!result.canceled) {
-      await onImportXml(result.assets[0].uri);
-      setManualMode(false);
-      setStep(1);
-    }
+    setStep(1);
   };
 
   return (
@@ -8030,7 +8018,7 @@ function NuevaNotaCreditoMobileScreen({
           <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
-      <SharedInvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} activeIndex={step} />
+      <SharedInvoiceProgressSteps labels={['Cliente', 'Detalle']} activeIndex={Math.max(step - 1, 0)} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -8038,44 +8026,11 @@ function NuevaNotaCreditoMobileScreen({
           <Text style={styles.mutedText}>Cargando notas de credito...</Text>
         </View>
       ) : null}
-      {step === 0 ? <>
-      <View style={styles.formSectionBox}>
-        <Text style={styles.clientFormSubtitle}>Opciones de emision</Text>
-        <Text style={styles.invoiceSectionHelp}>Tambien puedes emitir la nota de credito de estas formas</Text>
-        <View style={styles.invoiceGrid}>
-          <Pressable style={[styles.invoiceHeaderBox, styles.invoiceModeManual]} onPress={() => { setManualMode(true); setStep(1); }}>
-            <Text style={[styles.invoiceHeaderValue, styles.invoiceModeTitleManual]}>Manual</Text>
-            <Text style={styles.invoiceSectionHelp}>Ingresa cliente, motivo y detalle sin partir del buscador.</Text>
-          </Pressable>
-          <Pressable style={[styles.invoiceHeaderBox, styles.invoiceModeXml]} onPress={selectXml}>
-            <Text style={[styles.invoiceHeaderValue, styles.invoiceModeTitleXml]}>Desde XML</Text>
-            <Text style={styles.invoiceSectionHelp}>Carga el XML de la factura para precargar datos y ajustar el detalle.</Text>
-          </Pressable>
-        </View>
-      </View>
-      <View style={styles.formSectionBox}>
-        <Text style={styles.clientFormSubtitle}>Buscador de factura</Text>
-        <Text style={styles.invoiceSectionHelp}>Encuentra la Factura Modificada para emitir la nota de credito</Text>
-        <SearchField label="Encontrar factura" placeholder="Numero completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} predictive suggestions={facturas.slice(0, 5).map((item, index) => ({ id: `nota-factura-${item.codfactura}-${index}`, title: item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`, subtitle: item.cliente ?? 'Consumidor final' }))} onSelectSuggestion={(suggestion) => { const item = facturas.find((candidate, index) => `nota-factura-${candidate.codfactura}-${index}` === suggestion.id); if (item) onSelectFactura(item); }} />
-        <View style={styles.listStack}>
-          {facturas.map((item, index) => (
-            <Pressable key={`nota-factura-${item.codfactura}-${index}`} style={styles.clientCard} onPress={() => onSelectFactura(item)}>
-              <Text style={styles.clientName}>{item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`}</Text>
-              <Text style={styles.clientMeta}>{item.cliente ?? 'Consumidor final'} - {formatMoney(item.total)}</Text>
-            </Pressable>
-          ))}
-        </View>
-        {factura ? <Text style={styles.profileValue}>Factura modificada: {factura.numeroCompleto ?? factura.numfactura}</Text> : null}
-      </View>
-      <View style={styles.formActions}>
-        <PrimaryButton label="Continuar con cliente" loading={false} onPress={() => factura || manualMode ? setStep(1) : Alert.alert('Factura requerida', 'Selecciona primero la factura modificada o usa modo manual.')} />
-      </View>
-      </> : null}
       {step === 1 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Informacion del Cliente</Text>
-          <Text style={styles.invoicePanelPill}>{manualMode ? 'Ingreso manual' : 'Cargado desde factura'}</Text>
+          <Text style={styles.invoicePanelPill}>Ingreso manual</Text>
         </View>
         <View style={styles.invoiceGrid}>
           <Field label="Tipo identificacion" value={form.tipoIdentificacion} onChangeText={(value) => onChange('tipoIdentificacion', value)} />
@@ -8108,7 +8063,7 @@ function NuevaNotaCreditoMobileScreen({
         </View>
       </View>
       <View style={styles.formActions}>
-        <SecondaryButton label="Volver a factura" onPress={() => setStep(0)} />
+        <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} />
       </View>
       </> : null}
@@ -8382,20 +8337,10 @@ function NuevaNotaDebitoMobileScreen({
   const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
   const optionNotaNumber = getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
   const notaNumber = effectiveSerie ? form.numeroFactura || optionNotaNumber || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie, 1158)) : '';
-  const [step, setStep] = useState(0);
-  const [manualMode, setManualMode] = useState(false);
+  const [step, setStep] = useState(1);
   const handleClear = () => {
     onClear();
-    setManualMode(false);
-    setStep(0);
-  };
-  const selectXml = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ type: ['text/xml', 'application/xml'], copyToCacheDirectory: true });
-    if (!result.canceled) {
-      await onImportXml(result.assets[0].uri);
-      setManualMode(false);
-      setStep(1);
-    }
+    setStep(1);
   };
 
   return (
@@ -8423,7 +8368,7 @@ function NuevaNotaDebitoMobileScreen({
           <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
-      <SharedInvoiceProgressSteps labels={['Factura', 'Cliente', 'Detalle']} activeIndex={step} />
+      <SharedInvoiceProgressSteps labels={['Cliente', 'Detalle']} activeIndex={Math.max(step - 1, 0)} />
       {message ? <MessageBox message={message} /> : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -8431,44 +8376,11 @@ function NuevaNotaDebitoMobileScreen({
           <Text style={styles.mutedText}>Cargando notas de debito...</Text>
         </View>
       ) : null}
-      {step === 0 ? <>
-      <View style={styles.formSectionBox}>
-        <Text style={styles.clientFormSubtitle}>Opciones de emision</Text>
-        <Text style={styles.invoiceSectionHelp}>Tambien puedes emitir la nota de debito de estas formas</Text>
-        <View style={styles.invoiceGrid}>
-          <Pressable style={[styles.invoiceHeaderBox, styles.invoiceModeManual]} onPress={() => { setManualMode(true); setStep(1); }}>
-            <Text style={[styles.invoiceHeaderValue, styles.invoiceModeTitleManual]}>Manual</Text>
-            <Text style={styles.invoiceSectionHelp}>Ingresa cliente, factura modificada, motivo y detalle directamente.</Text>
-          </Pressable>
-          <Pressable style={[styles.invoiceHeaderBox, styles.invoiceModeXml]} onPress={selectXml}>
-            <Text style={[styles.invoiceHeaderValue, styles.invoiceModeTitleXml]}>Desde XML</Text>
-            <Text style={styles.invoiceSectionHelp}>Carga el XML de la factura para precargar datos y editar valores.</Text>
-          </Pressable>
-        </View>
-      </View>
-      <View style={styles.formSectionBox}>
-        <Text style={styles.clientFormSubtitle}>Buscador de factura</Text>
-        <Text style={styles.invoiceSectionHelp}>Encuentra la Factura Modificada para emitir la nota de debito</Text>
-        <SearchField label="Encontrar factura" placeholder="Numero completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} predictive suggestions={facturas.slice(0, 5).map((item, index) => ({ id: `debito-factura-${item.codfactura}-${index}`, title: item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`, subtitle: item.cliente ?? 'Consumidor final' }))} onSelectSuggestion={(suggestion) => { const item = facturas.find((candidate, index) => `debito-factura-${candidate.codfactura}-${index}` === suggestion.id); if (item) onSelectFactura(item); }} />
-        <View style={styles.listStack}>
-          {facturas.map((item, index) => (
-            <Pressable key={`debito-factura-${item.codfactura}-${index}`} style={styles.clientCard} onPress={() => onSelectFactura(item)}>
-              <Text style={styles.clientName}>{item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`}</Text>
-              <Text style={styles.clientMeta}>{item.cliente ?? 'Consumidor final'} - {formatMoney(item.total)}</Text>
-            </Pressable>
-          ))}
-        </View>
-        {factura ? <Text style={styles.profileValue}>Factura modificada: {factura.numeroCompleto ?? factura.numfactura}</Text> : null}
-      </View>
-      <View style={styles.formActions}>
-        <PrimaryButton label="Continuar con cliente" loading={false} onPress={() => factura || manualMode ? setStep(1) : Alert.alert('Factura requerida', 'Selecciona primero la factura modificada o usa modo manual.')} />
-      </View>
-      </> : null}
       {step === 1 ? <>
       <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Informacion del Cliente</Text>
-          <Text style={styles.invoicePanelPill}>{manualMode ? 'Ingreso manual' : 'Datos del documento'}</Text>
+          <Text style={styles.invoicePanelPill}>Ingreso manual</Text>
         </View>
         <View style={styles.invoiceGrid}>
           <Field label="Tipo identificacion" value={form.tipoIdentificacion} onChangeText={(value) => onChange('tipoIdentificacion', value)} />
@@ -8487,7 +8399,7 @@ function NuevaNotaDebitoMobileScreen({
         <SecondaryButton label="Agregar correo" onPress={() => onChange('correoAdicional', form.correoPrincipal)} />
       </View>
       <View style={styles.formActions}>
-        <SecondaryButton label="Volver a factura" onPress={() => setStep(0)} />
+        <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} />
       </View>
       </> : null}
@@ -11325,8 +11237,6 @@ function CentroNormativoMobileScreen({
   onSearch: (value: string) => void;
 }) {
   const [detailItem, setDetailItem] = useState<OperationalMobileItem | null>(null);
-  const categories = new Set(items.map((item) => getOperationalRawText(item, ['categoria', 'Categoria'], item.subtitle)).filter(Boolean));
-  const lastCheck = items.map((item) => getOperationalRawText(item, ['fechaActualizacion', 'FechaActualizacion', 'fecha', 'Fecha'])).find(Boolean);
 
   return (
     <>
@@ -11343,29 +11253,6 @@ function CentroNormativoMobileScreen({
         </View>
         <View style={styles.normativeHeroIcon}>
           <MaterialCommunityIcons name="scale-balance" size={42} color="#FFFFFF" />
-        </View>
-      </View>
-      <View style={styles.normativeMetricGrid}>
-        <View style={styles.normativeMetricCard}>
-          <MaterialCommunityIcons name="file-document-outline" size={22} color="#0072BD" />
-          <View>
-            <Text style={styles.normativeMetricValue}>{items.length}</Text>
-            <Text style={styles.normativeMetricLabel}>Normativas disponibles</Text>
-          </View>
-        </View>
-        <View style={styles.normativeMetricCard}>
-          <MaterialCommunityIcons name="folder-check-outline" size={22} color="#08A889" />
-          <View>
-            <Text style={styles.normativeMetricValue}>{categories.size || items.length}</Text>
-            <Text style={styles.normativeMetricLabel}>Categorias organizadas</Text>
-          </View>
-        </View>
-        <View style={styles.normativeMetricCard}>
-          <MaterialCommunityIcons name="check-decagram-outline" size={22} color="#18B889" />
-          <View>
-            <Text style={styles.normativeMetricValue}>{lastCheck ? formatDocumentDate(lastCheck) : 'Actual'}</Text>
-            <Text style={styles.normativeMetricLabel}>Ultima verificacion</Text>
-          </View>
         </View>
       </View>
       <View style={styles.normativeLibrary}>
@@ -11388,7 +11275,8 @@ function CentroNormativoMobileScreen({
           {items.map((item, index) => {
             const category = getOperationalRawText(item, ['categoria', 'Categoria'], item.subtitle || 'Normativa');
             const code = getOperationalRawText(item, ['codigo', 'Codigo', 'numero', 'Numero'], item.id);
-            const sourceUrl = getOperationalRawText(item, ['url', 'Url', 'fuenteUrl', 'FuenteUrl', 'link', 'Link']);
+            const rawSourceUrl = getOperationalRawText(item, ['url', 'Url', 'fuenteUrl', 'FuenteUrl', 'urlFuente', 'UrlFuente', 'link', 'Link', 'enlace', 'Enlace', 'fuenteOficial', 'FuenteOficial', 'referenciaUrl', 'ReferenciaUrl']);
+            const sourceUrl = /^https?:\/\//i.test(rawSourceUrl) ? rawSourceUrl : 'https://www.sri.gob.ec/';
             const status = item.status || getOperationalRawText(item, ['estadoNorma', 'EstadoNorma'], 'Vigente');
             return (
               <View key={`normativa-${item.id || index}`} style={styles.normativeCard}>
@@ -11413,12 +11301,10 @@ function CentroNormativoMobileScreen({
                     <MaterialCommunityIcons name="book-open-outline" size={15} color="#0072BD" />
                     <Text style={styles.normativeDetailButtonText}>Ver detalle</Text>
                   </Pressable>
-                  {sourceUrl ? (
-                    <Pressable style={styles.normativeSourceButton} onPress={() => Linking.openURL(sourceUrl)}>
-                      <Text style={styles.normativeSourceText}>Fuente oficial</Text>
-                      <MaterialCommunityIcons name="open-in-new" size={14} color="#0072BD" />
-                    </Pressable>
-                  ) : null}
+                  <Pressable style={styles.normativeSourceButton} onPress={() => Linking.openURL(sourceUrl)}>
+                    <Text style={styles.normativeSourceText}>Fuente oficial</Text>
+                    <MaterialCommunityIcons name="open-in-new" size={14} color="#0072BD" />
+                  </Pressable>
                 </View>
               </View>
             );
@@ -11987,6 +11873,29 @@ function DashboardHomeScreen({
     .filter((module) => ['mis-facturas', 'clientes', 'productos', 'emisor', 'punto-emision'].includes(module.view))
     .slice(0, 5);
   const recentFactura = facturas[0];
+  const [voiceModalOpen, setVoiceModalOpen] = useState(false);
+  const voicePulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!voiceModalOpen) {
+      voicePulse.setValue(0);
+      return;
+    }
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(voicePulse, { toValue: 1, duration: 820, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(voicePulse, { toValue: 0, duration: 420, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [voiceModalOpen, voicePulse]);
+
+  const pulseStyle = {
+    opacity: voicePulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.08] }),
+    transform: [{ scale: voicePulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.75] }) }],
+  };
 
   return (
     <View style={styles.dashboardHome}>
@@ -12000,6 +11909,44 @@ function DashboardHomeScreen({
           <MaterialCommunityIcons name="view-grid-outline" size={22} color={EFACT_THEME.colors.primaryDark} />
         </Pressable>
       </View>
+
+      <View style={styles.dashboardNumiPanel}>
+        <View style={styles.dashboardNumiHeader}>
+          <View style={styles.dashboardNumiCopy}>
+            <Text style={styles.dashboardNumiName}>Númi</Text>
+            <Text style={styles.dashboardNumiSubtitle}>Tu asistente inteligente</Text>
+            <View style={styles.dashboardNumiBubble}>
+              <Text style={styles.dashboardNumiBubbleText}>¡Hola! Soy Númi, tu asistente. Estoy aquí para ayudarte en lo que necesites.</Text>
+            </View>
+          </View>
+          <Image source={require('./assets/numi-standing.png')} style={styles.dashboardNumiImage} resizeMode="contain" />
+        </View>
+        <View style={styles.dashboardNumiActions}>
+          <Pressable style={styles.dashboardNumiAction} onPress={() => setVoiceModalOpen(true)}>
+            <MaterialCommunityIcons name="message-processing-outline" size={26} color="#49D7FF" />
+            <View style={styles.dashboardNumiActionCopy}>
+              <Text style={styles.dashboardNumiActionTitle}>Consultas</Text>
+              <Text style={styles.dashboardNumiActionText}>Haz tus preguntas</Text>
+            </View>
+          </Pressable>
+          <Pressable style={styles.dashboardNumiAction} onPress={() => onOpenView('centro-normativo')}>
+            <MaterialCommunityIcons name="lightning-bolt-outline" size={27} color="#49D7FF" />
+            <View style={styles.dashboardNumiActionCopy}>
+              <Text style={styles.dashboardNumiActionTitle}>Ayuda rápida</Text>
+              <Text style={styles.dashboardNumiActionText}>Guías y pasos</Text>
+            </View>
+          </Pressable>
+          <Pressable style={styles.dashboardNumiAction} onPress={() => onOpenView('bot')}>
+            <MaterialCommunityIcons name="headset" size={27} color="#49D7FF" />
+            <View style={styles.dashboardNumiActionCopy}>
+              <Text style={styles.dashboardNumiActionTitle}>Soporte</Text>
+              <Text style={styles.dashboardNumiActionText}>Te acompañamos</Text>
+            </View>
+          </Pressable>
+        </View>
+      </View>
+
+      <DashboardChartCard facturas={facturas} />
 
       <View style={styles.dashboardSummaryPanel}>
         <View style={styles.dashboardSummaryHeader}>
@@ -12019,8 +11966,6 @@ function DashboardHomeScreen({
           <DashboardMetric value={productosCount} label="Productos" />
         </View>
       </View>
-
-      <DashboardChartCard facturas={facturas} />
 
       <View style={styles.dashboardSectionHeader}>
         <Text style={styles.dashboardSectionTitle}>Acciones principales</Text>
@@ -12076,6 +12021,21 @@ function DashboardHomeScreen({
           />
         ))}
       </View>
+      <Modal visible={voiceModalOpen} transparent animationType="fade" onRequestClose={() => setVoiceModalOpen(false)}>
+        <Pressable style={styles.voiceModalBackdrop} onPress={() => setVoiceModalOpen(false)}>
+          <Pressable style={styles.voiceModalCard}>
+            <View style={styles.voicePulseWrap}>
+              <Animated.View style={[styles.voicePulseRing, pulseStyle]} />
+              <View style={styles.voiceMicButton}>
+                <MaterialCommunityIcons name="microphone" size={42} color="#FFFFFF" />
+              </View>
+            </View>
+            <Text style={styles.voiceModalTitle}>Escuchando tu consulta</Text>
+            <Text style={styles.voiceModalText}>Habla con Númi para preparar tu pregunta.</Text>
+            <SecondaryButton label="Cerrar" onPress={() => setVoiceModalOpen(false)} />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
