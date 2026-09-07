@@ -854,8 +854,8 @@ function isERubricaService(service: Pick<ServiceAccess, 'codigo' | 'nombre' | 'r
 
 function getPortalServiceVisual(title: string, index: number) {
   const normalized = normalizeText(title);
-  if (normalized.includes('fact')) return { kind: 'efact', accent: EFACT_THEME.colors.primary, surface: '#EAF7FF' };
-  if (normalized.includes('rubrica') || normalized.includes('sign')) return { kind: 'rubrica', accent: ERUBRICA_COLORS.primary, surface: '#EAFBF4' };
+  if (normalized.includes('fact')) return { kind: 'efact', accent: EFACT_THEME.colors.primary, surface: '#CFEAFF' };
+  if (normalized.includes('rubrica') || normalized.includes('sign')) return { kind: 'rubrica', accent: ERUBRICA_COLORS.primary, surface: '#CFF2DE' };
   if (normalized.includes('cont')) return { kind: 'green', accent: '#08A889', surface: '#E8FBF7' };
   if (normalized.includes('declara')) return { kind: 'purple', accent: '#6847FF', surface: '#F0EDFF' };
   if (normalized.includes('people') || normalized.includes('talento') || normalized.includes('rrhh')) return { kind: 'orange', accent: '#F97316', surface: '#FFF3E8' };
@@ -1341,22 +1341,26 @@ function GlobalWorkspaceHeader({
   unreadNotifications,
   documentPlan,
   firmaSummary,
+  portalMode = false,
   onSearch,
   onNotifications,
   onMenu,
   onDocuments,
   onFirma,
+  onLogout,
 }: {
   title: string;
   subtitle: string;
   unreadNotifications: number;
   documentPlan: ReturnType<typeof getDocumentPlanStatus>;
   firmaSummary: ReturnType<typeof getFirmaSummary>;
+  portalMode?: boolean;
   onSearch: () => void;
   onNotifications: () => void;
   onMenu: () => void;
   onDocuments: () => void;
   onFirma: () => void;
+  onLogout?: () => void;
 }) {
   const documentTone = statusToneStyles(documentPlan.tone);
   const firmaTone = statusToneStyles(firmaSummary.tone);
@@ -1370,20 +1374,27 @@ function GlobalWorkspaceHeader({
             <Text style={styles.unifiedSubtitle} numberOfLines={1}>{subtitle}</Text>
           </View>
         </View>
-        <View style={styles.unifiedHeaderActions}>
-          <Pressable style={styles.unifiedIconButton} onPress={onSearch} accessibilityLabel="Buscar en toda la operación">
-            <MaterialCommunityIcons name="magnify" size={22} color="#FFFFFF" />
+        {!portalMode ? (
+          <View style={styles.unifiedHeaderActions}>
+            <Pressable style={styles.unifiedIconButton} onPress={onSearch} accessibilityLabel="Buscar en toda la operación">
+              <MaterialCommunityIcons name="magnify" size={22} color="#FFFFFF" />
+            </Pressable>
+            <Pressable style={styles.unifiedIconButton} onPress={onNotifications} accessibilityLabel="Notificaciones">
+              <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
+              {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
+            </Pressable>
+            <Pressable style={styles.unifiedIconButton} onPress={onMenu} accessibilityLabel="Menu">
+              <MaterialCommunityIcons name="menu" size={25} color="#FFFFFF" />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable style={styles.portalLogoutButton} onPress={onLogout} accessibilityLabel="Salir">
+            <MaterialCommunityIcons name="door-open" size={20} color="#FFFFFF" />
+            <Text style={styles.portalLogoutText}>Salir</Text>
           </Pressable>
-          <Pressable style={styles.unifiedIconButton} onPress={onNotifications} accessibilityLabel="Notificaciones">
-            <MaterialCommunityIcons name="bell-outline" size={22} color="#FFFFFF" />
-            {unreadNotifications > 0 ? <View style={styles.dashboardNotificationDot} /> : null}
-          </Pressable>
-          <Pressable style={styles.unifiedIconButton} onPress={onMenu} accessibilityLabel="Menu">
-            <MaterialCommunityIcons name="menu" size={25} color="#FFFFFF" />
-          </Pressable>
-        </View>
+        )}
       </View>
-      <View style={styles.unifiedStatusGrid}>
+      {!portalMode ? <View style={styles.unifiedStatusGrid}>
         <Pressable style={[styles.unifiedStatusCard, documentTone.card]} onPress={onDocuments}>
           <View style={[styles.unifiedStatusIcon, documentTone.icon]}>
             <MaterialCommunityIcons name="file-document-outline" size={20} color={documentTone.color} />
@@ -1404,7 +1415,7 @@ function GlobalWorkspaceHeader({
             <Text style={styles.unifiedStatusCaption}>{firmaSummary.caption}</Text>
           </View>
         </Pressable>
-      </View>
+      </View> : null}
     </View>
   );
 }
@@ -1794,8 +1805,8 @@ function AppContent() {
             <View style={styles.loginBrand}>
               <BrandMark />
               <View>
-                <Text style={styles.loginProductName}>e-fact</Text>
-                <Text style={styles.loginProductCaption}>facturación electrónica</Text>
+                <Text style={styles.loginProductName}>NUMÉRICA SOFTWARE</Text>
+                <Text style={styles.loginProductCaption}>Soluciones digitales</Text>
               </View>
             </View>
             <Text style={[styles.title, styles.loginTitle]}>Bienvenido</Text>
@@ -1835,7 +1846,13 @@ function AppContent() {
 
         {mode === 'register' ? (
           <>
-            <BrandMark />
+            <View style={styles.loginBrand}>
+              <BrandMark />
+              <View>
+                <Text style={styles.loginProductName}>NUMÉRICA SOFTWARE</Text>
+                <Text style={styles.loginProductCaption}>Soluciones digitales</Text>
+              </View>
+            </View>
             <Text style={styles.title}>Crear tu cuenta</Text>
             <Text style={styles.subtitle}>Te guiaremos paso a paso para dejar tu cuenta lista.</Text>
             {message ? <MessageBox message={message} /> : null}
@@ -2153,6 +2170,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [notaCreditoFacturas, setNotaCreditoFacturas] = useState<FacturaListItem[]>([]);
   const [notaCreditoFactura, setNotaCreditoFactura] = useState<FacturaListItem | null>(null);
   const [notaCreditoCliente, setNotaCreditoCliente] = useState<Cliente | null>(null);
+  const [notaCreditoClientes, setNotaCreditoClientes] = useState<Cliente[]>([]);
   const [notaCreditoForm, setNotaCreditoForm] = useState<NotaCreditoFormState>(initialNotaCreditoForm);
   const [notaCreditoLineas, setNotaCreditoLineas] = useState<NuevaFacturaLinea[]>([]);
   const [loadingNotasCredito, setLoadingNotasCredito] = useState(false);
@@ -2162,6 +2180,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [notaDebitoFacturas, setNotaDebitoFacturas] = useState<FacturaListItem[]>([]);
   const [notaDebitoFactura, setNotaDebitoFactura] = useState<FacturaListItem | null>(null);
   const [notaDebitoCliente, setNotaDebitoCliente] = useState<Cliente | null>(null);
+  const [notaDebitoClientes, setNotaDebitoClientes] = useState<Cliente[]>([]);
   const [notaDebitoForm, setNotaDebitoForm] = useState<NotaDebitoFormState>(initialNotaDebitoForm);
   const [notaDebitoLineas, setNotaDebitoLineas] = useState<NotaDebitoLinea[]>([initialNotaDebitoLinea]);
   const [loadingNotasDebito, setLoadingNotasDebito] = useState(false);
@@ -2229,6 +2248,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [botMessages, setBotMessages] = useState<BotMessage[]>([]);
   const [botDraft, setBotDraft] = useState('');
   const [botFeedbackByMessage, setBotFeedbackByMessage] = useState<BotFeedbackState>({});
+  const [portalServiceQuery, setPortalServiceQuery] = useState('');
 
   const userId = getClaimNumber(currentUser, 'idUsuario') ?? 0;
   const catalogUserId = getClaimNumber(currentUser, 'idJefe') ?? userId;
@@ -2240,6 +2260,25 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const canUsePortal = isSuperAdmin(currentUser) || services.length > 0;
   const portalFirstName = getDisplayFirstName(currentUser, perfilData?.perfil);
   const portalAvatarUrl = getProfileAvatarUrl(currentUser, perfilData?.perfil);
+  const portalServiceCards = useMemo(() => [
+    {
+      title: 'E-FACT',
+      description: 'Facturación electrónica móvil y más.',
+      enabled: canUseEfact,
+      onPress: () => openView('dashboard'),
+    },
+    {
+      title: 'E-RÚBRICA',
+      description: 'Firma y valida documentos de forma segura.',
+      enabled: canUseERubrica,
+      onPress: () => openView('e-rubrica'),
+    },
+  ], [canUseEfact, canUseERubrica]);
+  const filteredPortalServiceCards = useMemo(() => {
+    const query = normalizeText(portalServiceQuery);
+    if (!query) return portalServiceCards;
+    return portalServiceCards.filter((service) => normalizeText(`${service.title} ${service.description}`).includes(query));
+  }, [portalServiceCards, portalServiceQuery]);
   const visibleNotifications = useMemo(() => notifications.filter((notification) => !dismissedNotificationIds.has(notification.id)), [dismissedNotificationIds, notifications]);
   const unreadNotifications = visibleNotifications.filter((notification) => !notification.read).length;
 
@@ -4626,6 +4665,36 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setNotaCreditoForm((current) => ({ ...current, [field]: value }));
   };
 
+  const fillNotaCreditoCliente = (cliente: Cliente) => {
+    setNotaCreditoCliente(cliente);
+    setNotaCreditoClientes([]);
+    setNotaCreditoForm((current) => ({
+      ...current,
+      clienteBusqueda: getClienteDisplayName(cliente),
+      correoPrincipal: getClienteEmail(cliente),
+      tipoIdentificacion: getTipoIdentificacionLabel(cliente.tipoidentificacion),
+      numeroIdentificacion: getClienteIdentification(cliente),
+      tipoCliente: String(cliente.tipoCliente ?? ''),
+      obligadoContabilidad: cliente.oblgconta ?? '',
+      direccion: cliente.direccion ?? '',
+      telefono: cliente.celular || cliente.telefonoconvencional || '',
+    }));
+  };
+
+  const searchNotaCreditoClientes = async () => {
+    if (!catalogUserId || !notaCreditoForm.clienteBusqueda.trim()) return;
+    setLoadingNotasCredito(true);
+    setDirectoryMessage(null);
+    try {
+      setNotaCreditoClientes(await buscarFacturaClientes(catalogUserId, notaCreditoForm.clienteBusqueda));
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo buscar clientes.';
+      setDirectoryMessage({ type: 'error', text });
+    } finally {
+      setLoadingNotasCredito(false);
+    }
+  };
+
   const searchNotaCreditoFacturas = async () => {
     if (!catalogUserId || !notaCreditoForm.facturaBusqueda.trim()) return;
     setLoadingNotasCredito(true);
@@ -4754,6 +4823,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setNotaCreditoForm(initialNotaCreditoForm);
     setNotaCreditoFactura(null);
     setNotaCreditoCliente(null);
+    setNotaCreditoClientes([]);
     setNotaCreditoFacturas([]);
     setNotaCreditoLineas([]);
     setDirectoryMessage(null);
@@ -4851,6 +4921,36 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   const updateNotaDebitoForm = (field: keyof NotaDebitoFormState, value: string) => {
     setNotaDebitoForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const fillNotaDebitoCliente = (cliente: Cliente) => {
+    setNotaDebitoCliente(cliente);
+    setNotaDebitoClientes([]);
+    setNotaDebitoForm((current) => ({
+      ...current,
+      clienteBusqueda: getClienteDisplayName(cliente),
+      correoPrincipal: getClienteEmail(cliente),
+      tipoIdentificacion: getTipoIdentificacionLabel(cliente.tipoidentificacion),
+      numeroIdentificacion: getClienteIdentification(cliente),
+      tipoCliente: String(cliente.tipoCliente ?? ''),
+      obligadoContabilidad: cliente.oblgconta ?? '',
+      direccion: cliente.direccion ?? '',
+      telefono: cliente.celular || cliente.telefonoconvencional || '',
+    }));
+  };
+
+  const searchNotaDebitoClientes = async () => {
+    if (!catalogUserId || !notaDebitoForm.clienteBusqueda.trim()) return;
+    setLoadingNotasDebito(true);
+    setDirectoryMessage(null);
+    try {
+      setNotaDebitoClientes(await buscarFacturaClientes(catalogUserId, notaDebitoForm.clienteBusqueda));
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo buscar clientes.';
+      setDirectoryMessage({ type: 'error', text });
+    } finally {
+      setLoadingNotasDebito(false);
+    }
   };
 
   const searchNotaDebitoFacturas = async () => {
@@ -5015,6 +5115,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setNotaDebitoForm(initialNotaDebitoForm);
     setNotaDebitoFactura(null);
     setNotaDebitoCliente(null);
+    setNotaDebitoClientes([]);
     setNotaDebitoFacturas([]);
     setNotaDebitoLineas([initialNotaDebitoLinea]);
     setDirectoryMessage(null);
@@ -5873,20 +5974,20 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     <SafeAreaView edges={['top', 'bottom']} style={[styles.workspaceSafeArea, activeView === 'portal' && styles.portalSafeArea]}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
       <View style={styles.workspaceChrome}>
-        {activeView !== 'portal' ? (
-          <GlobalWorkspaceHeader
-            title={getWorkspaceTitle(activeView)}
-            subtitle={activeView === 'firma' ? 'Gestiona tu firma y certificados' : 'Resumen y accesos de tu sistema'}
-            unreadNotifications={unreadNotifications}
-            documentPlan={documentPlan}
-            firmaSummary={firmaSummary}
-            onSearch={() => { setGlobalSearchQuery(''); setGlobalSearchOpen(true); }}
-            onNotifications={() => setNotificationsOpen(true)}
-            onMenu={() => setMenuOpen(true)}
-            onDocuments={() => openView('comprar-documentos')}
-            onFirma={() => openView('firma')}
-          />
-        ) : null}
+        <GlobalWorkspaceHeader
+          title={getWorkspaceTitle(activeView)}
+          subtitle={activeView === 'firma' ? 'Gestiona tu firma y certificados' : activeView === 'portal' ? 'Selecciona tu servicio' : 'Resumen y accesos de tu sistema'}
+          unreadNotifications={unreadNotifications}
+          documentPlan={documentPlan}
+          firmaSummary={firmaSummary}
+          portalMode={activeView === 'portal'}
+          onSearch={() => { setGlobalSearchQuery(''); setGlobalSearchOpen(true); }}
+          onNotifications={() => setNotificationsOpen(true)}
+          onMenu={() => setMenuOpen(true)}
+          onDocuments={() => openView('comprar-documentos')}
+          onFirma={() => openView('firma')}
+          onLogout={onLogout}
+        />
 
         <View style={styles.workspaceBodyFrame}>
         <ScrollView
@@ -5916,34 +6017,52 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
         {!loadingMenus && activeView === 'portal' ? (
           <View style={styles.portalStack}>
-            <View style={styles.portalWebHero}>
-              <View style={styles.portalWebTitleRow}>
-                <View style={styles.portalWebLogoShell}>
-                  <Image source={require('./assets/logo-numerica.png')} style={styles.portalWebLogo} />
-                </View>
-                <View style={styles.portalWebTitleCopy}>
-                  <Text style={styles.portalWelcomeEyebrow}>Numerica Software</Text>
-                  <Text style={styles.portalWebTitle}>Bienvenido, {portalFirstName}</Text>
-                  <Text style={styles.portalWebSubtitle}>Tus servicios activos estan listos para usarse</Text>
+            <View style={styles.portalServicesPanel}>
+              <View style={styles.portalWebHero}>
+                <View style={styles.portalWebHeroShapeTop} />
+                <View style={styles.portalWebHeroShapeBottom} />
+                <View style={styles.portalWebTitleRow}>
+                  <View style={styles.portalWebLogoShell}>
+                    <Image source={{ uri: resolveImageUrl(portalAvatarUrl) }} style={styles.portalWebLogo} />
+                  </View>
+                  <View style={styles.portalWebTitleCopy}>
+                    <Text style={styles.portalWelcomeEyebrow}>Numerica Software</Text>
+                    <Text style={styles.portalWebTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.76}>Bienvenida, {portalFirstName}</Text>
+                    <Text style={styles.portalWebSubtitle}>Tus servicios activos estan listos para usarse</Text>
+                  </View>
                 </View>
               </View>
-            </View>
 
-            <View style={styles.portalServiceGrid}>
-              <PortalServiceCard
-                title="E-FACT"
-                description="Facturacion electronica movil segun menus asignados."
-                enabled={canUseEfact}
-                onPress={() => openView('dashboard')}
-                index={0}
-              />
-              <PortalServiceCard
-                title="E-RÚBRICA"
-                description="Firma y valida documentos."
-                enabled={canUseERubrica}
-                onPress={() => openView('e-rubrica')}
-                index={1}
-              />
+              <View style={styles.portalServicesHeader}>
+                <Text style={styles.portalServicesTitle}>Mis servicios</Text>
+                <View style={styles.portalSearchPill}>
+                  <MaterialCommunityIcons name="magnify" size={19} color="#61738A" />
+                  <TextInput
+                    style={styles.portalSearchInput}
+                    value={portalServiceQuery}
+                    onChangeText={setPortalServiceQuery}
+                    placeholder="Buscar servicio..."
+                    placeholderTextColor="#63758B"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.portalServiceGrid}>
+                {filteredPortalServiceCards.map((service, index) => (
+                  <PortalServiceCard
+                    key={service.title}
+                    title={service.title}
+                    description={service.description}
+                    enabled={service.enabled}
+                    onPress={service.onPress}
+                    index={index}
+                  />
+                ))}
+              </View>
+              {filteredPortalServiceCards.length === 0 ? <Text style={styles.portalEmptySearchText}>No encontramos servicios con ese nombre.</Text> : null}
             </View>
           </View>
         ) : null}
@@ -6631,6 +6750,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onUpdateLinea={updateFacturaLinea}
                 onRemoveLinea={removeFacturaLinea}
                 onClear={clearFacturaForm}
+                onHistory={() => openView('mis-facturas')}
                 onSave={saveNuevaFactura}
               />
             ) : null}
@@ -6657,11 +6777,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 factura={notaCreditoFactura}
                 facturas={notaCreditoFacturas}
                 cliente={notaCreditoCliente}
+                clientes={notaCreditoClientes}
                 lineas={notaCreditoLineas}
                 loading={loadingNotasCredito}
                 saving={savingNotaCredito}
                 message={directoryMessage}
                 onChange={updateNotaCreditoForm}
+                onSearchClientes={searchNotaCreditoClientes}
+                onSelectCliente={fillNotaCreditoCliente}
                 onSearchFacturas={searchNotaCreditoFacturas}
                 onSelectFactura={selectNotaCreditoFactura}
                 onImportXml={importNotaCreditoXml}
@@ -6696,11 +6819,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 factura={notaDebitoFactura}
                 facturas={notaDebitoFacturas}
                 cliente={notaDebitoCliente}
+                clientes={notaDebitoClientes}
                 lineas={notaDebitoLineas}
                 loading={loadingNotasDebito}
                 saving={savingNotaDebito}
                 message={directoryMessage}
                 onChange={updateNotaDebitoForm}
+                onSearchClientes={searchNotaDebitoClientes}
+                onSelectCliente={fillNotaDebitoCliente}
                 onSearchFacturas={searchNotaDebitoFacturas}
                 onSelectFactura={selectNotaDebitoFactura}
                 onImportXml={importNotaDebitoXml}
@@ -7653,6 +7779,7 @@ function NuevaFacturaMobileScreen({
   onUpdateLinea,
   onRemoveLinea,
   onClear,
+  onHistory,
   onSave,
 }: {
   form: NuevaFacturaFormState;
@@ -7674,6 +7801,7 @@ function NuevaFacturaMobileScreen({
   onUpdateLinea: (index: number, field: keyof Omit<NuevaFacturaLinea, 'producto'>, value: string) => void;
   onRemoveLinea: (index: number) => void;
   onClear: () => void;
+  onHistory: () => void;
   onSave: () => void;
 }) {
   const toNumber = (value: string) => Number(value.replace(',', '.')) || 0;
@@ -7741,6 +7869,7 @@ function NuevaFacturaMobileScreen({
             <Text style={styles.invoiceMiniLabel}>Numero de factura</Text>
             <Text style={styles.invoiceHeaderValue}>{invoiceNumber}</Text>
           </View>
+          <SecondaryButton label="Historial" onPress={onHistory} />
            <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
         </View>
       </View>
@@ -7923,11 +8052,14 @@ function NuevaNotaCreditoMobileScreen({
   factura,
   facturas,
   cliente,
+  clientes,
   lineas,
   loading,
   saving,
   message,
   onChange,
+  onSearchClientes,
+  onSelectCliente,
   onSearchFacturas,
   onSelectFactura,
   onImportXml,
@@ -7944,11 +8076,14 @@ function NuevaNotaCreditoMobileScreen({
   factura: FacturaListItem | null;
   facturas: FacturaListItem[];
   cliente: Cliente | null;
+  clientes: Cliente[];
   lineas: NuevaFacturaLinea[];
   loading: boolean;
   saving: boolean;
   message?: MessageState;
   onChange: (field: keyof NotaCreditoFormState, value: string) => void;
+  onSearchClientes: () => void;
+  onSelectCliente: (cliente: Cliente) => void;
   onSearchFacturas: () => void;
   onSelectFactura: (factura: FacturaListItem) => void | Promise<void>;
   onImportXml: (uri: string) => Promise<void>;
@@ -8027,7 +8162,13 @@ function NuevaNotaCreditoMobileScreen({
         </View>
       ) : null}
       {step === 1 ? <>
-      <View style={[styles.formSectionBox, styles.invoicePanel]}>
+      <View style={styles.formSectionBox}>
+        <Text style={styles.clientFormSubtitle}>Buscador de cliente</Text>
+        <Text style={styles.invoiceSectionHelp}>Busca por nombre, RUC o cédula. Solo necesitas seleccionar un resultado.</Text>
+        <SearchField label="Encontrar cliente" placeholder="Identificacion, nombres, apellidos o razon social" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} resultCount={clientes.length} onSubmit={onSearchClientes} predictive suggestions={clientes.slice(0, 5).map((item, index) => ({ id: `nota-credito-cliente-${getClienteKey(item, index)}`, title: getClienteDisplayName(item), subtitle: getClienteIdentification(item) || 'Sin identificacion' }))} onSelectSuggestion={(suggestion) => { const item = clientes.find((candidate, index) => `nota-credito-cliente-${getClienteKey(candidate, index)}` === suggestion.id); if (item) onSelectCliente(item); }} />
+        {cliente ? <Text style={styles.profileValue}>Seleccionado: {getClienteDisplayName(cliente)} - {cliente.numeroidentificacion}</Text> : null}
+      </View>
+      {cliente ? <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Informacion del Cliente</Text>
           <Text style={styles.invoicePanelPill}>Ingreso manual</Text>
@@ -8061,10 +8202,10 @@ function NuevaNotaCreditoMobileScreen({
           />
           <Field label="Observacion (max 250 caracteres)" value={form.observacion} onChangeText={(value) => onChange('observacion', value.slice(0, 250))} />
         </View>
-      </View>
+      </View> : null}
       <View style={styles.formActions}>
-        <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
-        <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} />
+        {cliente ? <SecondaryButton label="Limpiar pantalla" onPress={handleClear} /> : null}
+        {cliente ? <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} /> : null}
       </View>
       </> : null}
       {step === 2 ? <>
@@ -8279,11 +8420,14 @@ function NuevaNotaDebitoMobileScreen({
   factura,
   facturas,
   cliente,
+  clientes,
   lineas,
   loading,
   saving,
   message,
   onChange,
+  onSearchClientes,
+  onSelectCliente,
   onSearchFacturas,
   onSelectFactura,
   onImportXml,
@@ -8300,11 +8444,14 @@ function NuevaNotaDebitoMobileScreen({
   factura: FacturaListItem | null;
   facturas: FacturaListItem[];
   cliente: Cliente | null;
+  clientes: Cliente[];
   lineas: NotaDebitoLinea[];
   loading: boolean;
   saving: boolean;
   message?: MessageState;
   onChange: (field: keyof NotaDebitoFormState, value: string) => void;
+  onSearchClientes: () => void;
+  onSelectCliente: (cliente: Cliente) => void;
   onSearchFacturas: () => void;
   onSelectFactura: (factura: FacturaListItem) => void | Promise<void>;
   onImportXml: (uri: string) => Promise<void>;
@@ -8377,7 +8524,13 @@ function NuevaNotaDebitoMobileScreen({
         </View>
       ) : null}
       {step === 1 ? <>
-      <View style={[styles.formSectionBox, styles.invoicePanel]}>
+      <View style={styles.formSectionBox}>
+        <Text style={styles.clientFormSubtitle}>Buscador de cliente</Text>
+        <Text style={styles.invoiceSectionHelp}>Busca por nombre, RUC o cédula. Solo necesitas seleccionar un resultado.</Text>
+        <SearchField label="Encontrar cliente" placeholder="Identificacion, nombres, apellidos o razon social" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} resultCount={clientes.length} onSubmit={onSearchClientes} predictive suggestions={clientes.slice(0, 5).map((item, index) => ({ id: `nota-debito-cliente-${getClienteKey(item, index)}`, title: getClienteDisplayName(item), subtitle: getClienteIdentification(item) || 'Sin identificacion' }))} onSelectSuggestion={(suggestion) => { const item = clientes.find((candidate, index) => `nota-debito-cliente-${getClienteKey(candidate, index)}` === suggestion.id); if (item) onSelectCliente(item); }} />
+        {cliente ? <Text style={styles.profileValue}>Seleccionado: {getClienteDisplayName(cliente)} - {cliente.numeroidentificacion}</Text> : null}
+      </View>
+      {cliente ? <View style={[styles.formSectionBox, styles.invoicePanel]}>
         <View style={styles.invoicePanelHeader}>
           <Text style={styles.invoicePanelTitle}>Informacion del Cliente</Text>
           <Text style={styles.invoicePanelPill}>Ingreso manual</Text>
@@ -8397,10 +8550,10 @@ function NuevaNotaDebitoMobileScreen({
           <Field label="Correo electronico principal" value={form.correoPrincipal} onChangeText={(value) => onChange('correoPrincipal', value)} autoCapitalize="none" keyboardType="email-address" />
         </View>
         <SecondaryButton label="Agregar correo" onPress={() => onChange('correoAdicional', form.correoPrincipal)} />
-      </View>
+      </View> : null}
       <View style={styles.formActions}>
-        <SecondaryButton label="Limpiar pantalla" onPress={handleClear} />
-        <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} />
+        {cliente ? <SecondaryButton label="Limpiar pantalla" onPress={handleClear} /> : null}
+        {cliente ? <PrimaryButton label="Continuar con detalle" loading={false} onPress={() => setStep(2)} /> : null}
       </View>
       </> : null}
       {step === 2 ? <>
@@ -11237,6 +11390,12 @@ function CentroNormativoMobileScreen({
   onSearch: (value: string) => void;
 }) {
   const [detailItem, setDetailItem] = useState<OperationalMobileItem | null>(null);
+  const detailCategory = detailItem ? getOperationalRawText(detailItem, ['categoria', 'Categoria'], detailItem.subtitle || 'Normativa') : '';
+  const detailCode = detailItem ? getOperationalRawText(detailItem, ['codigo', 'Codigo', 'numero', 'Numero'], detailItem.id) : '';
+  const detailVerified = detailItem ? getOperationalRawText(detailItem, ['fechaActualizacion', 'FechaActualizacion', 'fecha', 'Fecha']) : '';
+  const detailSourceRaw = detailItem ? getOperationalRawText(detailItem, ['urlOficial', 'UrlOficial', 'url', 'Url', 'fuenteUrl', 'FuenteUrl', 'urlFuente', 'UrlFuente', 'link', 'Link', 'enlace', 'Enlace', 'fuenteOficial', 'FuenteOficial', 'referenciaUrl', 'ReferenciaUrl']) : '';
+  const detailSourceUrl = /^https?:\/\//i.test(detailSourceRaw) ? detailSourceRaw : 'https://www.sri.gob.ec/';
+  const detailArticles = detailItem ? getNormativeArticles(detailItem) : [];
 
   return (
     <>
@@ -11275,7 +11434,7 @@ function CentroNormativoMobileScreen({
           {items.map((item, index) => {
             const category = getOperationalRawText(item, ['categoria', 'Categoria'], item.subtitle || 'Normativa');
             const code = getOperationalRawText(item, ['codigo', 'Codigo', 'numero', 'Numero'], item.id);
-            const rawSourceUrl = getOperationalRawText(item, ['url', 'Url', 'fuenteUrl', 'FuenteUrl', 'urlFuente', 'UrlFuente', 'link', 'Link', 'enlace', 'Enlace', 'fuenteOficial', 'FuenteOficial', 'referenciaUrl', 'ReferenciaUrl']);
+            const rawSourceUrl = getOperationalRawText(item, ['urlOficial', 'UrlOficial', 'url', 'Url', 'fuenteUrl', 'FuenteUrl', 'urlFuente', 'UrlFuente', 'link', 'Link', 'enlace', 'Enlace', 'fuenteOficial', 'FuenteOficial', 'referenciaUrl', 'ReferenciaUrl']);
             const sourceUrl = /^https?:\/\//i.test(rawSourceUrl) ? rawSourceUrl : 'https://www.sri.gob.ec/';
             const status = item.status || getOperationalRawText(item, ['estadoNorma', 'EstadoNorma'], 'Vigente');
             return (
@@ -11311,17 +11470,41 @@ function CentroNormativoMobileScreen({
           })}
         </View>
       ) : null}
-      <ItemDetailModal
-        visible={Boolean(detailItem)}
-        title={detailItem?.title || 'Detalle normativo'}
-        values={detailItem ? [
-          `Categoria: ${getOperationalRawText(detailItem, ['categoria', 'Categoria'], detailItem.subtitle) || 'Normativa'}`,
-          `Codigo: ${getOperationalRawText(detailItem, ['codigo', 'Codigo', 'numero', 'Numero'], detailItem.id) || 'Sin codigo'}`,
-          `Estado: ${detailItem.status || 'Vigente'}`,
-          detailItem.detail || 'Sin detalle registrado.',
-        ] : []}
-        onClose={() => setDetailItem(null)}
-      />
+      <Modal visible={Boolean(detailItem)} transparent animationType="fade" onRequestClose={() => setDetailItem(null)}>
+        <View style={styles.normativeModalOverlay}>
+          <View style={styles.normativeModalCard}>
+            <View style={styles.normativeModalHeader}>
+              <View style={styles.normativeModalTitleBlock}>
+                <Text style={styles.normativeCategoryPill}>{detailCategory}</Text>
+                <Text style={styles.normativeModalTitle}>{detailItem?.title || 'Detalle normativo'}</Text>
+                {detailCode ? <Text style={styles.normativeCode}># {detailCode}</Text> : null}
+              </View>
+              <Pressable style={styles.normativeModalClose} onPress={() => setDetailItem(null)}>
+                <MaterialCommunityIcons name="close" size={20} color="#31516D" />
+              </Pressable>
+            </View>
+            <ScrollView style={styles.normativeModalScroll} contentContainerStyle={styles.normativeModalContent} showsVerticalScrollIndicator={false}>
+              {detailItem?.detail ? <Text style={styles.normativeModalLead}>{detailItem.detail}</Text> : null}
+              {detailArticles.map((article, index) => (
+                <View key={`normative-article-${index}`} style={styles.normativeArticleRow}>
+                  <View style={styles.normativeArticleBadge}>
+                    <Text style={styles.normativeArticleBadgeText}>{article.label}</Text>
+                  </View>
+                  <Text style={styles.normativeArticleText}>{article.text}</Text>
+                </View>
+              ))}
+              {!detailItem?.detail && detailArticles.length === 0 ? <Text style={styles.normativeModalLead}>No hay detalle adicional registrado para esta normativa.</Text> : null}
+            </ScrollView>
+            <View style={styles.normativeModalFooter}>
+              {detailVerified ? <Text style={styles.normativeVerifiedText}>Verificada: {formatDocumentDate(detailVerified)}</Text> : <View />}
+              <Pressable style={styles.normativeSourceButton} onPress={() => Linking.openURL(detailSourceUrl)}>
+                <Text style={styles.normativeSourceText}>Fuente oficial</Text>
+                <MaterialCommunityIcons name="open-in-new" size={14} color="#0072BD" />
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -11340,6 +11523,41 @@ function getOperationalRawText(item: OperationalMobileItem, keys: string[], fall
   const normalizedKeys = keys.map((key) => key.toLowerCase().replace(/[^a-z0-9]/g, ''));
   const entry = Object.entries(row).find(([key, value]) => value !== null && value !== undefined && normalizedKeys.includes(key.toLowerCase().replace(/[^a-z0-9]/g, '')));
   return entry?.[1] !== null && entry?.[1] !== undefined ? String(entry[1]) : fallback ?? '';
+}
+
+function getNormativeArticles(item: OperationalMobileItem) {
+  const row = item.raw ?? {};
+  const content = getOperationalRawText(item, ['contenido', 'Contenido']);
+  if (content.trim()) {
+    return content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const separator = line.indexOf('.-');
+        if (separator <= 0) return { label: 'Detalle', text: line };
+        return { label: line.slice(0, separator + 2).trim(), text: line.slice(separator + 2).trim() };
+      });
+  }
+
+  const articleSource = Object.entries(row).find(([key, value]) => value !== null && value !== undefined && ['articulos', 'detallearticulos', 'requisitos', 'caracteristicas'].includes(key.toLowerCase().replace(/[^a-z0-9]/g, '')))?.[1];
+  const records = Array.isArray(articleSource) ? articleSource : [];
+  const fromRecords = records
+    .map((record, index) => {
+      if (!record) return null;
+      if (typeof record !== 'object' || Array.isArray(record)) return { label: `Art. ${index + 1}.`, text: String(record) };
+      const articleItem: OperationalMobileItem = { id: '', title: '', raw: record as Record<string, unknown> };
+      const label = getOperationalRawText(articleItem, ['articulo', 'Articulo', 'numero', 'Numero', 'titulo', 'Titulo', 'codigo', 'Codigo'], `Art. ${index + 1}.`);
+      const text = getOperationalRawText(articleItem, ['descripcion', 'Descripcion', 'detalle', 'Detalle', 'texto', 'Texto', 'contenido', 'Contenido'], '');
+      return text ? { label, text } : null;
+    })
+    .filter((article): article is { label: string; text: string } => Boolean(article));
+
+  if (fromRecords.length > 0) return fromRecords;
+
+  return Object.entries(row)
+    .filter(([key, value]) => value !== null && value !== undefined && /^art(iculo)?\d+/i.test(key.replace(/[^a-z0-9]/gi, '')))
+    .map(([key, value]) => ({ label: key.replace(/_/g, ' '), text: String(value) }));
 }
 
 function MetricBox({ value, label }: { value: string | number; label: string }) {
@@ -11378,25 +11596,23 @@ function PortalServiceCard({
   return (
     <Pressable
       disabled={!enabled}
-      style={[styles.portalServiceCard, { borderColor: visual.accent }, !enabled && styles.portalServiceCardDisabled]}
+      style={[styles.portalServiceCard, { backgroundColor: visual.surface, borderColor: visual.accent }, !enabled && styles.portalServiceCardDisabled]}
       onPress={onPress}
     >
-      <View style={[styles.portalServiceTop, { backgroundColor: visual.accent }]}>
-        <View style={[styles.portalServiceLogoPlate, { backgroundColor: visual.surface }]}>
-          {visual.kind === 'efact' ? <Image source={require('./assets/logo-numerica.png')} style={styles.portalServiceLogo} /> : null}
-          {visual.kind === 'orange' ? <Image source={require('./assets/logo-numerica-naranja.png')} style={styles.portalServiceLogo} /> : null}
-          {visual.kind === 'green' ? <Image source={require('./assets/logo-numerica-verde.png')} style={styles.portalServiceLogo} /> : null}
-          {visual.kind === 'purple' ? <Image source={require('./assets/logo-numerica-morado.png')} style={styles.portalServiceLogo} /> : null}
-          {visual.kind === 'rubrica' ? <Image source={require('./assets/logo-numerica-rubrica.png')} style={styles.portalServiceLogoWide} /> : null}
-          {['document', 'calculator', 'pencil', 'briefcase'].includes(visual.kind) ? <PortalServiceGlyph kind={visual.kind} /> : null}
-        </View>
+      <View style={styles.portalServiceLogoPlate}>
+        {visual.kind === 'efact' ? <Image source={require('./assets/logo-numerica.png')} style={styles.portalServiceLogo} /> : null}
+        {visual.kind === 'orange' ? <Image source={require('./assets/logo-numerica-naranja.png')} style={styles.portalServiceLogo} /> : null}
+        {visual.kind === 'green' ? <Image source={require('./assets/logo-numerica-verde.png')} style={styles.portalServiceLogo} /> : null}
+        {visual.kind === 'purple' ? <Image source={require('./assets/logo-numerica-morado.png')} style={styles.portalServiceLogo} /> : null}
+        {visual.kind === 'rubrica' ? <Image source={require('./assets/logo-numerica-rubrica.png')} style={styles.portalServiceLogoWide} /> : null}
+        {['document', 'calculator', 'pencil', 'briefcase'].includes(visual.kind) ? <PortalServiceGlyph kind={visual.kind} /> : null}
       </View>
       <View style={styles.portalServiceCopy}>
-        <View style={[styles.portalServiceAccentLine, { backgroundColor: visual.accent }]} />
         <Text style={styles.portalServiceTitle}>{title}</Text>
         <Text style={styles.portalServiceDescription}>{description}</Text>
-        <View style={[styles.portalServiceButton, { backgroundColor: enabled ? visual.accent : '#B8C5D2' }]}>
-          <Text style={styles.portalServiceButtonText}>{enabled ? 'Ingresar' : 'No disponible'}</Text>
+        <View style={[styles.portalServiceButton, { backgroundColor: enabled ? visual.surface : '#EEF3F7' }]}>
+          <Text style={[styles.portalServiceButtonText, { color: enabled ? visual.accent : '#7A8A99' }]}>{enabled ? 'Ingresar' : 'No disponible'}</Text>
+          <MaterialCommunityIcons name="chevron-right" size={22} color={enabled ? visual.accent : '#7A8A99'} />
         </View>
       </View>
     </Pressable>
@@ -11896,76 +12112,57 @@ function DashboardHomeScreen({
     opacity: voicePulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.08] }),
     transform: [{ scale: voicePulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.75] }) }],
   };
+  const openConsultas = () => {
+    Alert.alert('Consultas con Númi', '¿Cómo quieres hacer tu consulta?', [
+      { text: 'Chat', onPress: () => onOpenView('bot') },
+      { text: 'Comando de voz', onPress: () => setVoiceModalOpen(true) },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  };
 
   return (
     <View style={styles.dashboardHome}>
-      <View style={styles.dashboardIntro}>
-        <View style={styles.dashboardIntroText}>
-          <Text style={styles.dashboardEyebrow}>E-FACT MOVIL</Text>
-          <Text style={styles.dashboardGreeting} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.78}>Inicio</Text>
-          <Text style={styles.dashboardIntroCopy}>Tu operación tributaria al día, simple y ordenada.</Text>
-        </View>
-        <Pressable accessibilityLabel="Ver servicios" style={styles.dashboardSmallIconButton} onPress={() => onOpenView('portal')}>
-          <MaterialCommunityIcons name="view-grid-outline" size={22} color={EFACT_THEME.colors.primaryDark} />
-        </Pressable>
-      </View>
-
-      <View style={styles.dashboardNumiPanel}>
+      <Pressable style={styles.dashboardNumiPanel} onPress={openConsultas}>
+        <View style={styles.dashboardNumiAccentPanel} />
+        <View style={styles.dashboardNumiConfettiDotLarge} />
+        <View style={styles.dashboardNumiConfettiDotSmall} />
+        <View style={styles.dashboardNumiConfettiRing} />
         <View style={styles.dashboardNumiHeader}>
           <View style={styles.dashboardNumiCopy}>
-            <Text style={styles.dashboardNumiName}>Númi</Text>
-            <Text style={styles.dashboardNumiSubtitle}>Tu asistente inteligente</Text>
+            <Text style={styles.dashboardNumiName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.86}>Númi</Text>
+            <Text style={styles.dashboardNumiSubtitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>Tu asistente inteligente</Text>
             <View style={styles.dashboardNumiBubble}>
-              <Text style={styles.dashboardNumiBubbleText}>¡Hola! Soy Númi, tu asistente. Estoy aquí para ayudarte en lo que necesites.</Text>
+              <Text style={styles.dashboardNumiBubbleText} numberOfLines={4} adjustsFontSizeToFit minimumFontScale={0.86}>¡Hola! Soy Númi, tu asistente. Estoy aquí para ayudarte en lo que necesites.</Text>
             </View>
           </View>
-          <Image source={require('./assets/numi-standing.png')} style={styles.dashboardNumiImage} resizeMode="contain" />
+          <Image source={require('./assets/numi-home.png')} style={styles.dashboardNumiImage} resizeMode="contain" />
         </View>
         <View style={styles.dashboardNumiActions}>
-          <Pressable style={styles.dashboardNumiAction} onPress={() => setVoiceModalOpen(true)}>
-            <MaterialCommunityIcons name="message-processing-outline" size={26} color="#49D7FF" />
+          <View style={styles.dashboardNumiAction}>
+            <MaterialCommunityIcons name="message-processing-outline" size={24} color="#49D7FF" />
             <View style={styles.dashboardNumiActionCopy}>
-              <Text style={styles.dashboardNumiActionTitle}>Consultas</Text>
-              <Text style={styles.dashboardNumiActionText}>Haz tus preguntas</Text>
+              <Text style={styles.dashboardNumiActionTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>Consultas</Text>
+              <Text style={styles.dashboardNumiActionText} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.82}>Haz tus preguntas</Text>
             </View>
-          </Pressable>
-          <Pressable style={styles.dashboardNumiAction} onPress={() => onOpenView('centro-normativo')}>
-            <MaterialCommunityIcons name="lightning-bolt-outline" size={27} color="#49D7FF" />
+          </View>
+          <View style={styles.dashboardNumiAction}>
+            <MaterialCommunityIcons name="lightning-bolt-outline" size={24} color="#49D7FF" />
             <View style={styles.dashboardNumiActionCopy}>
-              <Text style={styles.dashboardNumiActionTitle}>Ayuda rápida</Text>
-              <Text style={styles.dashboardNumiActionText}>Guías y pasos</Text>
+              <Text style={styles.dashboardNumiActionTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Ayuda rápida</Text>
+              <Text style={styles.dashboardNumiActionText} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.82}>Guías y pasos</Text>
             </View>
-          </Pressable>
-          <Pressable style={styles.dashboardNumiAction} onPress={() => onOpenView('bot')}>
-            <MaterialCommunityIcons name="headset" size={27} color="#49D7FF" />
+          </View>
+          <View style={styles.dashboardNumiAction}>
+            <MaterialCommunityIcons name="headset" size={24} color="#49D7FF" />
             <View style={styles.dashboardNumiActionCopy}>
-              <Text style={styles.dashboardNumiActionTitle}>Soporte</Text>
-              <Text style={styles.dashboardNumiActionText}>Te acompañamos</Text>
+              <Text style={[styles.dashboardNumiActionTitle, styles.dashboardNumiSupportTitle]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>Soporte</Text>
+              <Text style={styles.dashboardNumiActionText} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.82}>Te acompañamos</Text>
             </View>
-          </Pressable>
+          </View>
         </View>
-      </View>
+      </Pressable>
 
       <DashboardChartCard facturas={facturas} />
-
-      <View style={styles.dashboardSummaryPanel}>
-        <View style={styles.dashboardSummaryHeader}>
-          <View>
-            <Text style={styles.dashboardPanelLabel}>Resumen principal</Text>
-            <Text style={styles.dashboardSummaryTitle}>Facturación de este mes</Text>
-          </View>
-          <View style={styles.dashboardPeriodPill}>
-            <Text style={styles.dashboardPeriodText}>Activo</Text>
-          </View>
-        </View>
-        <Text style={styles.dashboardMoneyValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{formatDashboardMoney(ventasTotal)}</Text>
-        <View style={styles.dashboardSummaryDivider} />
-        <View style={styles.dashboardSummaryStats}>
-          <DashboardMetric value={facturas.length} label="Facturas" />
-          <DashboardMetric value={clientesCount} label="Clientes" />
-          <DashboardMetric value={productosCount} label="Productos" />
-        </View>
-      </View>
 
       <View style={styles.dashboardSectionHeader}>
         <Text style={styles.dashboardSectionTitle}>Acciones principales</Text>
