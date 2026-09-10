@@ -12008,9 +12008,14 @@ function ERubricaMobileScreen({
   useEffect(() => {
     setTab(requestedTab ?? 'inicio');
   }, [requestedTab]);
-  const solicitudes = Array.isArray(data?.solicitudes) ? data.solicitudes : [];
-  const firmas = Array.isArray(data?.firmas) ? data.firmas : [];
-  const menus = Array.isArray(data?.menus) ? data.menus : [];
+  const dashboardRecord = data as (ERubricaDashboard & Record<string, unknown>) | null;
+  const dashboardPayload = (dashboardRecord?.data ?? dashboardRecord?.Data ?? dashboardRecord) as (ERubricaDashboard & Record<string, unknown>) | null;
+  const solicitudesData = dashboardPayload?.solicitudes ?? dashboardPayload?.Solicitudes;
+  const firmasData = dashboardPayload?.firmas ?? dashboardPayload?.Firmas;
+  const menusData = dashboardPayload?.menus ?? dashboardPayload?.Menus;
+  const solicitudes = Array.isArray(solicitudesData) ? solicitudesData : [];
+  const firmas = Array.isArray(firmasData) ? firmasData : [];
+  const menus = Array.isArray(menusData) ? menusData : [];
   const label = (item: unknown, keys: string[], fallback: string) => {
     if (!item || typeof item !== 'object') return fallback;
     const record = item as Record<string, unknown>;
@@ -12023,21 +12028,26 @@ function ERubricaMobileScreen({
     const value = keys.map((key) => record[key]).find((candidate) => candidate !== null && candidate !== undefined && String(candidate).trim());
     return value === undefined ? '' : String(value);
   };
+  const buildSolicitudTitular = (item: unknown, fallback = 'Titular') => {
+    const composed = `${itemValue(item, ['solNombres', 'SolNombres'])} ${itemValue(item, ['solPrimerApellido', 'SolPrimerApellido'])} ${itemValue(item, ['solSegundoApellido', 'SolSegundoApellido'])}`.trim();
+    return composed || label(item, ['titular', 'nombreTitular', 'solicitante', 'nombres', 'nombre', 'cliente', 'razonSocial'], fallback);
+  };
+  const renovacionActual = renovacion ?? dashboardPayload?.renovacion ?? dashboardPayload?.Renovacion;
   const activeFirma = firmas[0] ?? null;
-  const firmaTitular = label(activeFirma, ['nombreTitular', 'titular', 'razonSocial', 'nombre'], 'Sin firma activa');
-  const firmaIdentificacion = label(activeFirma, ['identificacion', 'ruc', 'cedula', 'documento'], 'Sin dato');
+  const firmaTitular = buildSolicitudTitular(activeFirma, 'Sin firma activa');
+  const firmaIdentificacion = label(activeFirma, ['identificacion', 'solIdentificacion', 'SolIdentificacion', 'ruc', 'cedula', 'documento'], 'Sin dato');
   const firmaEstado = label(activeFirma, ['estado', 'estadoVigencia', 'status'], firmas.length ? 'Vigente' : 'Sin firma');
-  const firmaEmision = label(activeFirma, ['fechaEmision', 'emitida', 'fechaInicio'], 'Sin dato');
-  const firmaExpira = label(activeFirma, ['fechaExpiracion', 'expira', 'fechaFin'], 'Sin dato');
+  const firmaEmision = label(activeFirma, ['fechaEmision', 'solFechaAprobacion', 'SolFechaAprobacion', 'emitida', 'fechaInicio'], 'Sin dato');
+  const firmaExpira = label(activeFirma, ['fechaExpiracion', 'solFechaActualizacion', 'SolFechaActualizacion', 'expira', 'fechaFin'], 'Sin dato');
   const firmaDiasRestantes = label(activeFirma, ['diasRestantes', 'vigenciaRestante'], 'Sin dato');
   const firmaAutoridad = label(activeFirma, ['autoridadEmisora', 'emisor', 'ca'], 'Sin dato');
   const firmaSerie = label(activeFirma, ['numeroSerie', 'serie', 'serial'], 'Sin dato');
   const firmaHuella = label(activeFirma, ['huellaDigital', 'fingerprint', 'huella'], 'Sin dato');
-  const planDiasRestantes = label(renovacion, ['diasRestantes', 'vigenciaRestante', 'dias'], firmaDiasRestantes);
-  const planFechaVencimiento = label(renovacion, ['fechaVencimiento', 'fechaExpiracion', 'vence'], firmaExpira);
-  const planEstado = label(renovacion, ['estado', 'estadoAcceso', 'status'], firmaEstado);
+  const planDiasRestantes = label(renovacionActual, ['diasRestantes', 'vigenciaRestante', 'dias'], firmaDiasRestantes);
+  const planFechaVencimiento = label(renovacionActual, ['fechaVencimiento', 'fechaExpiracion', 'vence'], firmaExpira);
+  const planEstado = label(renovacionActual, ['estado', 'estadoAcceso', 'status'], firmaEstado);
   const formatSignedDate = (item: unknown) => {
-    const raw = itemValue(item, ['fechaFirma', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']);
+    const raw = itemValue(item, ['fechaFirma', 'solFechaSolicitud', 'SolFechaSolicitud', 'solFechaAprobacion', 'SolFechaAprobacion', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']);
     if (!raw) return { date: 'Sin fecha', time: '' };
     const parsed = new Date(raw);
     if (Number.isNaN(parsed.getTime())) return { date: raw.split('T')[0] || raw, time: raw.includes('T') ? raw.split('T')[1]?.slice(0, 8) ?? '' : '' };
@@ -12047,7 +12057,7 @@ function ERubricaMobileScreen({
     };
   };
   const signedMonthCount = firmas.filter((item) => {
-    const raw = itemValue(item, ['fechaFirma', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']);
+    const raw = itemValue(item, ['fechaFirma', 'solFechaSolicitud', 'SolFechaSolicitud', 'solFechaAprobacion', 'SolFechaAprobacion', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']);
     const parsed = new Date(raw);
     const now = new Date();
     return !Number.isNaN(parsed.getTime()) && parsed.getMonth() === now.getMonth() && parsed.getFullYear() === now.getFullYear();
@@ -12055,43 +12065,43 @@ function ERubricaMobileScreen({
   const validDocuments = firmas.filter((item) => label(item, ['estado', 'status', 'estadoFirma'], 'valido').toLowerCase().includes('valid')).length;
   const filteredFirmas = firmas.filter((item) => {
     const content = JSON.stringify(item).toLowerCase();
-    const status = label(item, ['estado', 'status', 'estadoFirma'], 'valido').toLowerCase();
-    const rawDate = itemValue(item, ['fechaFirma', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']).toLowerCase();
+    const status = label(item, ['estado', 'status', 'estadoFirma', 'estadoSolicitud', 'EstadoSolicitud'], 'valido').toLowerCase();
+    const rawDate = itemValue(item, ['fechaFirma', 'solFechaSolicitud', 'SolFechaSolicitud', 'solFechaAprobacion', 'SolFechaAprobacion', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']).toLowerCase();
     return (!historialQuery.trim() || content.includes(historialQuery.trim().toLowerCase()))
       && (!historialDate.trim() || rawDate.includes(historialDate.trim().toLowerCase()))
       && (!historialStatus.trim() || status.includes(historialStatus.trim().toLowerCase()));
   });
   const documentosPorFirmar = solicitudes.filter((item) => {
-    const status = label(item, ['estado', 'status', 'solEstado'], 'pendiente').toLowerCase();
+    const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud'], 'pendiente').toLowerCase();
     return !status.includes('firmad') && !status.includes('valid');
   });
   const filteredDocumentosPorFirmar = documentosPorFirmar.filter((item) => {
     const content = JSON.stringify(item).toLowerCase();
-    const status = label(item, ['estado', 'status', 'solEstado'], 'pendiente').toLowerCase();
-    const rawDate = itemValue(item, ['fecha', 'fechaCreacion', 'createdAt', 'fechaSolicitud']).toLowerCase();
+    const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud'], 'pendiente').toLowerCase();
+    const rawDate = itemValue(item, ['fecha', 'fechaCreacion', 'createdAt', 'fechaSolicitud', 'solFechaSolicitud', 'SolFechaSolicitud']).toLowerCase();
     return (!historialQuery.trim() || content.includes(historialQuery.trim().toLowerCase()))
       && (!historialDate.trim() || rawDate.includes(historialDate.trim().toLowerCase()))
       && (!historialStatus.trim() || status.includes(historialStatus.trim().toLowerCase()));
   });
   const historialSolicitudes = solicitudes.filter((item) => {
-    const status = label(item, ['estado', 'status', 'solEstado'], '').toLowerCase();
+    const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud'], '').toLowerCase();
     return Boolean(status) && (status.includes('firmad') || status.includes('aprob') || status.includes('caduc') || status.includes('rechaz'));
   });
   const solicitudHistoryItems = historialSolicitudes.length ? historialSolicitudes : solicitudes;
   const filteredHistorialSolicitudes = solicitudHistoryItems.filter((item) => {
     const content = JSON.stringify(item).toLowerCase();
-    const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'estadoUanataca', 'estadoPago'], '').toLowerCase();
-    const rawDate = itemValue(item, ['fecha', 'fechaCreacion', 'createdAt', 'fechaSolicitud']).toLowerCase();
+    const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud', 'estadoUanataca', 'SolUanatacaStatusText', 'estadoPago'], '').toLowerCase();
+    const rawDate = itemValue(item, ['fecha', 'fechaCreacion', 'createdAt', 'fechaSolicitud', 'solFechaSolicitud', 'SolFechaSolicitud']).toLowerCase();
     return (!historialQuery.trim() || content.includes(historialQuery.trim().toLowerCase()))
       && (!historialDate.trim() || rawDate.includes(historialDate.trim().toLowerCase()))
       && (!historialStatus.trim() || status.includes(historialStatus.trim().toLowerCase()));
   });
   const solicitudesPagadas = solicitudHistoryItems.filter((item) => {
-    const status = label(item, ['estadoPago', 'pago', 'estado', 'status'], '').toLowerCase();
+    const status = label(item, ['estadoPago', 'pago', 'estado', 'status', 'estadoSolicitud', 'EstadoSolicitud'], '').toLowerCase();
     return status.includes('pag') || status.includes('aprob');
   }).length;
   const solicitudesPendientes = solicitudHistoryItems.filter((item) => {
-    const status = label(item, ['estadoPago', 'pago', 'estado', 'status', 'estadoSolicitud'], 'pendiente').toLowerCase();
+    const status = label(item, ['estadoPago', 'pago', 'estado', 'status', 'estadoSolicitud', 'EstadoSolicitud'], 'pendiente').toLowerCase();
     return status.includes('pend');
   }).length;
   useEffect(() => {
@@ -12565,10 +12575,10 @@ function ERubricaMobileScreen({
               </Pressable>
             </View>
             {filteredDocumentosPorFirmar.length === 0 ? <EmptyState title="Sin documentos por firmar" text="No tienes documentos pendientes de firma." /> : filteredDocumentosPorFirmar.slice(0, 10).map((item, index) => {
-              const documentName = label(item, ['documento', 'nombreDocumento', 'nombreArchivo', 'archivo', 'solId', 'id'], 'Documento pendiente');
-              const documentCode = label(item, ['codigo', 'numero', 'solId', 'id'], `DOC-${index + 1}`);
-              const signedDate = formatDocumentDate(itemValue(item, ['fecha', 'fechaCreacion', 'createdAt', 'fechaSolicitud']));
-              const status = label(item, ['estado', 'status', 'solEstado'], 'Pendiente');
+              const documentName = label(item, ['documento', 'nombreDocumento', 'nombreArchivo', 'archivo', 'solFormatoFirma', 'SolFormatoFirma', 'solId', 'SolId', 'id'], 'Documento pendiente');
+              const documentCode = label(item, ['codigo', 'numero', 'solId', 'SolId', 'id'], `DOC-${index + 1}`);
+              const signedDate = formatDocumentDate(itemValue(item, ['fecha', 'fechaCreacion', 'createdAt', 'fechaSolicitud', 'solFechaSolicitud', 'SolFechaSolicitud']));
+              const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud'], 'Pendiente');
               const previewUrl = itemValue(item, ['url', 'downloadUrl', 'documentoUrl', 'ruta', 'archivoUrl', 'pdfUrl', 'previewUrl']);
               return (
                 <View key={`erubrica-pendiente-${index}`} style={styles.erubricaPendingRow}>
@@ -12784,16 +12794,17 @@ function ERubricaMobileScreen({
             <Text style={styles.erubricaHistoryFooter}>{filteredHistorialSolicitudes.length} resultado(s)</Text>
             {filteredHistorialSolicitudes.length === 0 ? <EmptyState title="Sin historial" text="No hay solicitudes registradas con los filtros actuales." /> : filteredHistorialSolicitudes.slice(0, 10).map((item, index) => {
               const date = formatSignedDate(item);
-              const titular = label(item, ['titular', 'nombreTitular', 'solicitante', 'nombres', 'cliente', 'razonSocial'], 'Titular');
-              const firma = label(item, ['firma', 'formato', 'solFormatoFirma', 'producto', 'descripcion'], 'Archivo .P12');
-              const vigencia = label(item, ['vigencia', 'duracion', 'plan'], '');
-              const subtotal = label(item, ['subtotal', 'subTotal', 'valorSubtotal'], '$0,00');
+              const titular = buildSolicitudTitular(item);
+              const firma = label(item, ['firma', 'formato', 'solFormatoFirma', 'SolFormatoFirma', 'producto', 'descripcion'], 'Archivo .P12');
+              const vigencia = label(item, ['vigencia', 'duracion', 'plan', 'solVigencia', 'SolVigencia'], '');
+              const monto = Number(itemValue(item, ['subtotal', 'subTotal', 'valorSubtotal', 'solMontoPago', 'SolMontoPago']));
+              const subtotal = Number.isFinite(monto) ? `$${monto.toFixed(2).replace('.', ',')}` : '$0,00';
               const iva = label(item, ['iva', 'valorIva'], '$0,00');
-              const total = label(item, ['total', 'valorTotal', 'monto'], '$0,00');
-              const pago = label(item, ['estadoPago', 'pago', 'referenciaPago'], 'Pendiente');
-              const estadoSolicitud = label(item, ['estadoSolicitud', 'estado', 'status', 'solEstado'], 'Pendiente');
-              const estadoUanataca = label(item, ['estadoUanataca', 'uanataca', 'estadoProveedor'], 'Pendiente de pago');
-              const soporte = label(item, ['soporte', 'observacion', 'mensaje'], 'Sin avisos');
+              const total = Number.isFinite(monto) ? `$${monto.toFixed(2).replace('.', ',')}` : label(item, ['total', 'valorTotal', 'monto'], '$0,00');
+              const pago = label(item, ['estadoPago', 'pago', 'referenciaPago', 'solPagoExitoso', 'SolPagoExitoso'], 'Pendiente');
+              const estadoSolicitud = label(item, ['estadoSolicitud', 'EstadoSolicitud', 'estado', 'status', 'solEstado'], 'Pendiente');
+              const estadoUanataca = label(item, ['estadoUanataca', 'solUanatacaStatusText', 'SolUanatacaStatusText', 'uanataca', 'estadoProveedor'], 'Pendiente de pago');
+              const soporte = label(item, ['soporte', 'ultimaNotificacion', 'UltimaNotificacion', 'observacion', 'mensaje'], 'Sin avisos');
               return (
                 <View key={`erubrica-historial-solicitud-${index}`} style={styles.erubricaRequestHistoryRow}>
                   <View style={styles.erubricaRequestHistoryRowTop}>
@@ -12827,7 +12838,7 @@ function ERubricaMobileScreen({
         <View style={styles.clientCard}>
           <Text style={styles.clientDetailLabel}>Renovación de firma</Text>
           <Text style={styles.clientMeta}>Consulta la vigencia de tus certificados y las renovaciones pendientes.</Text>
-          <Text style={styles.clientDetailValue}>{renovacion ? JSON.stringify(renovacion, null, 2) : 'Cargando información de renovación...'}</Text>
+          <Text style={styles.clientDetailValue}>{renovacionActual ? JSON.stringify(renovacionActual, null, 2) : 'Cargando información de renovación...'}</Text>
         </View>
       ) : null}
       {tab === 'catalogos' ? (
@@ -13046,15 +13057,15 @@ function ERubricaMobileScreen({
         <View key={`erubrica-solicitud-${index}`} style={[styles.clientCard, { borderLeftColor: ERUBRICA_COLORS.primary, borderColor: ERUBRICA_COLORS.border }]}>
             <View style={styles.clientCardHeader}>
             <View style={styles.clientHeroTitleBlock}>
-              <Text style={styles.clientDetailLabel}>{label(item, ['solId', 'id', 'numero', 'solicitud'], 'Solicitud de firma')}</Text>
-              <Text style={styles.clientMeta}>{label(item, ['estado', 'status', 'solEstado'], 'Pendiente')}</Text>
+              <Text style={styles.clientDetailLabel}>{label(item, ['solId', 'SolId', 'id', 'numero', 'solicitud'], 'Solicitud de firma')}</Text>
+              <Text style={styles.clientMeta}>{label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud'], 'Pendiente')}</Text>
             </View>
             <MaterialCommunityIcons name="file-sign" size={25} color={ERUBRICA_COLORS.primary} />
           </View>
-              <Text style={styles.clientDetailValue}>{label(item, ['solFormatoFirma', 'formato', 'producto', 'descripcion'], 'Solicitud E-Rúbrica')}</Text>
-              {Number(label(item, ['solId', 'id'], '0')) > 0 ? <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Descargar firma .p12" onPress={async () => {
+              <Text style={styles.clientDetailValue}>{label(item, ['solFormatoFirma', 'SolFormatoFirma', 'formato', 'producto', 'descripcion'], 'Solicitud E-Rúbrica')}</Text>
+              {Number(label(item, ['solId', 'SolId', 'id'], '0')) > 0 ? <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Descargar firma .p12" onPress={async () => {
                 try {
-                  const solId = Number(label(item, ['solId', 'id'], '0'));
+              const solId = Number(label(item, ['solId', 'SolId', 'id'], '0'));
                   const result = await descargarERubricaFirmaP12(solId);
                   const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}firma-${solId}.p12`;
                   await FileSystem.writeAsStringAsync(uri, arrayBufferToBase64(result.bytes), { encoding: FileSystem.EncodingType.Base64 });
@@ -13122,11 +13133,11 @@ function ERubricaMobileScreen({
               <EmptyState title="Sin documentos firmados" text="No se encontraron documentos con los filtros actuales." />
             ) : filteredFirmas.slice(0, 10).map((item, index) => {
               const signedDate = formatSignedDate(item);
-              const documentName = label(item, ['nombreDocumento', 'documento', 'archivo', 'fileName', 'nombre', 'descripcion'], 'Documento firmado');
-              const signedBy = label(item, ['firmadoPor', 'usuario', 'nombreTitular', 'titular', 'razonSocial'], 'Usuario');
-              const signerEmail = label(item, ['email', 'correo', 'correoUsuario'], '');
+              const documentName = label(item, ['nombreDocumento', 'documento', 'archivo', 'fileName', 'solFormatoFirma', 'SolFormatoFirma', 'nombre', 'descripcion'], 'Documento firmado');
+              const signedBy = buildSolicitudTitular(item, 'Usuario');
+              const signerEmail = label(item, ['email', 'correo', 'correoUsuario', 'solCorreo1', 'SolCorreo1'], '');
               const size = label(item, ['tamano', 'tamaño', 'size', 'peso'], 'No disponible');
-              const status = label(item, ['estado', 'status', 'estadoFirma'], 'Válido');
+              const status = label(item, ['estado', 'status', 'estadoFirma', 'estadoSolicitud', 'EstadoSolicitud'], 'Válido');
               const downloadUrl = itemValue(item, ['url', 'downloadUrl', 'documentoUrl', 'ruta', 'archivoUrl']);
               return (
                 <View key={`erubrica-historial-${index}`} style={styles.erubricaHistoryRow}>
