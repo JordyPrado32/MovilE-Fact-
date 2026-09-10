@@ -12717,25 +12717,25 @@ function ERubricaMobileScreen({
       {tab === 'plan-disponible' ? (
         <View style={styles.erubricaPlanStack}>
           <View style={styles.erubricaPlanHeader}>
-            <View style={styles.erubricaPlanHeaderIcon}>
-              <MaterialCommunityIcons name="card-account-details-star-outline" size={28} color={ERUBRICA_COLORS.primary} />
-            </View>
-            <View style={styles.erubricaPlanHeaderCopy}>
-              <Text style={styles.erubricaPlanHeaderEyebrow}>CONFIGURACIÓN</Text>
-              <Text style={styles.erubricaPlanHeaderTitle}>Mi Plan Disponible</Text>
-              <Text style={styles.erubricaPlanHeaderSubtitle}>Consulta los detalles de tu suscripción activa para firma y validación de documentos electrónicos.</Text>
-              <View style={styles.erubricaPlanHeaderStatusRow}>
-                <View style={styles.erubricaPlanHeaderStatusPill}>
-                  <MaterialCommunityIcons name="check-circle-outline" size={14} color={ERUBRICA_COLORS.primary} />
-                  <Text style={styles.erubricaPlanHeaderStatusText}>{planEstado}</Text>
-                </View>
-                <Text style={styles.erubricaPlanHeaderDate}>Vence: {planFechaVencimiento}</Text>
+            <View style={styles.erubricaPlanHeaderTop}>
+              <View style={styles.erubricaPlanHeaderBadge}>
+                <MaterialCommunityIcons name="card-account-details-star-outline" size={15} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaPlanHeaderEyebrow}>CONFIGURACIÓN</Text>
               </View>
+              <Pressable style={styles.erubricaPlanBackButton} onPress={() => selectTab('inicio')}>
+                <MaterialCommunityIcons name="arrow-left" size={15} color={ERUBRICA_COLORS.text} />
+                <Text style={styles.erubricaPendingLoadText}>Volver al inicio</Text>
+              </Pressable>
             </View>
-            <Pressable style={styles.erubricaPlanBackButton} onPress={() => selectTab('inicio')}>
-              <MaterialCommunityIcons name="arrow-left" size={15} color={ERUBRICA_COLORS.text} />
-              <Text style={styles.erubricaPendingLoadText}>Volver al inicio</Text>
-            </Pressable>
+            <Text style={styles.erubricaPlanHeaderTitle}>Mi Plan Disponible</Text>
+            <Text style={styles.erubricaPlanHeaderSubtitle}>Consulta los detalles de tu suscripción activa para firma y validación de documentos electrónicos.</Text>
+            <View style={styles.erubricaPlanHeaderStatusRow}>
+              <View style={styles.erubricaPlanHeaderStatusPill}>
+                <MaterialCommunityIcons name="check-circle-outline" size={14} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaPlanHeaderStatusText}>{planEstado}</Text>
+              </View>
+              <Text style={styles.erubricaPlanHeaderDate}>Vence: {planFechaVencimiento}</Text>
+            </View>
           </View>
 
           <View style={styles.erubricaPlanCard}>
