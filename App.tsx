@@ -7102,7 +7102,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           onServices={() => canUsePortal ? openView('portal') : setMenuOpen(true)}
           onHome={() => isERubricaWorkspace ? openView('e-rubrica') : openView('dashboard')}
           onNew={() => openView('nueva-factura')}
-          onFirma={() => isERubricaWorkspace ? openERubricaTab('firma-config') : openView('firma')}
+          onFirma={() => isERubricaWorkspace ? setMenuOpen(true) : openView('firma')}
           onProfile={() => isERubricaWorkspace ? openView('perfil-e-rubrica') : openView('perfil')}
           onMenu={() => setMenuOpen(true)}
           onSolicitudes={() => openERubricaTab('solicitudes')}
@@ -12034,6 +12034,23 @@ function ERubricaMobileScreen({
     const status = label(item, ['estado', 'status', 'solEstado'], '').toLowerCase();
     return Boolean(status) && (status.includes('firmad') || status.includes('aprob') || status.includes('caduc') || status.includes('rechaz'));
   });
+  const solicitudHistoryItems = historialSolicitudes.length ? historialSolicitudes : solicitudes;
+  const filteredHistorialSolicitudes = solicitudHistoryItems.filter((item) => {
+    const content = JSON.stringify(item).toLowerCase();
+    const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'estadoUanataca', 'estadoPago'], '').toLowerCase();
+    const rawDate = itemValue(item, ['fecha', 'fechaCreacion', 'createdAt', 'fechaSolicitud']).toLowerCase();
+    return (!historialQuery.trim() || content.includes(historialQuery.trim().toLowerCase()))
+      && (!historialDate.trim() || rawDate.includes(historialDate.trim().toLowerCase()))
+      && (!historialStatus.trim() || status.includes(historialStatus.trim().toLowerCase()));
+  });
+  const solicitudesPagadas = solicitudHistoryItems.filter((item) => {
+    const status = label(item, ['estadoPago', 'pago', 'estado', 'status'], '').toLowerCase();
+    return status.includes('pag') || status.includes('aprob');
+  }).length;
+  const solicitudesPendientes = solicitudHistoryItems.filter((item) => {
+    const status = label(item, ['estadoPago', 'pago', 'estado', 'status', 'estadoSolicitud'], 'pendiente').toLowerCase();
+    return status.includes('pend');
+  }).length;
   useEffect(() => {
     if ((tab === 'catalogos' || tab === 'plan-disponible' || tab === 'nueva-solicitud') && catalogos.length === 0) {
       void Promise.all([getERubricaProductos(), getERubricaSaldo()]).then(([items, balance]) => {
@@ -12618,20 +12635,82 @@ function ERubricaMobileScreen({
       ) : null}
       {tab === 'historial-solicitudes' ? (
         <View style={styles.erubricaHistoryStack}>
-          <View style={styles.erubricaHistoryHero}>
+          <View style={styles.erubricaRequestHistoryHeader}>
             <View style={styles.erubricaHistoryHeroCopy}>
               <Text style={styles.erubricaHistoryEyebrow}>FIRMA ELECTRÓNICA</Text>
               <Text style={styles.erubricaHistoryTitle}>Historial de solicitudes</Text>
-              <Text style={styles.erubricaHistorySubtitle}>Seguimiento de solicitudes creadas, aprobadas o caducadas.</Text>
+              <Text style={styles.erubricaHistorySubtitle}>Consulta el pago y el estado actualizado de tus solicitudes enviadas a Uanataca.</Text>
+            </View>
+            <View style={styles.erubricaRequestHistoryCounters}>
+              <View style={styles.erubricaRequestHistoryCounter}><Text style={styles.erubricaRequestHistoryCounterText}>Total: {solicitudHistoryItems.length}</Text></View>
+              <View style={styles.erubricaRequestHistoryCounter}><Text style={styles.erubricaRequestHistoryCounterText}>Pagados: {solicitudesPagadas}</Text></View>
+              <View style={[styles.erubricaRequestHistoryCounter, styles.erubricaRequestHistoryCounterPending]}><Text style={styles.erubricaRequestHistoryCounterText}>Pendientes: {solicitudesPendientes}</Text></View>
             </View>
           </View>
-          {(historialSolicitudes.length ? historialSolicitudes : solicitudes).length === 0 ? <EmptyState title="Sin historial" text="No hay solicitudes registradas." /> : (historialSolicitudes.length ? historialSolicitudes : solicitudes).slice(0, 10).map((item, index) => (
-            <View key={`erubrica-historial-solicitud-${index}`} style={[styles.clientCard, { borderColor: ERUBRICA_COLORS.border }]}>
-              <Text style={styles.clientDetailLabel}>{label(item, ['solId', 'id', 'numero', 'solicitud'], 'Solicitud')}</Text>
-              <Text style={styles.clientMeta}>{label(item, ['estado', 'status', 'solEstado'], 'Estado no disponible')}</Text>
-              <Text style={styles.clientDetailValue}>{label(item, ['fecha', 'fechaCreacion', 'createdAt', 'producto'], 'Sin detalle adicional')}</Text>
+
+          <View style={styles.erubricaRequestHistoryNotice}>
+            <MaterialCommunityIcons name="email-fast-outline" size={17} color={ERUBRICA_COLORS.primary} />
+            <Text style={styles.erubricaRequestHistoryNoticeText}>Recuerda: lo mejor es responder al correo desde tu computador.</Text>
+          </View>
+
+          <View style={styles.erubricaHistoryPanel}>
+            <View style={styles.erubricaHistoryFilters}>
+              <View style={styles.erubricaHistorySearchBox}>
+                <MaterialCommunityIcons name="magnify" size={19} color="#5C748A" />
+                <TextInput
+                  value={historialQuery}
+                  onChangeText={setHistorialQuery}
+                  placeholder="Buscar por titular o referencia..."
+                  placeholderTextColor="#8AA0B5"
+                  style={styles.erubricaHistoryInput}
+                />
+              </View>
+              <View style={styles.erubricaHistoryFilterRow}>
+                <TextInput value={historialStatus} onChangeText={setHistorialStatus} placeholder="Pago: todos" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
+                <TextInput value={historialDate} onChangeText={setHistorialDate} placeholder="Solicitud: todos" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
+              </View>
+              <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Consultar estado" loading={false} onPress={onSync} />
             </View>
-          ))}
+            <Text style={styles.erubricaHistoryFooter}>{filteredHistorialSolicitudes.length} resultado(s)</Text>
+            {filteredHistorialSolicitudes.length === 0 ? <EmptyState title="Sin historial" text="No hay solicitudes registradas con los filtros actuales." /> : filteredHistorialSolicitudes.slice(0, 10).map((item, index) => {
+              const date = formatSignedDate(item);
+              const titular = label(item, ['titular', 'nombreTitular', 'solicitante', 'nombres', 'cliente', 'razonSocial'], 'Titular');
+              const firma = label(item, ['firma', 'formato', 'solFormatoFirma', 'producto', 'descripcion'], 'Archivo .P12');
+              const vigencia = label(item, ['vigencia', 'duracion', 'plan'], '');
+              const subtotal = label(item, ['subtotal', 'subTotal', 'valorSubtotal'], '$0,00');
+              const iva = label(item, ['iva', 'valorIva'], '$0,00');
+              const total = label(item, ['total', 'valorTotal', 'monto'], '$0,00');
+              const pago = label(item, ['estadoPago', 'pago', 'referenciaPago'], 'Pendiente');
+              const estadoSolicitud = label(item, ['estadoSolicitud', 'estado', 'status', 'solEstado'], 'Pendiente');
+              const estadoUanataca = label(item, ['estadoUanataca', 'uanataca', 'estadoProveedor'], 'Pendiente de pago');
+              const soporte = label(item, ['soporte', 'observacion', 'mensaje'], 'Sin avisos');
+              return (
+                <View key={`erubrica-historial-solicitud-${index}`} style={styles.erubricaRequestHistoryRow}>
+                  <View style={styles.erubricaRequestHistoryRowTop}>
+                    <View style={styles.erubricaPendingDocCopy}>
+                      <Text style={styles.erubricaHistoryDocName} numberOfLines={2}>{titular}</Text>
+                      <Text style={styles.erubricaHistoryDocMeta}>{date.date} {date.time}</Text>
+                    </View>
+                    <View style={styles.erubricaPendingStatusPill}>
+                      <Text style={styles.erubricaPendingStatusText}>{estadoSolicitud}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.erubricaRequestHistoryGrid}>
+                    <View style={styles.erubricaRequestHistoryCell}><Text style={styles.erubricaHistoryMetricLabel}>FIRMA</Text><Text style={styles.erubricaRequestHistoryValue}>{firma}{vigencia ? `\n${vigencia}` : ''}</Text></View>
+                    <View style={styles.erubricaRequestHistoryCell}><Text style={styles.erubricaHistoryMetricLabel}>SUBTOTAL</Text><Text style={styles.erubricaRequestHistoryValue}>{subtotal}</Text></View>
+                    <View style={styles.erubricaRequestHistoryCell}><Text style={styles.erubricaHistoryMetricLabel}>IVA</Text><Text style={styles.erubricaRequestHistoryValue}>{iva}</Text></View>
+                    <View style={styles.erubricaRequestHistoryCell}><Text style={styles.erubricaHistoryMetricLabel}>TOTAL</Text><Text style={styles.erubricaRequestHistoryValue}>{total}</Text></View>
+                  </View>
+                  <View style={styles.erubricaRequestHistoryStatusGrid}>
+                    <View style={styles.erubricaRequestHistoryPaymentPill}><Text style={styles.erubricaRequestHistoryPaymentText}>• {pago}</Text></View>
+                    <View style={styles.erubricaRequestHistoryUanatacaPill}><Text style={styles.erubricaRequestHistoryUanatacaText}>• {estadoUanataca}</Text></View>
+                    <Text style={styles.erubricaHistorySigner}>{soporte}</Text>
+                  </View>
+                </View>
+              );
+            })}
+            <Text style={styles.erubricaHistoryFooter}>Página 1 de {Math.max(1, Math.ceil(filteredHistorialSolicitudes.length / 10))}</Text>
+          </View>
         </View>
       ) : null}
       {tab === 'renovacion' ? (
