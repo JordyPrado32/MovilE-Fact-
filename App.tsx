@@ -11986,6 +11986,14 @@ function ERubricaMobileScreen({
     const status = label(item, ['estado', 'status', 'solEstado'], 'pendiente').toLowerCase();
     return !status.includes('firmad') && !status.includes('valid');
   });
+  const filteredDocumentosPorFirmar = documentosPorFirmar.filter((item) => {
+    const content = JSON.stringify(item).toLowerCase();
+    const status = label(item, ['estado', 'status', 'solEstado'], 'pendiente').toLowerCase();
+    const rawDate = itemValue(item, ['fecha', 'fechaCreacion', 'createdAt', 'fechaSolicitud']).toLowerCase();
+    return (!historialQuery.trim() || content.includes(historialQuery.trim().toLowerCase()))
+      && (!historialDate.trim() || rawDate.includes(historialDate.trim().toLowerCase()))
+      && (!historialStatus.trim() || status.includes(historialStatus.trim().toLowerCase()));
+  });
   const historialSolicitudes = solicitudes.filter((item) => {
     const status = label(item, ['estado', 'status', 'solEstado'], '').toLowerCase();
     return Boolean(status) && (status.includes('firmad') || status.includes('aprob') || status.includes('caduc') || status.includes('rechaz'));
@@ -12222,35 +12230,84 @@ function ERubricaMobileScreen({
         </View>
       ) : null}
       {tab === 'validar-firma' ? (
-        <View style={styles.erubricaHistoryStack}>
-          <View style={styles.erubricaHistoryHero}>
-            <View style={styles.erubricaHistoryHeroCopy}>
-              <Text style={styles.erubricaHistoryEyebrow}>DOCUMENTOS ELECTRÓNICOS</Text>
-              <Text style={styles.erubricaHistoryTitle}>Validar Firma</Text>
-              <Text style={styles.erubricaHistorySubtitle}>Valida un PDF firmado o el código QR de un documento.</Text>
+        <View style={styles.erubricaSignFlow}>
+          <View style={styles.erubricaValidatePanel}>
+            <View style={styles.erubricaValidateHeader}>
+              <View style={styles.erubricaValidateTitleRow}>
+                <MaterialCommunityIcons name="file-lock-outline" size={18} color={ERUBRICA_COLORS.text} />
+                <Text style={styles.erubricaSignStep}>Documento firmado en PDF</Text>
+              </View>
+              <Pressable style={styles.erubricaSignedDocsButton} onPress={() => selectTab('historial-documentos')}>
+                <MaterialCommunityIcons name="folder-lock-outline" size={15} color="#FFFFFF" />
+                <Text style={styles.erubricaSignedDocsText}>Documentos Firmados</Text>
+              </Pressable>
+            </View>
+
+            <Pressable style={styles.erubricaDropzone} onPress={pickPdfToSign}>
+              <View style={styles.erubricaDropIcon}>
+                <MaterialCommunityIcons name="file-pdf-box" size={27} color={ERUBRICA_COLORS.primary} />
+              </View>
+              <Text style={styles.erubricaDropTitle}>{pdfFile ? pdfFile.name : 'Arrastra tu archivo PDF aquí'}</Text>
+              <Text style={styles.erubricaDropText}>o selecciona un archivo desde tu dispositivo</Text>
+              <View style={styles.erubricaDropButton}>
+                <MaterialCommunityIcons name="file-upload-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.erubricaDropButtonText}>Seleccionar PDF</Text>
+              </View>
+              <View style={styles.erubricaValidateMetaRow}>
+                <View style={styles.erubricaValidateMetaItem}>
+                  <MaterialCommunityIcons name="file-pdf-box" size={18} color={ERUBRICA_COLORS.primary} />
+                  <Text style={styles.erubricaDropMeta}>Formato: PDF</Text>
+                </View>
+                <View style={styles.erubricaValidateMetaItem}>
+                  <MaterialCommunityIcons name="clock-outline" size={18} color={ERUBRICA_COLORS.primary} />
+                  <Text style={styles.erubricaDropMeta}>Máximo: 10 MB</Text>
+                </View>
+                <View style={styles.erubricaValidateMetaItem}>
+                  <MaterialCommunityIcons name="file-document-outline" size={18} color={ERUBRICA_COLORS.primary} />
+                  <Text style={styles.erubricaDropMeta}>Páginas: ilimitado</Text>
+                </View>
+              </View>
+            </Pressable>
+
+            <View style={styles.erubricaPreviewToolbar}>
+              <View style={styles.erubricaPreviewToolbarSide}>
+                <View style={styles.erubricaPreviewToolbarButton}><MaterialCommunityIcons name="chevron-left" size={17} color="#A2B1C1" /></View>
+                <View style={styles.erubricaPreviewToolbarButton}><MaterialCommunityIcons name="chevron-right" size={17} color="#A2B1C1" /></View>
+                <Text style={styles.erubricaPreviewToolbarText}>Página 1 de 0</Text>
+              </View>
+              <Text style={styles.erubricaPreviewToolbarHint}>{pdfFile ? 'PDF cargado' : 'Carga un PDF para visualizarlo.'}</Text>
+            </View>
+
+            <View style={styles.erubricaEmptyPreview}>
+              <View style={styles.erubricaPreviewSidebar}>
+                <Text style={styles.erubricaPreviewPage}>1</Text>
+              </View>
+              <View style={styles.erubricaPreviewCenter}>
+                <MaterialCommunityIcons name="file-pdf-box" size={34} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaPreviewTitle}>Previsualización del PDF</Text>
+                <Text style={styles.erubricaPreviewText}>{pdfFile ? 'Documento listo para analizar.' : 'Selecciona un documento firmado para verlo aquí.'}</Text>
+              </View>
             </View>
           </View>
-          <View style={styles.erubricaSignCard}>
-            <Text style={styles.erubricaSignStep}>PDF firmado</Text>
-            <Text style={styles.erubricaSignHint}>Selecciona el archivo que deseas validar.</Text>
-            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label={pdfFile ? `PDF: ${pdfFile.name}` : 'Seleccionar PDF'} onPress={pickPdfToSign} />
-            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Validar firma del PDF" loading={validatingPdf} onPress={validatePdfSignature} />
+
+          <View style={styles.erubricaValidatePrimaryAction}>
+            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Analizar firma digital" loading={validatingPdf} onPress={validatePdfSignature} />
+            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Validar por QR" onPress={() => selectTab('validar')} />
           </View>
-          <View style={styles.erubricaSignCard}>
-            <Text style={styles.erubricaSignStep}>Código QR</Text>
-            <Text style={styles.erubricaSignHint}>Pega el texto o URL del QR.</Text>
-            <Field label="Entrada QR" value={qrInput} onChangeText={setQrInput} autoCapitalize="none" />
-            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Validar QR" loading={validatingQr} onPress={async () => {
-              if (!qrInput.trim()) return;
-              setValidatingQr(true);
-              setQrResult(null);
-              try { setQrResult(await validarERubricaQr(qrInput)); }
-              catch (error) { setQrResult({ mensaje: error instanceof ApiError ? error.message : 'No se pudo validar el QR.' }); }
-              finally { setValidatingQr(false); }
-            }} />
+
+          <View style={styles.erubricaAdviceCard}>
+            <View style={styles.erubricaAdviceHeader}>
+              <MaterialCommunityIcons name="shield-search" size={18} color={ERUBRICA_COLORS.primary} />
+              <Text style={styles.erubricaAdviceTitle}>Qué se verificará</Text>
+            </View>
+            {['Integridad del documento', 'Certificado digital', 'Revocación OCSP/CRL', 'Sello de tiempo RFC 3161', 'Validez legal'].map((item) => (
+              <View key={item} style={styles.erubricaAdviceRow}>
+                <MaterialCommunityIcons name="check-decagram-outline" size={16} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaAdviceText}>{item}</Text>
+              </View>
+            ))}
           </View>
-          {pdfValidation ? <Text style={styles.clientDetailValue}>{JSON.stringify(pdfValidation, null, 2)}</Text> : null}
-          {qrResult ? <Text style={styles.clientDetailValue}>{JSON.stringify(qrResult, null, 2)}</Text> : null}
+          {pdfValidation ? <View style={styles.erubricaSignCard}><Text style={styles.clientDetailValue}>{JSON.stringify(pdfValidation, null, 2)}</Text></View> : null}
         </View>
       ) : null}
       {tab === 'documentos-por-firmar' ? (
@@ -12259,22 +12316,78 @@ function ERubricaMobileScreen({
             <View style={styles.erubricaHistoryHeroCopy}>
               <Text style={styles.erubricaHistoryEyebrow}>DOCUMENTOS ELECTRÓNICOS</Text>
               <Text style={styles.erubricaHistoryTitle}>Documentos por Firmar</Text>
-              <Text style={styles.erubricaHistorySubtitle}>Documentos pendientes que requieren tu firma electrónica.</Text>
+              <Text style={styles.erubricaHistorySubtitle}>Administra los PDF subidos y elige el documento que vas a firmar.</Text>
+            </View>
+            <Pressable style={styles.erubricaPendingLoadButton} onPress={onSync}>
+              <MaterialCommunityIcons name="folder-upload-outline" size={15} color={ERUBRICA_COLORS.text} />
+              <Text style={styles.erubricaPendingLoadText}>Cargar Documentos</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.erubricaPendingMetrics}>
+            <View style={[styles.erubricaPendingMetric, styles.erubricaPendingMetricCyan]}>
+              <Text style={styles.erubricaHistoryMetricLabel}>PENDIENTES</Text>
+              <Text style={styles.erubricaHistoryMetricValue}>{documentosPorFirmar.length}</Text>
+              <Text style={styles.erubricaHistoryMetricHint}>Documentos por firmar</Text>
+              <View style={[styles.erubricaHistoryMetricBar, { backgroundColor: '#32C8BA' }]} />
+            </View>
+            <View style={[styles.erubricaPendingMetric, styles.erubricaPendingMetricAmber]}>
+              <Text style={styles.erubricaHistoryMetricLabel}>FIRMAS DEL MES</Text>
+              <Text style={styles.erubricaHistoryMetricValue}>{signedMonthCount}</Text>
+              <Text style={styles.erubricaHistoryMetricHint}>{new Date().toLocaleDateString('es-EC', { month: 'long', year: 'numeric' })}</Text>
+              <View style={[styles.erubricaHistoryMetricBar, { backgroundColor: '#F59E0B' }]} />
             </View>
           </View>
-          {documentosPorFirmar.length === 0 ? <EmptyState title="Sin documentos por firmar" text="No tienes documentos pendientes de firma." /> : documentosPorFirmar.slice(0, 10).map((item, index) => (
-            <View key={`erubrica-pendiente-${index}`} style={[styles.clientCard, { borderColor: ERUBRICA_COLORS.border }]}>
-              <View style={styles.clientCardHeader}>
-                <View style={styles.clientHeroTitleBlock}>
-                  <Text style={styles.clientDetailLabel}>{label(item, ['documento', 'nombreDocumento', 'solId', 'id'], 'Documento pendiente')}</Text>
-                  <Text style={styles.clientMeta}>{label(item, ['estado', 'status', 'solEstado'], 'Pendiente')}</Text>
-                </View>
-                <MaterialCommunityIcons name="file-document-edit-outline" size={25} color={ERUBRICA_COLORS.primary} />
+
+          <View style={styles.erubricaHistoryPanel}>
+            <View style={styles.erubricaHistoryFilters}>
+              <View style={styles.erubricaHistorySearchBox}>
+                <MaterialCommunityIcons name="magnify" size={19} color="#5C748A" />
+                <TextInput
+                  value={historialQuery}
+                  onChangeText={setHistorialQuery}
+                  placeholder="Buscar por nombre de documento..."
+                  placeholderTextColor="#8AA0B5"
+                  style={styles.erubricaHistoryInput}
+                />
               </View>
-              <Text style={styles.clientDetailValue}>{label(item, ['descripcion', 'producto', 'solFormatoFirma', 'formato'], 'Pendiente de firma')}</Text>
-              <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Ir a firmar PDF" loading={false} onPress={() => selectTab('firmar')} />
+              <View style={styles.erubricaHistoryFilterRow}>
+                <TextInput value={historialDate} onChangeText={setHistorialDate} placeholder="mm/dd/yyyy" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
+                <TextInput value={historialStatus} onChangeText={setHistorialStatus} placeholder="Todos los estados" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
+              </View>
+              <Pressable style={styles.erubricaHistoryClearButton} onPress={() => { setHistorialQuery(''); setHistorialDate(''); setHistorialStatus(''); }}>
+                <MaterialCommunityIcons name="filter-remove-outline" size={15} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaHistoryClearText}>Limpiar filtros</Text>
+              </Pressable>
             </View>
-          ))}
+            {filteredDocumentosPorFirmar.length === 0 ? <EmptyState title="Sin documentos por firmar" text="No tienes documentos pendientes de firma." /> : filteredDocumentosPorFirmar.slice(0, 10).map((item, index) => {
+              const documentName = label(item, ['documento', 'nombreDocumento', 'nombreArchivo', 'archivo', 'solId', 'id'], 'Documento pendiente');
+              const documentCode = label(item, ['codigo', 'numero', 'solId', 'id'], `DOC-${index + 1}`);
+              const signedDate = formatDocumentDate(itemValue(item, ['fecha', 'fechaCreacion', 'createdAt', 'fechaSolicitud']));
+              const status = label(item, ['estado', 'status', 'solEstado'], 'Pendiente');
+              return (
+                <View key={`erubrica-pendiente-${index}`} style={styles.erubricaPendingRow}>
+                  <View style={styles.erubricaPendingPdfBadge}>
+                    <Text style={styles.erubricaPendingPdfText}>PDF</Text>
+                  </View>
+                  <View style={styles.erubricaPendingDocCopy}>
+                    <Text style={styles.erubricaHistoryDocName} numberOfLines={2}>{documentName}</Text>
+                    <Text style={styles.erubricaHistoryDocMeta} numberOfLines={1}>{documentCode}</Text>
+                    <Text style={styles.erubricaHistoryDetailText}>{signedDate}</Text>
+                  </View>
+                  <View style={styles.erubricaPendingSide}>
+                    <View style={styles.erubricaPendingStatusPill}>
+                      <Text style={styles.erubricaPendingStatusText}>{status}</Text>
+                    </View>
+                    <Pressable style={styles.erubricaPendingSignButton} onPress={() => selectTab('firmar')}>
+                      <MaterialCommunityIcons name="pencil-outline" size={18} color="#FFFFFF" />
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
+            <Text style={styles.erubricaHistoryFooter}>Mostrando {Math.min(filteredDocumentosPorFirmar.length, 10)} de {filteredDocumentosPorFirmar.length} documentos</Text>
+          </View>
         </View>
       ) : null}
       {tab === 'nueva-solicitud' ? (
