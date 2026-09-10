@@ -121,8 +121,6 @@ export const validarERubricaFirmaPdf = (pdf: { uri: string; name: string; mimeTy
 export const firmarERubricaDocumento = (form: FormData) =>
   apiRequestBinary(`${ROOT}/documentos/firmar`, { method: 'POST', body: form });
 
-export type ERubricaSolicitudPayload = Record<string, unknown>;
-
 export type ERubricaPagoResponse = {
   paymentUrl?: string | null;
   checkoutUrl?: string | null;
@@ -131,17 +129,17 @@ export type ERubricaPagoResponse = {
   status?: string | null;
 };
 
-export const crearERubricaSolicitud = (payload: ERubricaSolicitudPayload) =>
+export const crearERubricaSolicitud = (form: FormData) =>
   apiRequest<ERubricaPagoResponse | Record<string, unknown>>(ERUBRICA_SOLICITUD_PATH, {
     method: 'POST',
-    body: JSON.stringify(payload),
-    timeoutMs: 30000,
+    body: form,
+    timeoutMs: 60000,
   });
 
-export const iniciarPagoERubricaSolicitud = (payload: ERubricaSolicitudPayload) =>
+export const iniciarPagoERubricaSolicitud = (solicitudId: number) =>
   apiRequest<ERubricaPagoResponse>(ERUBRICA_SOLICITUD_PAGO_PATH, {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ solicitudId }),
     timeoutMs: 30000,
   });
 

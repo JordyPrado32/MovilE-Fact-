@@ -52,7 +52,7 @@ import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perf
 import { createPuntoEmision, deletePuntoEmision, getPuntoEmisionSiguienteSecuencial, getPuntosEmision, markPuntoPrincipal, PuntoDocumentoKey, savePuntoEmisionSecuenciaInicial, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
 import { getRetencionPdf, getRetenciones, getRetencionXml, RetencionListItem } from './src/services/retencionesMobileService';
-import { ERubricaDashboard, ERubricaEmisor, buscarERubricaSolicitudesProveedor, descargarERubricaFirmaP12, enviarTransferenciaERubricaSolicitud, firmarERubricaDocumento, getERubricaDashboard, getERubricaEmisores, getERubricaFirmaEstado, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, iniciarPagoERubricaSolicitud, sincronizarERubricaPendientes, validarERubricaFirmaPdf, validarERubricaQr } from './src/services/erubricaMobileService';
+import { ERubricaDashboard, ERubricaEmisor, buscarERubricaSolicitudesProveedor, crearERubricaSolicitud, descargarERubricaFirmaP12, enviarTransferenciaERubricaSolicitud, firmarERubricaDocumento, getERubricaDashboard, getERubricaEmisores, getERubricaFirmaEstado, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, iniciarPagoERubricaSolicitud, sincronizarERubricaPendientes, validarERubricaFirmaPdf, validarERubricaQr } from './src/services/erubricaMobileService';
 import { ChangePasswordRequest, DynamicMenu, LoginResponse, RegisterRequest, ServiceAccess, TipoDocumento } from './src/types/auth';
 import { CategoriaCatalogo, CiudadLookup, Cliente, ClienteLookups, Emisor, FirmaEstado, PerfilLookup, PerfilUsuario, Producto, ProductoLookups, ProductoTipo, ProvinciaLookup, PuntoEmision, PuntosEmisionData, SubcategoriaCatalogo, SubcategoriaLookup } from './src/types/business';
 import {
@@ -189,6 +189,58 @@ type ERubricaTab =
   | 'proveedor'
   | 'catalogos'
   | 'soporte';
+type SolicitudDocumentoKey =
+  | 'cedulaFrontal'
+  | 'cedulaPosterior'
+  | 'selfieCedula'
+  | 'videoAceptacion'
+  | 'rucFile'
+  | 'nombramiento'
+  | 'constitucion'
+  | 'cedulaRepresentante'
+  | 'autorizacion'
+  | 'aceptacionNombramiento'
+  | 'archivoAdicional';
+const SOLICITUD_FORM_INITIAL = {
+  tipoDocumento: '',
+  identificacion: '',
+  codigoDactilar: '',
+  ruc: '',
+  nombres: '',
+  primerApellido: '',
+  segundoApellido: '',
+  fechaNacimiento: '',
+  sexo: '',
+  nacionalidad: 'ECUATORIANA',
+  celular: '',
+  correo: '',
+  telefonoSecundario: '',
+  correoSecundario: '',
+  provincia: '',
+  canton: '',
+  direccion: '',
+  razonSocialEmpresa: '',
+  departamento: '',
+  cargo: '',
+  motivoFirma: '',
+  representanteTipoDocumento: '',
+  representanteIdentificacion: '',
+  representanteNombres: '',
+  representanteApellidos: '',
+};
+const SOLICITUD_FILES_INITIAL: Record<SolicitudDocumentoKey, DocumentPicker.DocumentPickerAsset | null> = {
+  cedulaFrontal: null,
+  cedulaPosterior: null,
+  selfieCedula: null,
+  videoAceptacion: null,
+  rucFile: null,
+  nombramiento: null,
+  constitucion: null,
+  cedulaRepresentante: null,
+  autorizacion: null,
+  aceptacionNombramiento: null,
+  archivoAdicional: null,
+};
 type ClienteFormMode = 'create' | 'edit' | null;
 type ProductoFormMode = 'create' | 'edit' | null;
 type CategoriaFormMode = 'create' | 'edit' | null;
@@ -11934,32 +11986,10 @@ function ERubricaMobileScreen({
   const [solicitudStep, setSolicitudStep] = useState(1);
   const [solicitudPlan, setSolicitudPlan] = useState({ label: '7 días', price: 9 });
   const [solicitudPersona, setSolicitudPersona] = useState('Persona natural con cédula');
-  const [solicitudForm, setSolicitudForm] = useState({
-    tipoDocumento: '',
-    identificacion: '',
-    ruc: '',
-    nombres: '',
-    primerApellido: '',
-    segundoApellido: '',
-    fechaNacimiento: '',
-    sexo: '',
-    nacionalidad: 'ECUATORIANA',
-    celular: '',
-    correo: '',
-    telefonoSecundario: '',
-    correoSecundario: '',
-    provincia: '',
-    canton: '',
-    direccion: '',
-    razonSocialEmpresa: '',
-    departamento: '',
-    cargo: '',
-    motivoFirma: '',
-    representanteTipoDocumento: '',
-    representanteIdentificacion: '',
-    representanteNombres: '',
-    representanteApellidos: '',
-  });
+  const [solicitudForm, setSolicitudForm] = useState(SOLICITUD_FORM_INITIAL);
+  const [solicitudFiles, setSolicitudFiles] = useState(SOLICITUD_FILES_INITIAL);
+  const [solicitudId, setSolicitudId] = useState<number | null>(null);
+  const [solicitudSaving, setSolicitudSaving] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'deuna' | 'transferencia'>('deuna');
   const [paymentLoading, setPaymentLoading] = useState(false);
@@ -12140,21 +12170,116 @@ function ERubricaMobileScreen({
   const solicitudSubtotal = solicitudPlan.price;
   const solicitudIva = Number((solicitudSubtotal * 0.15).toFixed(2));
   const solicitudTotal = Number((solicitudSubtotal + solicitudIva).toFixed(2));
-  const solicitudPayload = () => ({
-    producto: solicitudPlan.label,
-    vigencia: solicitudPlan.label,
-    subtotal: solicitudSubtotal,
-    iva: solicitudIva,
-    total: solicitudTotal,
-    tipoPersona: solicitudPersona,
-    solicitante: solicitudForm,
-  });
-  const openPaymentSummary = () => {
-    if (!solicitudForm.identificacion.trim() || !solicitudForm.nombres.trim() || !solicitudForm.correo.trim()) {
-      Alert.alert('Datos incompletos', 'Completa identificación, nombres y correo principal.');
-      return;
+  const parseSolicitudAge = () => {
+    const parts = solicitudForm.fechaNacimiento.trim().split(/[/-]/).map((part) => Number(part));
+    if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) return 0;
+    const [day, month, year] = parts[0] > 31 ? [parts[2], parts[1], parts[0]] : parts;
+    const birth = new Date(year, month - 1, day);
+    if (Number.isNaN(birth.getTime())) return 0;
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    if (birth > new Date(today.getFullYear() - age, today.getMonth(), today.getDate())) age -= 1;
+    return age;
+  };
+  const solicitudDocumentoItems = [
+    { key: 'cedulaFrontal' as SolicitudDocumentoKey, label: 'Documento de identificación frontal *', types: ['image/*', 'application/pdf'] },
+    { key: 'cedulaPosterior' as SolicitudDocumentoKey, label: 'Documento de identificación posterior *', types: ['image/*', 'application/pdf'] },
+    { key: 'selfieCedula' as SolicitudDocumentoKey, label: 'Selfie sosteniendo su documento *', types: ['image/*', 'application/pdf'] },
+    ...(parseSolicitudAge() >= 65 ? [{ key: 'videoAceptacion' as SolicitudDocumentoKey, label: 'Video de aceptación *', types: ['video/*'] }] : []),
+    ...(solicitudPersona !== 'Persona natural con cédula' ? [{ key: 'rucFile' as SolicitudDocumentoKey, label: 'Archivo RUC *', types: ['image/*', 'application/pdf'] }] : []),
+    ...(solicitudPersona === 'Representante legal' ? [
+      { key: 'nombramiento' as SolicitudDocumentoKey, label: 'Nombramiento *', types: ['image/*', 'application/pdf'] },
+      { key: 'constitucion' as SolicitudDocumentoKey, label: 'Constitución *', types: ['image/*', 'application/pdf'] },
+      { key: 'cedulaRepresentante' as SolicitudDocumentoKey, label: 'Cédula del representante *', types: ['image/*', 'application/pdf'] },
+      { key: 'autorizacion' as SolicitudDocumentoKey, label: 'Autorización *', types: ['image/*', 'application/pdf'] },
+      { key: 'aceptacionNombramiento' as SolicitudDocumentoKey, label: 'Aceptación de nombramiento *', types: ['image/*', 'application/pdf'] },
+    ] : []),
+    { key: 'archivoAdicional' as SolicitudDocumentoKey, label: 'Documento adicional', types: ['image/*', 'application/pdf'] },
+  ];
+  const pickSolicitudFile = async (key: SolicitudDocumentoKey, types: string[]) => {
+    const result = await DocumentPicker.getDocumentAsync({ type: types, copyToCacheDirectory: true });
+    if (!result.canceled) {
+      setSolicitudId(null);
+      setSolicitudFiles((current) => ({ ...current, [key]: result.assets[0] }));
     }
-    setPaymentModalOpen(true);
+  };
+  const appendSolicitudFile = (form: FormData, key: SolicitudDocumentoKey, fieldName: string) => {
+    const file = solicitudFiles[key];
+    if (!file) return;
+    form.append(fieldName, { uri: file.uri, name: file.name || `${fieldName}.jpg`, type: file.mimeType || 'application/octet-stream' } as unknown as Blob);
+  };
+  const buildSolicitudFormData = () => {
+    const form = new FormData();
+    form.append('vigencia', solicitudPlan.label);
+    form.append('tipoPersona', solicitudPersona);
+    form.append('tipoDocumento', solicitudForm.tipoDocumento);
+    form.append('identificacion', solicitudForm.identificacion);
+    form.append('codigoDactilar', solicitudForm.codigoDactilar);
+    form.append('ruc', solicitudForm.ruc);
+    form.append('nombres', solicitudForm.nombres);
+    form.append('primerApellido', solicitudForm.primerApellido);
+    form.append('segundoApellido', solicitudForm.segundoApellido);
+    form.append('fechaNacimiento', solicitudForm.fechaNacimiento);
+    form.append('sexo', solicitudForm.sexo);
+    form.append('nacionalidad', solicitudForm.nacionalidad);
+    form.append('celular', solicitudForm.celular);
+    form.append('correo', solicitudForm.correo);
+    form.append('telefonoSecundario', solicitudForm.telefonoSecundario);
+    form.append('correoSecundario', solicitudForm.correoSecundario);
+    form.append('provincia', solicitudForm.provincia);
+    form.append('canton', solicitudForm.canton);
+    form.append('direccion', solicitudForm.direccion);
+    form.append('razonSocialEmpresa', solicitudForm.razonSocialEmpresa);
+    form.append('departamento', solicitudForm.departamento);
+    form.append('cargo', solicitudForm.cargo);
+    form.append('motivoFirma', solicitudForm.motivoFirma);
+    form.append('representanteTipoDocumento', solicitudForm.representanteTipoDocumento);
+    form.append('representanteIdentificacion', solicitudForm.representanteIdentificacion);
+    form.append('representanteNombres', solicitudForm.representanteNombres);
+    form.append('representanteApellidos', solicitudForm.representanteApellidos);
+    appendSolicitudFile(form, 'cedulaFrontal', 'cedulaFrontal');
+    appendSolicitudFile(form, 'cedulaPosterior', 'cedulaPosterior');
+    appendSolicitudFile(form, 'selfieCedula', 'selfieCedula');
+    appendSolicitudFile(form, 'videoAceptacion', 'videoAceptacion');
+    appendSolicitudFile(form, 'rucFile', 'rucFile');
+    appendSolicitudFile(form, 'nombramiento', 'nombramiento');
+    appendSolicitudFile(form, 'constitucion', 'constitucion');
+    appendSolicitudFile(form, 'cedulaRepresentante', 'cedulaRepresentante');
+    appendSolicitudFile(form, 'autorizacion', 'autorizacion');
+    appendSolicitudFile(form, 'aceptacionNombramiento', 'aceptacionNombramiento');
+    appendSolicitudFile(form, 'archivoAdicional', 'archivoAdicional');
+    return form;
+  };
+  const validateSolicitudBeforePayment = () => {
+    if (!solicitudForm.tipoDocumento.trim() || !solicitudForm.identificacion.trim() || !solicitudForm.codigoDactilar.trim() || !solicitudForm.nombres.trim() || !solicitudForm.primerApellido.trim() || !solicitudForm.fechaNacimiento.trim() || !solicitudForm.sexo.trim() || !solicitudForm.celular.trim() || !solicitudForm.correo.trim() || !solicitudForm.provincia.trim() || !solicitudForm.canton.trim() || !solicitudForm.direccion.trim()) {
+      Alert.alert('Datos incompletos', 'Completa los datos obligatorios del solicitante.');
+      return false;
+    }
+    if (solicitudPersona === 'Representante legal' && (!solicitudForm.ruc.trim() || !solicitudForm.razonSocialEmpresa.trim() || !solicitudForm.cargo.trim() || !solicitudForm.motivoFirma.trim() || !solicitudForm.representanteTipoDocumento.trim() || !solicitudForm.representanteIdentificacion.trim() || !solicitudForm.representanteNombres.trim() || !solicitudForm.representanteApellidos.trim())) {
+      Alert.alert('Datos incompletos', 'Completa los datos de empresa y representante legal.');
+      return false;
+    }
+    const missingFile = solicitudDocumentoItems.find((item) => item.label.includes('*') && !solicitudFiles[item.key]);
+    if (missingFile) {
+      Alert.alert('Documento pendiente', `Adjunta: ${missingFile.label.replace(' *', '')}.`);
+      return false;
+    }
+    return true;
+  };
+  const openPaymentSummary = async () => {
+    if (!validateSolicitudBeforePayment()) return;
+    setSolicitudSaving(true);
+    try {
+      const response = await crearERubricaSolicitud(buildSolicitudFormData());
+      const createdId = Number((response as Record<string, unknown>).solicitudId);
+      if (!createdId) throw new Error('empty-solicitud-id');
+      setSolicitudId(createdId);
+      setPaymentModalOpen(true);
+    } catch (error) {
+      Alert.alert('No se pudo crear la solicitud', error instanceof ApiError ? error.message : 'Revisa los datos y documentos adjuntos.');
+    } finally {
+      setSolicitudSaving(false);
+    }
   };
   const pickTransferReceipt = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.82 });
@@ -12163,8 +12288,12 @@ function ERubricaMobileScreen({
   const payERubricaRequest = async () => {
     setPaymentLoading(true);
     try {
+      if (!solicitudId) {
+        Alert.alert('Solicitud pendiente', 'Primero crea la solicitud para continuar con el pago.');
+        return;
+      }
       if (paymentMethod === 'deuna') {
-        const payment = await iniciarPagoERubricaSolicitud(solicitudPayload());
+        const payment = await iniciarPagoERubricaSolicitud(solicitudId);
         const url = payment.paymentUrl ?? payment.checkoutUrl ?? payment.url;
         if (!url) throw new Error('empty-payment-url');
         await Linking.openURL(url);
@@ -12177,7 +12306,7 @@ function ERubricaMobileScreen({
         return;
       }
       const form = new FormData();
-      form.append('payload', JSON.stringify(solicitudPayload()));
+      form.append('solicitudId', String(solicitudId));
       form.append('banco', transferForm.banco);
       form.append('titularCuenta', transferForm.titular.trim());
       form.append('cuentaOrigen', transferForm.cuenta.trim());
@@ -12523,7 +12652,7 @@ function ERubricaMobileScreen({
               ].map((plan) => {
                 const active = solicitudPlan.label === plan.label;
                 return (
-                  <Pressable key={plan.label} style={[styles.erubricaRequestPlan, active && styles.erubricaRequestPlanActive]} onPress={() => setSolicitudPlan(plan)}>
+                  <Pressable key={plan.label} style={[styles.erubricaRequestPlan, active && styles.erubricaRequestPlanActive]} onPress={() => { setSolicitudPlan(plan); setSolicitudId(null); }}>
                     <Text style={styles.erubricaRequestPlanTitle}>{plan.label}</Text>
                     <Text style={styles.erubricaRequestPlanPrice}>${plan.price.toFixed(2)}</Text>
                   </Pressable>
@@ -12537,7 +12666,7 @@ function ERubricaMobileScreen({
             {['Persona natural con cédula', 'Persona natural con RUC', 'Representante legal'].map((option) => {
               const active = solicitudPersona === option;
               return (
-                <Pressable key={option} style={[styles.erubricaRequestPerson, active && styles.erubricaRequestPersonActive]} onPress={() => setSolicitudPersona(option)}>
+                <Pressable key={option} style={[styles.erubricaRequestPerson, active && styles.erubricaRequestPersonActive]} onPress={() => { setSolicitudPersona(option); setSolicitudId(null); }}>
                   <MaterialCommunityIcons name={active ? 'check-circle' : 'card-account-details-outline'} size={18} color={active ? ERUBRICA_COLORS.primary : '#607887'} />
                   <Text style={styles.erubricaRequestOptionTitle}>{option}</Text>
                 </Pressable>
@@ -12550,6 +12679,7 @@ function ERubricaMobileScreen({
             <Text style={styles.erubricaSignStep}>Completa la información del solicitante</Text>
             <Field label="Tipo de documento *" value={solicitudForm.tipoDocumento} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, tipoDocumento: value }))} />
             <Field label="Identificación *" value={solicitudForm.identificacion} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, identificacion: value }))} />
+            <Field label="Código dactilar *" value={solicitudForm.codigoDactilar} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, codigoDactilar: value }))} autoCapitalize="characters" />
             {solicitudPersona !== 'Persona natural con cédula' ? (
               <Field label={solicitudPersona === 'Representante legal' ? 'Posee RUC? *' : 'Posee RUC?'} value={solicitudForm.ruc} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, ruc: value }))} keyboardType="number-pad" />
             ) : null}
@@ -12589,34 +12719,27 @@ function ERubricaMobileScreen({
             </>
           ) : null}
 
+          <View style={styles.erubricaRequestPanel}>
+            <Text style={styles.erubricaHistoryEyebrow}>DOCUMENTOS DE SOPORTE</Text>
+            <Text style={styles.erubricaSignStep}>Adjunta los archivos requeridos</Text>
+            {solicitudDocumentoItems.map((item) => {
+              const file = solicitudFiles[item.key];
+              return (
+                <Pressable key={item.key} style={styles.erubricaRequestDocument} onPress={() => pickSolicitudFile(item.key, item.types)}>
+                  <MaterialCommunityIcons name={file ? 'check-circle' : 'cloud-upload-outline'} size={20} color={file ? ERUBRICA_COLORS.primary : '#607887'} />
+                  <View style={styles.erubricaPendingDocCopy}>
+                    <Text style={styles.erubricaRequestOptionTitle}>{item.label}</Text>
+                    <Text style={styles.erubricaRequestOptionText}>{file?.name || 'JPG, JPEG, PNG o PDF. Máximo 10 MB.'}</Text>
+                  </View>
+                  <Text style={styles.erubricaRequestDocumentAction}>{file ? 'Cambiar' : 'Subir'}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
           <View style={styles.erubricaSignActions}>
-            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar formulario" onPress={() => setSolicitudForm({
-              tipoDocumento: '',
-              identificacion: '',
-              ruc: '',
-              nombres: '',
-              primerApellido: '',
-              segundoApellido: '',
-              fechaNacimiento: '',
-              sexo: '',
-              nacionalidad: 'ECUATORIANA',
-              celular: '',
-              correo: '',
-              telefonoSecundario: '',
-              correoSecundario: '',
-              provincia: '',
-              canton: '',
-              direccion: '',
-              razonSocialEmpresa: '',
-              departamento: '',
-              cargo: '',
-              motivoFirma: '',
-              representanteTipoDocumento: '',
-              representanteIdentificacion: '',
-              representanteNombres: '',
-              representanteApellidos: '',
-            })} />
-            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Siguiente" loading={false} onPress={openPaymentSummary} />
+            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar formulario" onPress={() => { setSolicitudForm(SOLICITUD_FORM_INITIAL); setSolicitudFiles(SOLICITUD_FILES_INITIAL); setSolicitudId(null); }} />
+            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Siguiente" loading={solicitudSaving} onPress={openPaymentSummary} />
           </View>
         </View>
       ) : null}

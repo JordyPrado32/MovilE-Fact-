@@ -156,6 +156,8 @@ export const styles = StyleSheet.create({
   erubricaRequestPersonGrid: { gap: 8 },
   erubricaRequestPerson: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#DCE8F1', borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 8, padding: 11 },
   erubricaRequestPersonActive: { backgroundColor: '#F5FCF8', borderColor: ERUBRICA_COLORS.primary },
+  erubricaRequestDocument: { alignItems: 'center', backgroundColor: '#F7FBFF', borderColor: '#CFE1EC', borderRadius: 10, borderStyle: 'dashed', borderWidth: 1, flexDirection: 'row', gap: 9, padding: 11 },
+  erubricaRequestDocumentAction: { color: ERUBRICA_COLORS.primary, fontSize: 11, fontWeight: '900' },
   erubricaPaymentOverlay: { backgroundColor: '#0B1A2B99', flex: 1, justifyContent: 'center', padding: 12 },
   erubricaPaymentModal: { backgroundColor: '#FFFFFF', borderColor: '#CFE0EF', borderRadius: 14, borderWidth: 1, maxHeight: '92%', overflow: 'hidden', padding: 14 },
   erubricaPaymentHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
