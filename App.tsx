@@ -6169,6 +6169,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             onTabChange={setErubricaTabRequest}
             onRefresh={() => setReloadKey((value) => value + 1)}
             onPreviewPdf={(file) => setPdfPreview({ uri: file.uri, name: file.name || 'Documento PDF' })}
+            onPreviewRemotePdf={(urlOrPath, fileName) => openPdfPreview(async () => urlOrPath, fileName)}
             onSync={async () => {
               try {
                 await sincronizarERubricaPendientes();
@@ -11894,6 +11895,7 @@ function ERubricaMobileScreen({
   onTabChange,
   onRefresh,
   onPreviewPdf,
+  onPreviewRemotePdf,
   onSync,
 }: {
   data: ERubricaDashboard | null;
@@ -11904,6 +11906,7 @@ function ERubricaMobileScreen({
   onTabChange: (tab: ERubricaTab) => void;
   onRefresh: () => void;
   onPreviewPdf: (file: { uri: string; name: string; mimeType?: string }) => void;
+  onPreviewRemotePdf: (urlOrPath: string, fileName: string) => void;
   onSync: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<ERubricaTab>('inicio');
@@ -12292,7 +12295,6 @@ function ERubricaMobileScreen({
 
           <View style={styles.erubricaValidatePrimaryAction}>
             <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Analizar firma digital" loading={validatingPdf} onPress={validatePdfSignature} />
-            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Validar por QR" onPress={() => selectTab('validar')} />
           </View>
 
           <View style={styles.erubricaAdviceCard}>
@@ -12312,7 +12314,7 @@ function ERubricaMobileScreen({
       ) : null}
       {tab === 'documentos-por-firmar' ? (
         <View style={styles.erubricaHistoryStack}>
-          <View style={styles.erubricaHistoryHero}>
+          <View style={styles.erubricaPendingHeader}>
             <View style={styles.erubricaHistoryHeroCopy}>
               <Text style={styles.erubricaHistoryEyebrow}>DOCUMENTOS ELECTRÓNICOS</Text>
               <Text style={styles.erubricaHistoryTitle}>Documentos por Firmar</Text>
@@ -12365,6 +12367,7 @@ function ERubricaMobileScreen({
               const documentCode = label(item, ['codigo', 'numero', 'solId', 'id'], `DOC-${index + 1}`);
               const signedDate = formatDocumentDate(itemValue(item, ['fecha', 'fechaCreacion', 'createdAt', 'fechaSolicitud']));
               const status = label(item, ['estado', 'status', 'solEstado'], 'Pendiente');
+              const previewUrl = itemValue(item, ['url', 'downloadUrl', 'documentoUrl', 'ruta', 'archivoUrl', 'pdfUrl', 'previewUrl']);
               return (
                 <View key={`erubrica-pendiente-${index}`} style={styles.erubricaPendingRow}>
                   <View style={styles.erubricaPendingPdfBadge}>
@@ -12379,9 +12382,14 @@ function ERubricaMobileScreen({
                     <View style={styles.erubricaPendingStatusPill}>
                       <Text style={styles.erubricaPendingStatusText}>{status}</Text>
                     </View>
-                    <Pressable style={styles.erubricaPendingSignButton} onPress={() => selectTab('firmar')}>
-                      <MaterialCommunityIcons name="pencil-outline" size={18} color="#FFFFFF" />
-                    </Pressable>
+                    <View style={styles.erubricaPendingActionRow}>
+                      <Pressable style={styles.erubricaPendingPreviewButton} onPress={() => previewUrl ? onPreviewRemotePdf(previewUrl, documentName) : Alert.alert('Vista previa no disponible', 'Este registro no incluye un PDF para previsualizar.')}>
+                        <MaterialCommunityIcons name="eye-outline" size={17} color={ERUBRICA_COLORS.primary} />
+                      </Pressable>
+                      <Pressable style={styles.erubricaPendingSignButton} onPress={() => selectTab('firmar')}>
+                        <MaterialCommunityIcons name="pencil-outline" size={18} color="#FFFFFF" />
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
               );
