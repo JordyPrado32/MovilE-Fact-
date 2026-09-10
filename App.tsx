@@ -12839,7 +12839,7 @@ function ERubricaMobileScreen({
                   <MaterialCommunityIcons name="trash-can-outline" size={17} color="#5C748A" />
                 </Pressable>
               ) : null}
-            </View>
+            </Pressable>
           </View>
 
           <View style={styles.erubricaConfigStepCard}>
