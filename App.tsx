@@ -6060,7 +6060,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           onNotifications={() => setNotificationsOpen(true)}
           onMenu={() => setMenuOpen(true)}
           onDocuments={() => openView('comprar-documentos')}
-          onFirma={() => isERubricaWorkspace ? openERubricaTab('firma-config') : openView('firma')}
+          onFirma={() => isERubricaWorkspace ? openERubricaTab('nueva-solicitud') : openView('firma')}
           onLogout={onLogout}
         />
 
@@ -7108,6 +7108,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           onSolicitudes={() => openERubricaTab('solicitudes')}
           onFirmar={() => openERubricaTab('firmar')}
           onValidar={() => openERubricaTab('validar')}
+          onSolicitud={() => openERubricaTab('nueva-solicitud')}
         />
       ) : null}
       <InitialSequenceModal
@@ -11933,7 +11934,32 @@ function ERubricaMobileScreen({
   const [solicitudStep, setSolicitudStep] = useState(1);
   const [solicitudPlan, setSolicitudPlan] = useState({ label: '7 días', price: 9 });
   const [solicitudPersona, setSolicitudPersona] = useState('Persona natural con cédula');
-  const [solicitudForm, setSolicitudForm] = useState({ identificacion: '', nombres: '', primerApellido: '', celular: '', correo: '', direccion: '' });
+  const [solicitudForm, setSolicitudForm] = useState({
+    tipoDocumento: '',
+    identificacion: '',
+    ruc: '',
+    nombres: '',
+    primerApellido: '',
+    segundoApellido: '',
+    fechaNacimiento: '',
+    sexo: '',
+    nacionalidad: 'ECUATORIANA',
+    celular: '',
+    correo: '',
+    telefonoSecundario: '',
+    correoSecundario: '',
+    provincia: '',
+    canton: '',
+    direccion: '',
+    razonSocialEmpresa: '',
+    departamento: '',
+    cargo: '',
+    motivoFirma: '',
+    representanteTipoDocumento: '',
+    representanteIdentificacion: '',
+    representanteNombres: '',
+    representanteApellidos: '',
+  });
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'deuna' | 'transferencia'>('deuna');
   const [paymentLoading, setPaymentLoading] = useState(false);
@@ -12518,16 +12544,74 @@ function ERubricaMobileScreen({
           <View style={styles.erubricaRequestPanel}>
             <Text style={styles.erubricaHistoryEyebrow}>DATOS PERSONALES</Text>
             <Text style={styles.erubricaSignStep}>Completa la información del solicitante</Text>
+            <Field label="Tipo de documento *" value={solicitudForm.tipoDocumento} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, tipoDocumento: value }))} />
             <Field label="Identificación *" value={solicitudForm.identificacion} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, identificacion: value }))} />
+            {solicitudPersona !== 'Persona natural con cédula' ? (
+              <Field label={solicitudPersona === 'Representante legal' ? 'Posee RUC? *' : 'Posee RUC?'} value={solicitudForm.ruc} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, ruc: value }))} keyboardType="number-pad" />
+            ) : null}
             <Field label="Nombres *" value={solicitudForm.nombres} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, nombres: value }))} />
-            <Field label="Primer apellido" value={solicitudForm.primerApellido} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, primerApellido: value }))} />
-            <Field label="Celular" value={solicitudForm.celular} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, celular: value }))} keyboardType="phone-pad" />
+            <Field label="Primer apellido *" value={solicitudForm.primerApellido} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, primerApellido: value }))} />
+            <Field label="Segundo apellido" value={solicitudForm.segundoApellido} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, segundoApellido: value }))} />
+            <Field label="Fecha de nacimiento * (dd/mm/aaaa)" value={solicitudForm.fechaNacimiento} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, fechaNacimiento: value }))} />
+            <Field label="Sexo *" value={solicitudForm.sexo} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, sexo: value }))} />
+            <Field label="Nacionalidad *" value={solicitudForm.nacionalidad} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, nacionalidad: value }))} />
+            <Field label="Celular *" value={solicitudForm.celular} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, celular: value }))} keyboardType="phone-pad" />
             <Field label="Correo principal *" value={solicitudForm.correo} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, correo: value }))} autoCapitalize="none" keyboardType="email-address" />
-            <Field label="Dirección" value={solicitudForm.direccion} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, direccion: value }))} />
+            <Field label="Teléfono secundario" value={solicitudForm.telefonoSecundario} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, telefonoSecundario: value }))} keyboardType="phone-pad" />
+            <Field label="Correo secundario" value={solicitudForm.correoSecundario} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, correoSecundario: value }))} autoCapitalize="none" keyboardType="email-address" />
+            <Field label="Provincia *" value={solicitudForm.provincia} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, provincia: value }))} />
+            <Field label="Cantón *" value={solicitudForm.canton} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, canton: value }))} />
+            <Field label="Dirección *" value={solicitudForm.direccion} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, direccion: value }))} />
           </View>
 
+          {solicitudPersona === 'Representante legal' ? (
+            <>
+              <View style={styles.erubricaRequestPanel}>
+                <Text style={styles.erubricaHistoryEyebrow}>DATOS DE LA EMPRESA</Text>
+                <Text style={styles.erubricaSignStep}>Información corporativa</Text>
+                <Field label="Razón social de la empresa *" value={solicitudForm.razonSocialEmpresa} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, razonSocialEmpresa: value }))} />
+                <Field label="Departamento" value={solicitudForm.departamento} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, departamento: value }))} />
+                <Field label="Cargo *" value={solicitudForm.cargo} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, cargo: value }))} />
+                <Field label="Motivo de firma *" value={solicitudForm.motivoFirma} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, motivoFirma: value }))} />
+              </View>
+              <View style={styles.erubricaRequestPanel}>
+                <Text style={styles.erubricaHistoryEyebrow}>REPRESENTANTE LEGAL</Text>
+                <Text style={styles.erubricaSignStep}>Información del representante</Text>
+                <Field label="Tipo de documento *" value={solicitudForm.representanteTipoDocumento} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, representanteTipoDocumento: value }))} />
+                <Field label="Identificación *" value={solicitudForm.representanteIdentificacion} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, representanteIdentificacion: value }))} />
+                <Field label="Nombres del representante *" value={solicitudForm.representanteNombres} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, representanteNombres: value }))} />
+                <Field label="Apellidos del representante *" value={solicitudForm.representanteApellidos} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, representanteApellidos: value }))} />
+              </View>
+            </>
+          ) : null}
+
           <View style={styles.erubricaSignActions}>
-            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar formulario" onPress={() => setSolicitudForm({ identificacion: '', nombres: '', primerApellido: '', celular: '', correo: '', direccion: '' })} />
+            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar formulario" onPress={() => setSolicitudForm({
+              tipoDocumento: '',
+              identificacion: '',
+              ruc: '',
+              nombres: '',
+              primerApellido: '',
+              segundoApellido: '',
+              fechaNacimiento: '',
+              sexo: '',
+              nacionalidad: 'ECUATORIANA',
+              celular: '',
+              correo: '',
+              telefonoSecundario: '',
+              correoSecundario: '',
+              provincia: '',
+              canton: '',
+              direccion: '',
+              razonSocialEmpresa: '',
+              departamento: '',
+              cargo: '',
+              motivoFirma: '',
+              representanteTipoDocumento: '',
+              representanteIdentificacion: '',
+              representanteNombres: '',
+              representanteApellidos: '',
+            })} />
             <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Siguiente" loading={false} onPress={openPaymentSummary} />
           </View>
         </View>

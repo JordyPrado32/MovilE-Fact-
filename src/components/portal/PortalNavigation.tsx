@@ -14,7 +14,7 @@ export function PortalHeaderAvatar({ service = 'efact' }: { service?: 'efact' | 
   return <Image source={source} style={styles.portalHeaderLogo} />;
 }
 
-export function PortalBottomNav({ bottomInset, activeView, mode = 'efact', onServices, onHome, onNew, onFirma, onProfile, onMenu, onSolicitudes, onFirmar, onValidar }: {
+export function PortalBottomNav({ bottomInset, activeView, mode = 'efact', onServices, onHome, onNew, onFirma, onProfile, onMenu, onSolicitudes, onFirmar, onValidar, onSolicitud }: {
   bottomInset: number;
   activeView: PortalView;
   mode?: 'efact' | 'erubrica';
@@ -27,6 +27,7 @@ export function PortalBottomNav({ bottomInset, activeView, mode = 'efact', onSer
   onSolicitudes?: () => void;
   onFirmar?: () => void;
   onValidar?: () => void;
+  onSolicitud?: () => void;
 }) {
   const erubrica = mode === 'erubrica';
   const accentColor = erubrica ? ERUBRICA_COLORS.primary : EFACT_THEME.colors.primary;
@@ -34,7 +35,7 @@ export function PortalBottomNav({ bottomInset, activeView, mode = 'efact', onSer
     <PortalTabButton accentColor={accentColor} active={activeView === 'portal'} icon="grid" label="Portal" onPress={onServices} />
     {erubrica ? <PortalTabButton accentColor={accentColor} active={activeView === 'e-rubrica-inicio'} icon="home" label="Inicio" onPress={onHome} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'dashboard'} icon="home" label="Inicio" onPress={onHome} />}
     {erubrica ? <PortalTabButton accentColor={accentColor} active={activeView === 'e-rubrica-firmar'} icon="file-sign" label="Firmar" featured onPress={onFirmar ?? onMenu ?? onNew} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'nueva-factura'} icon="new" label="Nuevo" featured onPress={onNew} />}
-    {erubrica ? <PortalTabButton accentColor={accentColor} active={false} icon="settings" label="Config." onPress={onFirma} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'firma'} icon="signature" label="Firma" onPress={onFirma} />}
+    {erubrica ? <PortalTabButton accentColor={accentColor} active={activeView === 'e-rubrica-nueva-solicitud'} icon="new" label="Solicitud" onPress={onSolicitud ?? onFirma} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'firma'} icon="signature" label="Firma" onPress={onFirma} />}
     <PortalTabButton accentColor={accentColor} active={activeView === 'perfil' || activeView === 'perfil-e-rubrica'} icon="profile" label="Perfil" onPress={onProfile} />
   </View>;
 }
