@@ -7107,7 +7107,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           onMenu={() => setMenuOpen(true)}
           onSolicitudes={() => openERubricaTab('solicitudes')}
           onFirmar={() => openERubricaTab('firmar')}
-          onValidar={() => openERubricaTab('validar')}
+          onValidar={() => openERubricaTab('validar-firma')}
           onSolicitud={() => openERubricaTab('nueva-solicitud')}
         />
       ) : null}
@@ -11993,6 +11993,19 @@ function ERubricaMobileScreen({
     const value = keys.map((key) => record[key]).find((candidate) => candidate !== null && candidate !== undefined && String(candidate).trim());
     return value === undefined ? '' : String(value);
   };
+  const activeFirma = firmas[0] ?? null;
+  const firmaTitular = label(activeFirma, ['nombreTitular', 'titular', 'razonSocial', 'nombre'], 'Sin firma activa');
+  const firmaIdentificacion = label(activeFirma, ['identificacion', 'ruc', 'cedula', 'documento'], 'Sin dato');
+  const firmaEstado = label(activeFirma, ['estado', 'estadoVigencia', 'status'], firmas.length ? 'Vigente' : 'Sin firma');
+  const firmaEmision = label(activeFirma, ['fechaEmision', 'emitida', 'fechaInicio'], 'Sin dato');
+  const firmaExpira = label(activeFirma, ['fechaExpiracion', 'expira', 'fechaFin'], 'Sin dato');
+  const firmaDiasRestantes = label(activeFirma, ['diasRestantes', 'vigenciaRestante'], 'Sin dato');
+  const firmaAutoridad = label(activeFirma, ['autoridadEmisora', 'emisor', 'ca'], 'Sin dato');
+  const firmaSerie = label(activeFirma, ['numeroSerie', 'serie', 'serial'], 'Sin dato');
+  const firmaHuella = label(activeFirma, ['huellaDigital', 'fingerprint', 'huella'], 'Sin dato');
+  const planDiasRestantes = label(renovacion, ['diasRestantes', 'vigenciaRestante', 'dias'], firmaDiasRestantes);
+  const planFechaVencimiento = label(renovacion, ['fechaVencimiento', 'fechaExpiracion', 'vence'], firmaExpira);
+  const planEstado = label(renovacion, ['estado', 'estadoAcceso', 'status'], firmaEstado);
   const formatSignedDate = (item: unknown) => {
     const raw = itemValue(item, ['fechaFirma', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']);
     if (!raw) return { date: 'Sin fecha', time: '' };
@@ -12191,11 +12204,6 @@ function ERubricaMobileScreen({
         </View>
       ) : null}
 
-      {tab !== 'inicio' ? <View style={styles.portalSectionHeader}>
-        <View style={styles.portalSectionTitleWrap}><Text style={styles.portalSectionTitle}>Actividad reciente</Text></View>
-        <Pressable style={styles.portalSectionAction} onPress={onRefresh}><MaterialCommunityIcons name="refresh" size={22} color={ERUBRICA_COLORS.primary} /></Pressable>
-      </View> : null}
-
       {loading ? <View style={styles.directoryLoading}><ActivityIndicator color={ERUBRICA_COLORS.primary} /><Text style={styles.mutedText}>Cargando E-Rúbrica...</Text></View> : null}
       {tab === 'firmar' ? (
         <View style={styles.erubricaSignFlow}>
@@ -12295,27 +12303,6 @@ function ERubricaMobileScreen({
           </View>
           <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Validar firma del PDF" onPress={validatePdfSignature} />
           {signedFileUri ? <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Compartir documento firmado" loading={false} onPress={shareSignedDocument} /> : null}
-        </View>
-      ) : null}
-      {tab === 'validar' ? (
-          <View style={[styles.clientCard, { borderLeftColor: ERUBRICA_COLORS.primary, borderColor: ERUBRICA_COLORS.border }]}>
-          <Text style={styles.clientDetailLabel}>Validar firma por QR</Text>
-          <Text style={styles.clientMeta}>Pega el texto o URL contenido en el código QR del documento.</Text>
-          <Field label="Entrada QR" value={qrInput} onChangeText={setQrInput} autoCapitalize="none" />
-          <PrimaryButton
-            accentColor={ERUBRICA_COLORS.primary}
-            label="Validar"
-            loading={validatingQr}
-            onPress={async () => {
-              if (!qrInput.trim()) return;
-              setValidatingQr(true);
-              setQrResult(null);
-              try { setQrResult(await validarERubricaQr(qrInput)); }
-              catch (error) { setQrResult({ mensaje: error instanceof ApiError ? error.message : 'No se pudo validar el QR.' }); }
-              finally { setValidatingQr(false); }
-            }}
-          />
-          {qrResult ? <Text style={styles.clientDetailValue}>{JSON.stringify(qrResult, null, 2)}</Text> : null}
         </View>
       ) : null}
       {tab === 'validar-firma' ? (
@@ -12728,44 +12715,192 @@ function ERubricaMobileScreen({
         </View>
       ) : null}
       {tab === 'plan-disponible' ? (
-        <View style={styles.erubricaHistoryStack}>
-          <View style={styles.erubricaHistoryHero}>
-            <View style={styles.erubricaHistoryHeroCopy}>
-              <Text style={styles.erubricaHistoryEyebrow}>CONFIGURACIÓN</Text>
-              <Text style={styles.erubricaHistoryTitle}>Plan disponible</Text>
-              <Text style={styles.erubricaHistorySubtitle}>Saldo y planes de firma disponibles para tu cuenta.</Text>
+        <View style={styles.erubricaPlanStack}>
+          <View style={styles.erubricaPlanHeader}>
+            <View style={styles.erubricaPlanHeaderIcon}>
+              <MaterialCommunityIcons name="card-account-details-star-outline" size={28} color={ERUBRICA_COLORS.primary} />
+            </View>
+            <View style={styles.erubricaPlanHeaderCopy}>
+              <Text style={styles.erubricaPlanHeaderEyebrow}>CONFIGURACIÓN</Text>
+              <Text style={styles.erubricaPlanHeaderTitle}>Mi Plan Disponible</Text>
+              <Text style={styles.erubricaPlanHeaderSubtitle}>Consulta los detalles de tu suscripción activa para firma y validación de documentos electrónicos.</Text>
+              <View style={styles.erubricaPlanHeaderStatusRow}>
+                <View style={styles.erubricaPlanHeaderStatusPill}>
+                  <MaterialCommunityIcons name="check-circle-outline" size={14} color={ERUBRICA_COLORS.primary} />
+                  <Text style={styles.erubricaPlanHeaderStatusText}>{planEstado}</Text>
+                </View>
+                <Text style={styles.erubricaPlanHeaderDate}>Vence: {planFechaVencimiento}</Text>
+              </View>
+            </View>
+            <Pressable style={styles.erubricaPlanBackButton} onPress={() => selectTab('inicio')}>
+              <MaterialCommunityIcons name="arrow-left" size={15} color={ERUBRICA_COLORS.text} />
+              <Text style={styles.erubricaPendingLoadText}>Volver al inicio</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.erubricaPlanCard}>
+            <View style={styles.erubricaPlanHero}>
+              <View style={styles.erubricaPlanPills}>
+                <Text style={styles.erubricaPlanPill}>Firma vigente</Text>
+                <Text style={styles.erubricaPlanPillAlt}>Servicio: E-Rúbrica</Text>
+              </View>
+              <View style={styles.erubricaPlanHeroBody}>
+                <View style={styles.erubricaPlanIcon}>
+                  <MaterialCommunityIcons name="key-variant" size={25} color="#CFF8D8" />
+                </View>
+                <View style={styles.erubricaHistoryHeroCopy}>
+                  <Text style={styles.erubricaHistoryEyebrow}>TU ACCESO DIGITAL</Text>
+                  <Text style={styles.erubricaPlanTitle}>Plan de E-Rúbrica</Text>
+                  <Text style={styles.erubricaPlanText}>Firma, valida y protege tus documentos con respaldo legal.</Text>
+                </View>
+              </View>
+              <View style={styles.erubricaPlanDaysCircle}>
+                <Text style={styles.erubricaPlanDays}>{planDiasRestantes}</Text>
+                <Text style={styles.erubricaPlanDaysLabel}>DÍAS RESTANTES</Text>
+              </View>
+            </View>
+            <View style={styles.erubricaPlanDetails}>
+              <View style={styles.erubricaRequestHistoryCell}><Text style={styles.erubricaHistoryMetricLabel}>FECHA DE VENCIMIENTO</Text><Text style={styles.erubricaRequestHistoryValue}>{planFechaVencimiento}</Text></View>
+              <View style={styles.erubricaRequestHistoryCell}><Text style={styles.erubricaHistoryMetricLabel}>ESTADO DEL ACCESO</Text><Text style={[styles.erubricaRequestHistoryValue, { color: ERUBRICA_COLORS.primary }]}>{planEstado}</Text></View>
+            </View>
+            <View style={styles.erubricaPendingActionRow}>
+              <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Solicitar Nueva Firma" loading={false} onPress={() => selectTab('nueva-solicitud')} />
+              <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Ver Mis Trámites" onPress={() => selectTab('historial-solicitudes')} />
             </View>
           </View>
-          <View style={styles.portalMetrics}>
-            <View style={styles.portalMetricItem}><Text style={[styles.portalMetricValue, { color: ERUBRICA_COLORS.primary }]}>{saldo === null ? '-' : saldo}</Text><Text style={styles.portalMetricLabel}>SALDO</Text></View>
-            <View style={styles.portalMetricDivider} />
-            <View style={styles.portalMetricItem}><Text style={[styles.portalMetricValue, { color: ERUBRICA_COLORS.primary }]}>{catalogos.length}</Text><Text style={styles.portalMetricLabel}>PLANES</Text></View>
+
+          <View style={styles.erubricaBenefitsCard}>
+            <Text style={styles.erubricaSignStep}>Beneficios Incluidos</Text>
+            {[
+              ['Firmado de PDF ilimitado', 'Firma digitalmente todos los contratos y documentos que necesites.'],
+              ['Estándar XAdES / PAdES', 'Garantiza plena validez legal ante el SRI, aduanas y juzgados del Ecuador.'],
+              ['Seguridad y Respaldo', 'Tus firmas y contraseñas no se almacenan, garantizando confidencialidad.'],
+              ['Soporte Prioritario', 'Atención técnica preferencial para resolver bloqueos o dudas del certificado.'],
+            ].map(([title, text]) => (
+              <View key={title} style={styles.erubricaBenefitRow}>
+                <MaterialCommunityIcons name="check-circle-outline" size={18} color={ERUBRICA_COLORS.primary} />
+                <View style={styles.erubricaPendingDocCopy}>
+                  <Text style={styles.erubricaRequestOptionTitle}>{title}</Text>
+                  <Text style={styles.erubricaRequestOptionText}>{text}</Text>
+                </View>
+              </View>
+            ))}
           </View>
-          {catalogos.length === 0 ? <EmptyState title="Sin planes" text="No hay planes disponibles para mostrar." /> : catalogos.slice(0, 20).map((item, index) => (
-            <View key={`erubrica-plan-${index}`} style={[styles.clientCard, { borderColor: ERUBRICA_COLORS.border }]}>
-              <Text style={styles.clientDetailLabel}>{label(item, ['nombre', 'descripcion', 'name'], 'Plan')}</Text>
-              <Text style={styles.clientMeta}>{label(item, ['precio', 'valor', 'vigencia', 'detalle'], 'Disponible')}</Text>
-            </View>
-          ))}
         </View>
       ) : null}
       {tab === 'firma-config' ? (
-        <View style={styles.erubricaHistoryStack}>
-          <View style={styles.erubricaHistoryHero}>
-            <View style={styles.erubricaHistoryHeroCopy}>
-              <Text style={styles.erubricaHistoryEyebrow}>CONFIGURACIÓN</Text>
-              <Text style={styles.erubricaHistoryTitle}>Firma</Text>
-              <Text style={styles.erubricaHistorySubtitle}>Certificados disponibles y accesos de firma para E-Rúbrica.</Text>
+        <View style={styles.erubricaConfigStack}>
+          <View style={styles.erubricaConfigIntroCard}>
+            <View style={styles.erubricaConfigIntroIcon}>
+              <MaterialCommunityIcons name="file-check-outline" size={31} color={ERUBRICA_COLORS.primary} />
+              <View style={styles.erubricaConfigShieldBadge}>
+                <MaterialCommunityIcons name="shield-check-outline" size={18} color="#FFFFFF" />
+              </View>
+            </View>
+            <View style={styles.erubricaConfigIntroAccent} />
+            <View style={styles.erubricaConfigIntroCopy}>
+              <Text style={styles.erubricaConfigTitle}>Configura tu firma electrónica</Text>
+              <Text style={styles.erubricaConfigSubtitle}>Carga tu certificado digital y configura su clave de acceso para firmar documentos de forma segura.</Text>
             </View>
           </View>
-          {firmas.length === 0 ? <EmptyState title="Sin firma configurada" text="No hay certificados disponibles para esta cuenta." /> : firmas.slice(0, 6).map((item, index) => (
-            <View key={`erubrica-firma-config-${index}`} style={[styles.clientCard, { borderColor: ERUBRICA_COLORS.border }]}>
-              <Text style={styles.clientDetailLabel}>{label(item, ['nombreTitular', 'titular', 'razonSocial'], 'Firma electrónica')}</Text>
-              <Text style={styles.clientMeta}>{label(item, ['estado', 'estadoVigencia', 'status'], 'Estado no disponible')}</Text>
-              <Text style={styles.clientDetailValue}>{label(item, ['fechaExpiracion', 'diasRestantes', 'numeroSerie'], 'Sin detalle adicional')}</Text>
+
+          <View style={styles.erubricaConfigStatusCard}>
+            <MaterialCommunityIcons name="shield-check-outline" size={19} color={ERUBRICA_COLORS.primary} />
+            <View style={styles.erubricaPendingDocCopy}>
+              <Text style={styles.erubricaConfigStatusTitle}>{firmas.length ? 'Firma vigente' : 'Firma pendiente'}</Text>
+              <Text style={styles.erubricaConfigStatusText}>{firmaDiasRestantes} para renovar. Expira el {firmaExpira}.</Text>
+              <Text style={styles.erubricaConfigStatusOwner}>Titular: {firmaTitular}</Text>
             </View>
-          ))}
-          <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Firmar un PDF" onPress={() => selectTab('firmar')} />
+          </View>
+
+          <View style={styles.erubricaConfigStepCard}>
+            <View style={styles.erubricaConfigStepHeader}>
+              <View style={styles.erubricaConfigStepNumber}><Text style={styles.erubricaConfigStepNumberText}>1</Text></View>
+              <View style={styles.erubricaPendingDocCopy}>
+                <Text style={styles.erubricaConfigStepTitle}>Certificado digital</Text>
+                <Text style={styles.erubricaConfigStepHint}>Selecciona tu archivo de certificado digital en formato .p12</Text>
+              </View>
+              <Pressable style={styles.erubricaConfigSelectButton} onPress={pickCertificate}>
+                <MaterialCommunityIcons name="file-upload-outline" size={15} color="#FFFFFF" />
+                <Text style={styles.erubricaConfigSelectText}>Seleccionar</Text>
+              </Pressable>
+            </View>
+            <Pressable style={styles.erubricaConfigFileRow} onPress={pickCertificate}>
+              <View style={styles.erubricaDropIcon}>
+                <MaterialCommunityIcons name="file-lock-outline" size={20} color={ERUBRICA_COLORS.primary} />
+              </View>
+              <View style={styles.erubricaPendingDocCopy}>
+                <Text style={styles.erubricaRequestHistoryValue} numberOfLines={1}>{certificateFile ? certificateFile.name : 'Selecciona tu certificado .p12'}</Text>
+                <Text style={styles.erubricaRequestOptionText}>Formato .p12</Text>
+              </View>
+              {certificateFile ? <MaterialCommunityIcons name="check-circle" size={18} color={ERUBRICA_COLORS.primary} /> : null}
+              {certificateFile ? (
+                <Pressable style={styles.erubricaConfigDeleteButton} onPress={() => setCertificateFile(null)}>
+                  <MaterialCommunityIcons name="trash-can-outline" size={17} color="#5C748A" />
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+
+          <View style={styles.erubricaConfigStepCard}>
+            <View style={styles.erubricaConfigStepHeader}>
+              <View style={styles.erubricaConfigStepNumber}><Text style={styles.erubricaConfigStepNumberText}>2</Text></View>
+              <View style={styles.erubricaPendingDocCopy}>
+                <Text style={styles.erubricaConfigStepTitle}>Clave de acceso</Text>
+                <Text style={styles.erubricaConfigStepHint}>Ingresa la clave del certificado (.p12) para habilitar la firma electrónica.</Text>
+              </View>
+            </View>
+            <Field label="Clave del certificado" value={certificatePassword} onChangeText={setCertificatePassword} secureTextEntry />
+            {certificatePassword.trim() ? (
+              <View style={styles.erubricaConfigSuccessRow}>
+                <MaterialCommunityIcons name="shield-check-outline" size={15} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaConfigSuccessText}>Clave configurada correctamente.</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.erubricaConfigSideGrid}>
+            <View style={styles.erubricaConfigSideCard}>
+              <Text style={styles.erubricaConfigSideTitle}>Resumen de validación</Text>
+              {[
+                ['file-check-outline', certificateFile ? 'Archivo detectado' : 'Archivo pendiente', certificateFile?.name ?? 'Selecciona el certificado .p12'],
+                ['check-circle-outline', certificateFile ? 'Formato válido' : 'Formato por validar', 'Certificado .p12 reconocido'],
+                ['key-outline', certificatePassword.trim() ? 'Clave ingresada' : 'Clave pendiente', certificatePassword.trim() ? 'Configurada' : 'Requerida para guardar'],
+                ['circle', certificateFile && certificatePassword.trim() ? 'Lista para usar' : 'Pendiente de completar', 'Guarda para confirmar'],
+              ].map(([icon, title, text]) => (
+                <View key={title} style={styles.erubricaConfigSummaryRow}>
+                  <View style={styles.erubricaDropIcon}><MaterialCommunityIcons name={icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']} size={17} color={ERUBRICA_COLORS.primary} /></View>
+                  <View style={styles.erubricaPendingDocCopy}>
+                    <Text style={styles.erubricaRequestOptionTitle}>{title}</Text>
+                    <Text style={styles.erubricaRequestOptionText} numberOfLines={1}>{text}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+            <View style={styles.erubricaConfigSideCard}>
+              <View style={styles.erubricaConfigProtectedHeader}>
+                <View style={styles.erubricaPendingDocCopy}>
+                  <Text style={styles.erubricaConfigSideTitle}>Tu información está protegida</Text>
+                  <Text style={styles.erubricaRequestOptionText}>Usamos cifrado de nivel empresarial para proteger tu certificado y clave de acceso.</Text>
+                </View>
+                <View style={styles.erubricaConfigProtectedIcon}>
+                  <MaterialCommunityIcons name="shield-check-outline" size={23} color="#FFFFFF" />
+                </View>
+              </View>
+              {['La clave no se almacena en texto plano', 'Conexiones seguras y cifradas', 'Cumplimos estándares de seguridad'].map((item) => (
+                <View key={item} style={styles.erubricaAdviceRow}>
+                  <MaterialCommunityIcons name="check-circle-outline" size={15} color={ERUBRICA_COLORS.primary} />
+                  <Text style={styles.erubricaAdviceText}>{item}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.erubricaConfigActionBar}>
+            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Cancelar" onPress={() => selectTab('inicio')} />
+            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar" onPress={() => { setCertificateFile(null); setCertificatePassword(''); }} />
+            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Guardar firma" loading={false} onPress={() => certificateFile && certificatePassword.trim() ? Alert.alert('Firma configurada', 'Certificado y clave listos para firmar documentos.') : Alert.alert('Datos incompletos', 'Selecciona el archivo .p12 e ingresa la clave.')} />
+          </View>
         </View>
       ) : null}
       {tab === 'proveedor' ? (
@@ -12814,7 +12949,7 @@ function ERubricaMobileScreen({
               <Text style={styles.erubricaHistoryTitle}>Historial Documentos Firmados</Text>
               <Text style={styles.erubricaHistorySubtitle}>Consulta, descarga o valida los PDF que has firmado electrónicamente.</Text>
             </View>
-            <Pressable style={styles.erubricaHistoryValidateButton} onPress={() => selectTab('validar')}>
+            <Pressable style={styles.erubricaHistoryValidateButton} onPress={() => selectTab('validar-firma')}>
               <MaterialCommunityIcons name="shield-check-outline" size={14} color={ERUBRICA_COLORS.text} />
               <Text style={styles.erubricaHistoryValidateText}>Validar firma</Text>
             </Pressable>
@@ -12906,26 +13041,95 @@ function ERubricaMobileScreen({
       ) : null}
 
       {tab === 'ver-mis-firmas' && !loading ? (
-        <View style={styles.erubricaHistoryStack}>
-          <View style={styles.erubricaHistoryHero}>
-            <View style={styles.erubricaHistoryHeroCopy}>
-              <Text style={styles.erubricaHistoryEyebrow}>MIS FIRMAS</Text>
-              <Text style={styles.erubricaHistoryTitle}>Ver mis firmas</Text>
-              <Text style={styles.erubricaHistorySubtitle}>Certificados y firmas electrónicas asociadas a tu usuario.</Text>
+        <View style={styles.erubricaSignatureStack}>
+          <View style={styles.erubricaSignatureHero}>
+            <View style={styles.erubricaSignatureHeroCopy}>
+              <Text style={styles.erubricaSignatureEyebrow}>SEGURIDAD DE FIRMA</Text>
+              <Text style={styles.erubricaSignatureTitle}>Tu firma electrónica, clara y bajo control</Text>
+              <Text style={styles.erubricaSignatureText}>Consulta la firma activa de tu cuenta o valida temporalmente otro archivo sin reemplazar tu configuración.</Text>
+              <Pressable style={styles.erubricaSignatureRefreshButton} onPress={onRefresh}>
+                <MaterialCommunityIcons name="refresh" size={14} color={ERUBRICA_COLORS.text} />
+                <Text style={styles.erubricaPendingLoadText}>Actualizar información</Text>
+              </Pressable>
+            </View>
+            <View style={styles.erubricaSignatureStatusPanel}>
+              <View style={styles.erubricaSignatureStatusIcon}>
+                <MaterialCommunityIcons name="check-decagram" size={29} color="#88F0B1" />
+              </View>
+              <Text style={styles.erubricaSignatureStatusLabel}>ESTADO ACTUAL</Text>
+              <Text style={styles.erubricaSignatureStatusText}>{firmas.length ? 'Firma válida y vigente' : 'Sin firma activa'}</Text>
+              <Text style={styles.erubricaSignatureStatusName} numberOfLines={2}>{firmaTitular}</Text>
             </View>
           </View>
-          {firmas.length === 0 ? <EmptyState title="Sin firmas" text="No hay certificados o firmas disponibles." /> : firmas.slice(0, 10).map((item, index) => (
-            <View key={`erubrica-ver-firma-${index}`} style={[styles.clientCard, { borderColor: ERUBRICA_COLORS.border }]}>
-              <View style={styles.clientCardHeader}>
-                <View style={styles.clientHeroTitleBlock}>
-                  <Text style={styles.clientDetailLabel}>{label(item, ['nombreTitular', 'titular', 'razonSocial'], 'Firma electrónica')}</Text>
-                  <Text style={styles.clientMeta}>{label(item, ['estado', 'estadoVigencia', 'status'], 'Estado no disponible')}</Text>
+
+          <View style={styles.erubricaSignatureGrid}>
+            <View style={styles.erubricaSignatureCard}>
+              <View style={styles.erubricaAdviceHeader}>
+                <View style={styles.erubricaDropIcon}>
+                  <MaterialCommunityIcons name="card-account-details-outline" size={20} color={ERUBRICA_COLORS.primary} />
                 </View>
-                <MaterialCommunityIcons name="key-variant" size={24} color={ERUBRICA_COLORS.primary} />
+                <View style={styles.erubricaPendingDocCopy}>
+                  <Text style={styles.erubricaHistoryEyebrow}>FIRMA ACTIVA DE LA CUENTA</Text>
+                  <Text style={styles.erubricaSignStep}>Información del certificado</Text>
+                  <Text style={styles.erubricaSignHint}>Datos obtenidos directamente desde la API de validación de firma.</Text>
+                </View>
               </View>
-              <Text style={styles.clientDetailValue}>{label(item, ['fechaExpiracion', 'diasRestantes', 'numeroSerie'], 'Sin detalle adicional')}</Text>
+              {firmas.length === 0 ? <EmptyState title="Sin firmas" text="No hay certificados o firmas disponibles." /> : (
+                <>
+                  <View style={styles.erubricaSignatureVerified}>
+                    <MaterialCommunityIcons name="check-circle" size={19} color={ERUBRICA_COLORS.primary} />
+                    <View style={styles.erubricaPendingDocCopy}>
+                      <Text style={styles.erubricaHistoryMetricLabel}>CERTIFICADO VERIFICADO</Text>
+                      <Text style={styles.erubricaRequestHistoryValue}>{firmaTitular}</Text>
+                      <Text style={styles.erubricaRequestOptionText}>La firma configurada es correcta y se encuentra vigente.</Text>
+                    </View>
+                    <Text style={styles.erubricaSignatureValidPill}>{firmaEstado}</Text>
+                  </View>
+                  <View style={styles.erubricaSignatureInfoGrid}>
+                    {[
+                      ['Titular', firmaTitular],
+                      ['Identificación', firmaIdentificacion],
+                      ['Emitida', firmaEmision],
+                      ['Expira', firmaExpira],
+                      ['Vigencia restante', firmaDiasRestantes],
+                      ['Autoridad emisora', firmaAutoridad],
+                      ['Número de serie', firmaSerie],
+                      ['Huella digital', firmaHuella],
+                    ].map(([title, value]) => (
+                      <View key={title} style={styles.erubricaSignatureInfoCell}>
+                        <Text style={styles.erubricaHistoryMetricLabel}>{title}</Text>
+                        <Text style={styles.erubricaRequestHistoryValue} numberOfLines={title === 'Huella digital' ? 3 : 2}>{value}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
             </View>
-          ))}
+
+            <View style={styles.erubricaSignatureCard}>
+              <View style={styles.erubricaAdviceHeader}>
+                <View style={styles.erubricaDropIcon}>
+                  <MaterialCommunityIcons name="shield-check-outline" size={20} color={ERUBRICA_COLORS.primary} />
+                </View>
+                <View style={styles.erubricaPendingDocCopy}>
+                  <Text style={styles.erubricaHistoryEyebrow}>VALIDACIÓN TEMPORAL</Text>
+                  <Text style={styles.erubricaSignStep}>Comprueba un archivo y su clave</Text>
+                  <Text style={styles.erubricaSignHint}>El archivo se usa una sola vez y no modifica la firma activa.</Text>
+                </View>
+              </View>
+              <View style={styles.erubricaValidationStrip}>
+                <MaterialCommunityIcons name="incognito" size={16} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaValidationStripText}>Ni el archivo ni la clave se guardan después de la validación.</Text>
+              </View>
+              <Pressable style={styles.erubricaDropzone} onPress={pickCertificate}>
+                <MaterialCommunityIcons name="cloud-upload-outline" size={24} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaDropTitle}>{certificateFile ? certificateFile.name : 'Selecciona tu archivo .p12'}</Text>
+                <Text style={styles.erubricaDropText}>Haz clic para buscar · Máximo 5 MB</Text>
+              </Pressable>
+              <Field label="Clave del certificado" value={certificatePassword} onChangeText={setCertificatePassword} secureTextEntry />
+              <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Validar archivo y clave" loading={false} onPress={() => certificateFile && certificatePassword.trim() ? Alert.alert('Validación temporal', 'Archivo y clave listos para validar con la API de firma.') : Alert.alert('Datos incompletos', 'Selecciona el archivo .p12 e ingresa la clave.')} />
+            </View>
+          </View>
         </View>
       ) : null}
 
