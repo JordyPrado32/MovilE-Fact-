@@ -18,8 +18,6 @@ export function PortalBottomNav({ bottomInset, activeView, mode = 'efact', onSer
   bottomInset: number;
   activeView: PortalView;
   mode?: 'efact' | 'erubrica';
-  voiceMode?: boolean;
-  voiceAvailable?: boolean;
   onServices: () => void;
   onHome: () => void;
   onNew: () => void;

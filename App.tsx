@@ -32,7 +32,7 @@ import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from 'react-native-
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ApiError, getSessionToken, setSessionToken } from './src/services/apiClient';
-import { sendBotMessage } from './src/services/botService';
+import { loadBotHistory, saveBotHistory, sendBotMessage } from './src/services/botService';
 import { API_BASE_URL } from './src/config/api';
 import { AdminMobileItem, getAdminMobileModule } from './src/services/adminMobileService';
 import { changePassword, checkAuth, login, recoverPassword, register } from './src/services/authService';
@@ -70,7 +70,7 @@ import type { GlobalSearchResult as ExtractedGlobalSearchResult } from './src/ty
 import { InvoiceProgressSteps as SharedInvoiceProgressSteps, InvoiceSummaryRow } from './src/components/facturacion/InvoiceShared';
 import { styles } from './src/styles/appStyles';
 import { DocumentActionsMenu } from './src/components/documents/DocumentActionsMenu';
-import { botVoiceRecognitionAvailable, EfactBotScreen } from './src/components/bot/EfactBotScreen';
+import { EfactBotScreen } from './src/components/bot/EfactBotScreen';
 import type { BotVoiceControls } from './src/components/bot/EfactBotScreen';
 import { InitialSequenceModal } from './src/components/documentos/InitialSequenceModal';
 import { PuntosEmisionScreen } from './src/components/puntos/PuntosEmisionScreen';
@@ -2404,6 +2404,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [botMessages, setBotMessages] = useState<BotMessage[]>([]);
   const [botDraft, setBotDraft] = useState('');
   const [botFeedbackByMessage, setBotFeedbackByMessage] = useState<BotFeedbackState>({});
+  const botHistoryReadyRef = useRef(false);
   const [portalServiceQuery, setPortalServiceQuery] = useState('');
 
   const userId = getClaimNumber(currentUser, 'idUsuario') ?? 0;
@@ -2598,6 +2599,33 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       void Speech.stop();
     }
   }, [activeView]);
+
+  useEffect(() => {
+    let mounted = true;
+    botHistoryReadyRef.current = false;
+    setBotMessages([]);
+    setBotFeedbackByMessage({});
+    if (!userId) {
+      botHistoryReadyRef.current = true;
+      return () => { mounted = false; };
+    }
+    void loadBotHistory(userId).then((history) => {
+      if (!mounted) return;
+      if (history?.messages.length) {
+        setBotMessages((current) => current.length <= 1 && current[0]?.id === 'welcome' ? history.messages : [...history.messages, ...current]);
+        setBotFeedbackByMessage((current) => ({ ...history.feedbackByMessage, ...current }));
+      }
+      botHistoryReadyRef.current = true;
+    }).catch(() => {
+      if (mounted) botHistoryReadyRef.current = true;
+    });
+    return () => { mounted = false; };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId || !botHistoryReadyRef.current) return;
+    void saveBotHistory(userId, botMessages, botFeedbackByMessage);
+  }, [userId, botMessages, botFeedbackByMessage]);
 
   useEffect(() => {
     if (!userId) return;
@@ -6545,6 +6573,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             facturas={facturasList}
             modules={modules}
             onOpenView={openView}
+            onOpenVoice={() => botVoiceControlsRef.current?.startHandsFree()}
           />
         ) : null}
 
@@ -7514,8 +7543,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           bottomInset={insets.bottom}
            activeView={activeView === 'e-rubrica' ? `e-rubrica-${erubricaTabRequest ?? 'inicio'}` : activeView}
            mode={isERubricaWorkspace ? 'erubrica' : 'efact'}
-           voiceMode={!isERubricaWorkspace && canUseEfact}
-           voiceAvailable={botVoiceRecognitionAvailable}
            onServices={() => canUsePortal ? openView('portal') : setMenuOpen(true)}
           onHome={() => isERubricaWorkspace ? openView('e-rubrica') : openView('dashboard')}
           onNew={() => openView('nueva-factura')}
@@ -13885,12 +13912,14 @@ function DashboardHomeScreen({
   facturas,
   modules,
   onOpenView,
+  onOpenVoice,
 }: {
   clientesCount: number;
   productosCount: number;
   facturas: FacturaListItem[];
   modules: MobileModule[];
   onOpenView: (view: WorkspaceView) => void;
+  onOpenVoice: () => void;
 }) {
   const { width } = useWindowDimensions();
   const compact = width < 390;
@@ -13900,33 +13929,10 @@ function DashboardHomeScreen({
     .filter((module) => ['mis-facturas', 'clientes', 'productos', 'emisor', 'punto-emision'].includes(module.view))
     .slice(0, 5);
   const recentFactura = facturas[0];
-  const [voiceModalOpen, setVoiceModalOpen] = useState(false);
-  const voicePulse = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (!voiceModalOpen) {
-      voicePulse.setValue(0);
-      return;
-    }
-
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(voicePulse, { toValue: 1, duration: 820, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(voicePulse, { toValue: 0, duration: 420, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [voiceModalOpen, voicePulse]);
-
-  const pulseStyle = {
-    opacity: voicePulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.08] }),
-    transform: [{ scale: voicePulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.75] }) }],
-  };
   const openConsultas = () => {
     Alert.alert('Consultas con Númi', '¿Cómo quieres hacer tu consulta?', [
       { text: 'Chat', onPress: () => onOpenView('bot') },
-      { text: 'Comando de voz', onPress: () => setVoiceModalOpen(true) },
+      { text: 'Comando de voz', onPress: onOpenVoice },
       { text: 'Cancelar', style: 'cancel' },
     ]);
   };
@@ -14029,21 +14035,6 @@ function DashboardHomeScreen({
           />
         ))}
       </View>
-      <Modal visible={voiceModalOpen} transparent animationType="fade" onRequestClose={() => setVoiceModalOpen(false)}>
-        <Pressable style={styles.voiceModalBackdrop} onPress={() => setVoiceModalOpen(false)}>
-          <Pressable style={styles.voiceModalCard}>
-            <View style={styles.voicePulseWrap}>
-              <Animated.View style={[styles.voicePulseRing, pulseStyle]} />
-              <View style={styles.voiceMicButton}>
-                <MaterialCommunityIcons name="microphone" size={42} color="#FFFFFF" />
-              </View>
-            </View>
-            <Text style={styles.voiceModalTitle}>Escuchando tu consulta</Text>
-            <Text style={styles.voiceModalText}>Habla con Númi para preparar tu pregunta.</Text>
-            <SecondaryButton label="Cerrar" onPress={() => setVoiceModalOpen(false)} />
-          </Pressable>
-        </Pressable>
-      </Modal>
     </View>
   );
 }

@@ -1,7 +1,8 @@
-import { BOT_CHAT_PATH, BOT_SESSION_ID, BOT_SESSION_STORAGE_PREFIX } from '../config/bot';
+import { BOT_CHAT_PATH, BOT_HISTORY_FILE_PREFIX, BOT_SESSION_ID, BOT_SESSION_STORAGE_PREFIX } from '../config/bot';
 import { apiRequest } from './apiClient';
-import type { BotProgressStep } from '../types/bot';
+import type { BotFeedbackState, BotMessage, BotProgressStep } from '../types/bot';
 import * as SecureStore from 'expo-secure-store';
+import * as FileSystem from 'expo-file-system/legacy';
 
 export type BotChatResponse = {
   requestId?: string;
@@ -53,6 +54,47 @@ export type BotSelectionOption = {
 };
 
 let activeBotSession: { userId: number; sessionId: string } | null = null;
+let botHistoryWrite = Promise.resolve();
+
+function historyFileUri(userId: number) {
+  return userId > 0 && FileSystem.documentDirectory ? `${FileSystem.documentDirectory}${BOT_HISTORY_FILE_PREFIX}${userId}.json` : null;
+}
+
+function isBotMessage(value: unknown): value is BotMessage {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<BotMessage>;
+  return typeof candidate.id === 'string' && (candidate.role === 'user' || candidate.role === 'assistant') && typeof candidate.text === 'string';
+}
+
+export async function loadBotHistory(userId: number) {
+  const uri = historyFileUri(userId);
+  if (!uri) return null;
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists) return null;
+    const parsed = JSON.parse(await FileSystem.readAsStringAsync(uri)) as { messages?: unknown; feedbackByMessage?: unknown };
+    const messages = Array.isArray(parsed.messages) ? parsed.messages.filter(isBotMessage).slice(-100) : [];
+    const feedbackByMessage: BotFeedbackState = {};
+    if (parsed.feedbackByMessage && typeof parsed.feedbackByMessage === 'object') {
+      for (const [id, value] of Object.entries(parsed.feedbackByMessage)) {
+        if (value === 'like' || value === 'dislike') feedbackByMessage[id] = value;
+      }
+    }
+    return { messages, feedbackByMessage };
+  } catch {
+    return null;
+  }
+}
+
+export function saveBotHistory(userId: number, messages: BotMessage[], feedbackByMessage: BotFeedbackState) {
+  const uri = historyFileUri(userId);
+  if (!uri) return Promise.resolve();
+  const value = JSON.stringify({ messages: messages.slice(-100), feedbackByMessage });
+  botHistoryWrite = botHistoryWrite
+    .then(() => FileSystem.writeAsStringAsync(uri, value))
+    .catch(() => undefined);
+  return botHistoryWrite;
+}
 
 function buildSessionId(userId: number) {
   const randomPart = Math.random().toString(36).slice(2, 10);
@@ -105,10 +147,11 @@ export async function sendBotMessage(input: { message: string; userId?: number; 
     timeoutMs: 60000,
     body: JSON.stringify({
       requestId: input.requestId,
-      sessionId,
-      mensaje: input.message.trim(),
-      modo: input.modo ?? 'texto',
-    }),
+        sessionId,
+        mensaje: input.message.trim(),
+        modo: input.modo ?? 'texto',
+        contexto: input.contexto,
+      }),
   });
 
   const answer = typeof response === 'string' ? response : response.respuesta ?? response.response ?? response.mensaje ?? response.message
