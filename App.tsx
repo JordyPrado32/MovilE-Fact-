@@ -6139,17 +6139,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     };
   };
   const efactDrawerMenu: DrawerMenuNode[] = [
-    {
-      ...menuNode('clientes', 'Clientes / Proveedores'),
-      children: [
-        {
-          key: 'nuevo-cliente',
-          label: 'Nuevo cliente',
-          view: 'nuevo-cliente',
-          disabled: !authorizedViews.has('clientes'),
-        },
-      ],
-    },
+    menuNode('clientes', 'Clientes / Proveedores'),
     {
       key: 'facturas',
       label: 'Facturas',
