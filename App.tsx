@@ -51,7 +51,7 @@ import { CompraDocumentosEstado, createOperationalItem, deleteOperationalItem, g
 import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
 import { createPuntoEmision, deletePuntoEmision, getPuntoEmisionSiguienteSecuencial, getPuntosEmision, markPuntoPrincipal, PuntoDocumentoKey, savePuntoEmisionSecuenciaInicial, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
-import { emitirRetencionSri, enviarRetencionCorreo, getRetencionPdf, getRetenciones, getRetencionXml, RetencionListItem } from './src/services/retencionesMobileService';
+import { getRetencionPdf, getRetenciones, getRetencionXml, RetencionListItem } from './src/services/retencionesMobileService';
 import { ERubricaDashboard, ERubricaEmisor, buscarERubricaSolicitudesProveedor, descargarERubricaFirmaP12, firmarERubricaDocumento, getERubricaDashboard, getERubricaEmisores, getERubricaFirmaEstado, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, sincronizarERubricaPendientes, validarERubricaFirmaPdf, validarERubricaQr } from './src/services/erubricaMobileService';
 import { ChangePasswordRequest, DynamicMenu, LoginResponse, RegisterRequest, ServiceAccess, TipoDocumento } from './src/types/auth';
 import { CategoriaCatalogo, CiudadLookup, Cliente, ClienteLookups, Emisor, FirmaEstado, PerfilLookup, PerfilUsuario, Producto, ProductoLookups, ProductoTipo, ProvinciaLookup, PuntoEmision, PuntosEmisionData, SubcategoriaCatalogo, SubcategoriaLookup } from './src/types/business';
@@ -190,6 +190,58 @@ type ERubricaTab =
   | 'proveedor'
   | 'catalogos'
   | 'soporte';
+type SolicitudDocumentoKey =
+  | 'cedulaFrontal'
+  | 'cedulaPosterior'
+  | 'selfieCedula'
+  | 'videoAceptacion'
+  | 'rucFile'
+  | 'nombramiento'
+  | 'constitucion'
+  | 'cedulaRepresentante'
+  | 'autorizacion'
+  | 'aceptacionNombramiento'
+  | 'archivoAdicional';
+const SOLICITUD_FORM_INITIAL = {
+  tipoDocumento: '',
+  identificacion: '',
+  codigoDactilar: '',
+  ruc: '',
+  nombres: '',
+  primerApellido: '',
+  segundoApellido: '',
+  fechaNacimiento: '',
+  sexo: '',
+  nacionalidad: 'ECUATORIANA',
+  celular: '',
+  correo: '',
+  telefonoSecundario: '',
+  correoSecundario: '',
+  provincia: '',
+  canton: '',
+  direccion: '',
+  razonSocialEmpresa: '',
+  departamento: '',
+  cargo: '',
+  motivoFirma: '',
+  representanteTipoDocumento: '',
+  representanteIdentificacion: '',
+  representanteNombres: '',
+  representanteApellidos: '',
+};
+const SOLICITUD_FILES_INITIAL: Record<SolicitudDocumentoKey, DocumentPicker.DocumentPickerAsset | null> = {
+  cedulaFrontal: null,
+  cedulaPosterior: null,
+  selfieCedula: null,
+  videoAceptacion: null,
+  rucFile: null,
+  nombramiento: null,
+  constitucion: null,
+  cedulaRepresentante: null,
+  autorizacion: null,
+  aceptacionNombramiento: null,
+  archivoAdicional: null,
+};
 type ClienteFormMode = 'create' | 'edit' | null;
 type ProductoFormMode = 'create' | 'edit' | null;
 type CategoriaFormMode = 'create' | 'edit' | null;
@@ -6387,7 +6439,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           onNotifications={() => setNotificationsOpen(true)}
           onMenu={() => setMenuOpen(true)}
           onDocuments={() => openView('comprar-documentos')}
-          onFirma={() => isERubricaWorkspace ? openERubricaTab('firma-config') : openView('firma')}
+          onFirma={() => isERubricaWorkspace ? openERubricaTab('nueva-solicitud') : openView('firma')}
           onLogout={onLogout}
         />
 
@@ -6496,6 +6548,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             onTabChange={setErubricaTabRequest}
             onRefresh={() => setReloadKey((value) => value + 1)}
             onPreviewPdf={(file) => setPdfPreview({ uri: file.uri, name: file.name || 'Documento PDF' })}
+            onPreviewRemotePdf={(urlOrPath, fileName) => openPdfPreview(async () => urlOrPath, fileName)}
             onSync={async () => {
               try {
                 await sincronizarERubricaPendientes();
@@ -7455,15 +7508,13 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
            onServices={() => canUsePortal ? openView('portal') : setMenuOpen(true)}
           onHome={() => isERubricaWorkspace ? openView('e-rubrica') : openView('dashboard')}
           onNew={() => openView('nueva-factura')}
-          onFirma={() => isERubricaWorkspace ? openERubricaTab('firma-config') : openView('firma')}
+          onFirma={() => isERubricaWorkspace ? setMenuOpen(true) : openView('firma')}
           onProfile={() => isERubricaWorkspace ? openView('perfil-e-rubrica') : openView('perfil')}
           onMenu={() => setMenuOpen(true)}
           onSolicitudes={() => openERubricaTab('solicitudes')}
           onFirmar={() => openERubricaTab('firmar')}
-           onValidar={() => openERubricaTab('validar')}
-           onVoicePressIn={() => void botVoiceControlsRef.current?.start()}
-           onVoicePressOut={() => botVoiceControlsRef.current?.stop()}
-         />
+          onValidar={() => openERubricaTab('validar')}
+        />
       ) : null}
       <InitialSequenceModal
         visible={Boolean(sequencePrompt)}
@@ -12401,6 +12452,7 @@ function ERubricaMobileScreen({
   onTabChange,
   onRefresh,
   onPreviewPdf,
+  onPreviewRemotePdf,
   onSync,
 }: {
   data: ERubricaDashboard | null;
@@ -12411,6 +12463,7 @@ function ERubricaMobileScreen({
   onTabChange: (tab: ERubricaTab) => void;
   onRefresh: () => void;
   onPreviewPdf: (file: { uri: string; name: string; mimeType?: string }) => void;
+  onPreviewRemotePdf: (urlOrPath: string, fileName: string) => void;
   onSync: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<ERubricaTab>('inicio');
@@ -12434,6 +12487,18 @@ function ERubricaMobileScreen({
   const [signaturePage, setSignaturePage] = useState(1);
   const [signaturePosition, setSignaturePosition] = useState({ x: 0.68, y: 0.82 });
   const [signaturePageSize, setSignaturePageSize] = useState({ widthMm: 210, heightMm: 297 });
+  const [solicitudStep, setSolicitudStep] = useState(1);
+  const [solicitudPlan, setSolicitudPlan] = useState({ label: '7 días', price: 9 });
+  const [solicitudPersona, setSolicitudPersona] = useState('Persona natural con cédula');
+  const [solicitudForm, setSolicitudForm] = useState(SOLICITUD_FORM_INITIAL);
+  const [solicitudFiles, setSolicitudFiles] = useState(SOLICITUD_FILES_INITIAL);
+  const [solicitudId, setSolicitudId] = useState<number | null>(null);
+  const [solicitudSaving, setSolicitudSaving] = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'deuna' | 'transferencia'>('deuna');
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [transferForm, setTransferForm] = useState({ banco: '', titular: '', cuenta: '', comprobante: '' });
+  const [transferReceipt, setTransferReceipt] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const selectTab = (nextTab: ERubricaTab) => {
     setTab(nextTab);
     onTabChange(nextTab);
@@ -12447,11 +12512,14 @@ function ERubricaMobileScreen({
   useEffect(() => {
     setTab(requestedTab ?? 'inicio');
   }, [requestedTab]);
-  const solicitudes = Array.isArray(data?.solicitudes) ? data.solicitudes : [];
-  const firmas = Array.isArray(data?.firmas) ? data.firmas : [];
-  const notificaciones = Array.isArray(data?.notificaciones) ? data.notificaciones : [];
-  const entregas = Array.isArray(data?.entregasFirma) ? data.entregasFirma : [];
-  const menus = Array.isArray(data?.menus) ? data.menus : [];
+  const dashboardRecord = data as (ERubricaDashboard & Record<string, unknown>) | null;
+  const dashboardPayload = (dashboardRecord?.data ?? dashboardRecord?.Data ?? dashboardRecord) as (ERubricaDashboard & Record<string, unknown>) | null;
+  const solicitudesData = dashboardPayload?.solicitudes ?? dashboardPayload?.Solicitudes;
+  const firmasData = dashboardPayload?.firmas ?? dashboardPayload?.Firmas;
+  const menusData = dashboardPayload?.menus ?? dashboardPayload?.Menus;
+  const solicitudes = Array.isArray(solicitudesData) ? solicitudesData : [];
+  const firmas = Array.isArray(firmasData) ? firmasData : [];
+  const menus = Array.isArray(menusData) ? menusData : [];
   const label = (item: unknown, keys: string[], fallback: string) => {
     if (!item || typeof item !== 'object') return fallback;
     const record = item as Record<string, unknown>;
@@ -12464,8 +12532,26 @@ function ERubricaMobileScreen({
     const value = keys.map((key) => record[key]).find((candidate) => candidate !== null && candidate !== undefined && String(candidate).trim());
     return value === undefined ? '' : String(value);
   };
+  const buildSolicitudTitular = (item: unknown, fallback = 'Titular') => {
+    const composed = `${itemValue(item, ['solNombres', 'SolNombres'])} ${itemValue(item, ['solPrimerApellido', 'SolPrimerApellido'])} ${itemValue(item, ['solSegundoApellido', 'SolSegundoApellido'])}`.trim();
+    return composed || label(item, ['titular', 'nombreTitular', 'solicitante', 'nombres', 'nombre', 'cliente', 'razonSocial'], fallback);
+  };
+  const renovacionActual = renovacion ?? dashboardPayload?.renovacion ?? dashboardPayload?.Renovacion;
+  const activeFirma = firmas[0] ?? null;
+  const firmaTitular = buildSolicitudTitular(activeFirma, 'Sin firma activa');
+  const firmaIdentificacion = label(activeFirma, ['identificacion', 'solIdentificacion', 'SolIdentificacion', 'ruc', 'cedula', 'documento'], 'Sin dato');
+  const firmaEstado = label(activeFirma, ['estado', 'estadoVigencia', 'status'], firmas.length ? 'Vigente' : 'Sin firma');
+  const firmaEmision = label(activeFirma, ['fechaEmision', 'solFechaAprobacion', 'SolFechaAprobacion', 'emitida', 'fechaInicio'], 'Sin dato');
+  const firmaExpira = label(activeFirma, ['fechaExpiracion', 'solFechaActualizacion', 'SolFechaActualizacion', 'expira', 'fechaFin'], 'Sin dato');
+  const firmaDiasRestantes = label(activeFirma, ['diasRestantes', 'vigenciaRestante'], 'Sin dato');
+  const firmaAutoridad = label(activeFirma, ['autoridadEmisora', 'emisor', 'ca'], 'Sin dato');
+  const firmaSerie = label(activeFirma, ['numeroSerie', 'serie', 'serial'], 'Sin dato');
+  const firmaHuella = label(activeFirma, ['huellaDigital', 'fingerprint', 'huella'], 'Sin dato');
+  const planDiasRestantes = label(renovacionActual, ['diasRestantes', 'vigenciaRestante', 'dias'], firmaDiasRestantes);
+  const planFechaVencimiento = label(renovacionActual, ['fechaVencimiento', 'fechaExpiracion', 'vence'], firmaExpira);
+  const planEstado = label(renovacionActual, ['estado', 'estadoAcceso', 'status'], firmaEstado);
   const formatSignedDate = (item: unknown) => {
-    const raw = itemValue(item, ['fechaFirma', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']);
+    const raw = itemValue(item, ['fechaFirma', 'solFechaSolicitud', 'SolFechaSolicitud', 'solFechaAprobacion', 'SolFechaAprobacion', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']);
     if (!raw) return { date: 'Sin fecha', time: '' };
     const parsed = new Date(raw);
     if (Number.isNaN(parsed.getTime())) return { date: raw.split('T')[0] || raw, time: raw.includes('T') ? raw.split('T')[1]?.slice(0, 8) ?? '' : '' };
@@ -12475,7 +12561,7 @@ function ERubricaMobileScreen({
     };
   };
   const signedMonthCount = firmas.filter((item) => {
-    const raw = itemValue(item, ['fechaFirma', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']);
+    const raw = itemValue(item, ['fechaFirma', 'solFechaSolicitud', 'SolFechaSolicitud', 'solFechaAprobacion', 'SolFechaAprobacion', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']);
     const parsed = new Date(raw);
     const now = new Date();
     return !Number.isNaN(parsed.getTime()) && parsed.getMonth() === now.getMonth() && parsed.getFullYear() === now.getFullYear();
@@ -12483,20 +12569,45 @@ function ERubricaMobileScreen({
   const validDocuments = firmas.filter((item) => label(item, ['estado', 'status', 'estadoFirma'], 'valido').toLowerCase().includes('valid')).length;
   const filteredFirmas = firmas.filter((item) => {
     const content = JSON.stringify(item).toLowerCase();
-    const status = label(item, ['estado', 'status', 'estadoFirma'], 'valido').toLowerCase();
-    const rawDate = itemValue(item, ['fechaFirma', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']).toLowerCase();
+    const status = label(item, ['estado', 'status', 'estadoFirma', 'estadoSolicitud', 'EstadoSolicitud'], 'valido').toLowerCase();
+    const rawDate = itemValue(item, ['fechaFirma', 'solFechaSolicitud', 'SolFechaSolicitud', 'solFechaAprobacion', 'SolFechaAprobacion', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']).toLowerCase();
     return (!historialQuery.trim() || content.includes(historialQuery.trim().toLowerCase()))
       && (!historialDate.trim() || rawDate.includes(historialDate.trim().toLowerCase()))
       && (!historialStatus.trim() || status.includes(historialStatus.trim().toLowerCase()));
   });
   const documentosPorFirmar = solicitudes.filter((item) => {
-    const status = label(item, ['estado', 'status', 'solEstado'], 'pendiente').toLowerCase();
+    const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud'], 'pendiente').toLowerCase();
     return !status.includes('firmad') && !status.includes('valid');
   });
+  const filteredDocumentosPorFirmar = documentosPorFirmar.filter((item) => {
+    const content = JSON.stringify(item).toLowerCase();
+    const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud'], 'pendiente').toLowerCase();
+    const rawDate = itemValue(item, ['fecha', 'fechaCreacion', 'createdAt', 'fechaSolicitud', 'solFechaSolicitud', 'SolFechaSolicitud']).toLowerCase();
+    return (!historialQuery.trim() || content.includes(historialQuery.trim().toLowerCase()))
+      && (!historialDate.trim() || rawDate.includes(historialDate.trim().toLowerCase()))
+      && (!historialStatus.trim() || status.includes(historialStatus.trim().toLowerCase()));
+  });
   const historialSolicitudes = solicitudes.filter((item) => {
-    const status = label(item, ['estado', 'status', 'solEstado'], '').toLowerCase();
+    const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud'], '').toLowerCase();
     return Boolean(status) && (status.includes('firmad') || status.includes('aprob') || status.includes('caduc') || status.includes('rechaz'));
   });
+  const solicitudHistoryItems = historialSolicitudes.length ? historialSolicitudes : solicitudes;
+  const filteredHistorialSolicitudes = solicitudHistoryItems.filter((item) => {
+    const content = JSON.stringify(item).toLowerCase();
+    const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud', 'estadoUanataca', 'SolUanatacaStatusText', 'estadoPago'], '').toLowerCase();
+    const rawDate = itemValue(item, ['fecha', 'fechaCreacion', 'createdAt', 'fechaSolicitud', 'solFechaSolicitud', 'SolFechaSolicitud']).toLowerCase();
+    return (!historialQuery.trim() || content.includes(historialQuery.trim().toLowerCase()))
+      && (!historialDate.trim() || rawDate.includes(historialDate.trim().toLowerCase()))
+      && (!historialStatus.trim() || status.includes(historialStatus.trim().toLowerCase()));
+  });
+  const solicitudesPagadas = solicitudHistoryItems.filter((item) => {
+    const status = label(item, ['estadoPago', 'pago', 'estado', 'status', 'estadoSolicitud', 'EstadoSolicitud'], '').toLowerCase();
+    return status.includes('pag') || status.includes('aprob');
+  }).length;
+  const solicitudesPendientes = solicitudHistoryItems.filter((item) => {
+    const status = label(item, ['estadoPago', 'pago', 'estado', 'status', 'estadoSolicitud', 'EstadoSolicitud'], 'pendiente').toLowerCase();
+    return status.includes('pend');
+  }).length;
   useEffect(() => {
     if ((tab === 'catalogos' || tab === 'plan-disponible' || tab === 'nueva-solicitud') && catalogos.length === 0) {
       void Promise.all([getERubricaProductos(), getERubricaSaldo()]).then(([items, balance]) => {
@@ -12570,29 +12681,164 @@ function ERubricaMobileScreen({
     }
     await Sharing.shareAsync(signedFileUri, { mimeType: 'application/pdf', dialogTitle: 'Compartir documento firmado', UTI: 'com.adobe.pdf' });
   };
+  const solicitudSubtotal = solicitudPlan.price;
+  const solicitudIva = Number((solicitudSubtotal * 0.15).toFixed(2));
+  const solicitudTotal = Number((solicitudSubtotal + solicitudIva).toFixed(2));
+  const parseSolicitudAge = () => {
+    const parts = solicitudForm.fechaNacimiento.trim().split(/[/-]/).map((part) => Number(part));
+    if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) return 0;
+    const [day, month, year] = parts[0] > 31 ? [parts[2], parts[1], parts[0]] : parts;
+    const birth = new Date(year, month - 1, day);
+    if (Number.isNaN(birth.getTime())) return 0;
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    if (birth > new Date(today.getFullYear() - age, today.getMonth(), today.getDate())) age -= 1;
+    return age;
+  };
+  const solicitudDocumentoItems = [
+    { key: 'cedulaFrontal' as SolicitudDocumentoKey, label: 'Documento de identificación frontal *', types: ['image/*', 'application/pdf'] },
+    { key: 'cedulaPosterior' as SolicitudDocumentoKey, label: 'Documento de identificación posterior *', types: ['image/*', 'application/pdf'] },
+    { key: 'selfieCedula' as SolicitudDocumentoKey, label: 'Selfie sosteniendo su documento *', types: ['image/*', 'application/pdf'] },
+    ...(parseSolicitudAge() >= 65 ? [{ key: 'videoAceptacion' as SolicitudDocumentoKey, label: 'Video de aceptación *', types: ['video/*'] }] : []),
+    ...(solicitudPersona !== 'Persona natural con cédula' ? [{ key: 'rucFile' as SolicitudDocumentoKey, label: 'Archivo RUC *', types: ['image/*', 'application/pdf'] }] : []),
+    ...(solicitudPersona === 'Representante legal' ? [
+      { key: 'nombramiento' as SolicitudDocumentoKey, label: 'Nombramiento *', types: ['image/*', 'application/pdf'] },
+      { key: 'constitucion' as SolicitudDocumentoKey, label: 'Constitución *', types: ['image/*', 'application/pdf'] },
+      { key: 'cedulaRepresentante' as SolicitudDocumentoKey, label: 'Cédula del representante *', types: ['image/*', 'application/pdf'] },
+      { key: 'autorizacion' as SolicitudDocumentoKey, label: 'Autorización *', types: ['image/*', 'application/pdf'] },
+      { key: 'aceptacionNombramiento' as SolicitudDocumentoKey, label: 'Aceptación de nombramiento *', types: ['image/*', 'application/pdf'] },
+    ] : []),
+    { key: 'archivoAdicional' as SolicitudDocumentoKey, label: 'Documento adicional', types: ['image/*', 'application/pdf'] },
+  ];
+  const pickSolicitudFile = async (key: SolicitudDocumentoKey, types: string[]) => {
+    const result = await DocumentPicker.getDocumentAsync({ type: types, copyToCacheDirectory: true });
+    if (!result.canceled) {
+      setSolicitudId(null);
+      setSolicitudFiles((current) => ({ ...current, [key]: result.assets[0] }));
+    }
+  };
+  const appendSolicitudFile = (form: FormData, key: SolicitudDocumentoKey, fieldName: string) => {
+    const file = solicitudFiles[key];
+    if (!file) return;
+    form.append(fieldName, { uri: file.uri, name: file.name || `${fieldName}.jpg`, type: file.mimeType || 'application/octet-stream' } as unknown as Blob);
+  };
+  const buildSolicitudFormData = () => {
+    const form = new FormData();
+    form.append('vigencia', solicitudPlan.label);
+    form.append('tipoPersona', solicitudPersona);
+    form.append('tipoDocumento', solicitudForm.tipoDocumento);
+    form.append('identificacion', solicitudForm.identificacion);
+    form.append('codigoDactilar', solicitudForm.codigoDactilar);
+    form.append('ruc', solicitudForm.ruc);
+    form.append('nombres', solicitudForm.nombres);
+    form.append('primerApellido', solicitudForm.primerApellido);
+    form.append('segundoApellido', solicitudForm.segundoApellido);
+    form.append('fechaNacimiento', solicitudForm.fechaNacimiento);
+    form.append('sexo', solicitudForm.sexo);
+    form.append('nacionalidad', solicitudForm.nacionalidad);
+    form.append('celular', solicitudForm.celular);
+    form.append('correo', solicitudForm.correo);
+    form.append('telefonoSecundario', solicitudForm.telefonoSecundario);
+    form.append('correoSecundario', solicitudForm.correoSecundario);
+    form.append('provincia', solicitudForm.provincia);
+    form.append('canton', solicitudForm.canton);
+    form.append('direccion', solicitudForm.direccion);
+    form.append('razonSocialEmpresa', solicitudForm.razonSocialEmpresa);
+    form.append('departamento', solicitudForm.departamento);
+    form.append('cargo', solicitudForm.cargo);
+    form.append('motivoFirma', solicitudForm.motivoFirma);
+    form.append('representanteTipoDocumento', solicitudForm.representanteTipoDocumento);
+    form.append('representanteIdentificacion', solicitudForm.representanteIdentificacion);
+    form.append('representanteNombres', solicitudForm.representanteNombres);
+    form.append('representanteApellidos', solicitudForm.representanteApellidos);
+    appendSolicitudFile(form, 'cedulaFrontal', 'cedulaFrontal');
+    appendSolicitudFile(form, 'cedulaPosterior', 'cedulaPosterior');
+    appendSolicitudFile(form, 'selfieCedula', 'selfieCedula');
+    appendSolicitudFile(form, 'videoAceptacion', 'videoAceptacion');
+    appendSolicitudFile(form, 'rucFile', 'rucFile');
+    appendSolicitudFile(form, 'nombramiento', 'nombramiento');
+    appendSolicitudFile(form, 'constitucion', 'constitucion');
+    appendSolicitudFile(form, 'cedulaRepresentante', 'cedulaRepresentante');
+    appendSolicitudFile(form, 'autorizacion', 'autorizacion');
+    appendSolicitudFile(form, 'aceptacionNombramiento', 'aceptacionNombramiento');
+    appendSolicitudFile(form, 'archivoAdicional', 'archivoAdicional');
+    return form;
+  };
+  const validateSolicitudBeforePayment = () => {
+    if (!solicitudForm.tipoDocumento.trim() || !solicitudForm.identificacion.trim() || !solicitudForm.codigoDactilar.trim() || !solicitudForm.nombres.trim() || !solicitudForm.primerApellido.trim() || !solicitudForm.fechaNacimiento.trim() || !solicitudForm.sexo.trim() || !solicitudForm.celular.trim() || !solicitudForm.correo.trim() || !solicitudForm.provincia.trim() || !solicitudForm.canton.trim() || !solicitudForm.direccion.trim()) {
+      Alert.alert('Datos incompletos', 'Completa los datos obligatorios del solicitante.');
+      return false;
+    }
+    if (solicitudPersona === 'Representante legal' && (!solicitudForm.ruc.trim() || !solicitudForm.razonSocialEmpresa.trim() || !solicitudForm.cargo.trim() || !solicitudForm.motivoFirma.trim() || !solicitudForm.representanteTipoDocumento.trim() || !solicitudForm.representanteIdentificacion.trim() || !solicitudForm.representanteNombres.trim() || !solicitudForm.representanteApellidos.trim())) {
+      Alert.alert('Datos incompletos', 'Completa los datos de empresa y representante legal.');
+      return false;
+    }
+    const missingFile = solicitudDocumentoItems.find((item) => item.label.includes('*') && !solicitudFiles[item.key]);
+    if (missingFile) {
+      Alert.alert('Documento pendiente', `Adjunta: ${missingFile.label.replace(' *', '')}.`);
+      return false;
+    }
+    return true;
+  };
+  const openPaymentSummary = async () => {
+    if (!validateSolicitudBeforePayment()) return;
+    setSolicitudSaving(true);
+    try {
+      const response = await crearERubricaSolicitud(buildSolicitudFormData());
+      const createdId = Number((response as Record<string, unknown>).solicitudId);
+      if (!createdId) throw new Error('empty-solicitud-id');
+      setSolicitudId(createdId);
+      setPaymentModalOpen(true);
+    } catch (error) {
+      Alert.alert('No se pudo crear la solicitud', error instanceof ApiError ? error.message : 'Revisa los datos y documentos adjuntos.');
+    } finally {
+      setSolicitudSaving(false);
+    }
+  };
+  const pickTransferReceipt = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.82 });
+    if (!result.canceled) setTransferReceipt(result.assets[0]);
+  };
+  const payERubricaRequest = async () => {
+    setPaymentLoading(true);
+    try {
+      if (!solicitudId) {
+        Alert.alert('Solicitud pendiente', 'Primero crea la solicitud para continuar con el pago.');
+        return;
+      }
+      if (paymentMethod === 'deuna') {
+        const payment = await iniciarPagoERubricaSolicitud(solicitudId);
+        const url = payment.paymentUrl ?? payment.checkoutUrl ?? payment.url;
+        if (!url) throw new Error('empty-payment-url');
+        await Linking.openURL(url);
+        setPaymentModalOpen(false);
+        Alert.alert('Pago en línea', 'Checkout abierto. La solicitud se acreditará al aprobarse el pago.');
+        return;
+      }
+      if (!transferForm.banco || !transferForm.titular.trim() || !transferForm.cuenta.trim() || !transferForm.comprobante.trim() || !transferReceipt) {
+        Alert.alert('Transferencia incompleta', 'Completa los datos de pago y adjunta el comprobante.');
+        return;
+      }
+      const form = new FormData();
+      form.append('solicitudId', String(solicitudId));
+      form.append('banco', transferForm.banco);
+      form.append('titularCuenta', transferForm.titular.trim());
+      form.append('cuentaOrigen', transferForm.cuenta.trim());
+      form.append('numeroComprobante', transferForm.comprobante.trim());
+      form.append('comprobante', { uri: transferReceipt.uri, name: transferReceipt.fileName || 'comprobante.jpg', type: transferReceipt.mimeType || 'image/jpeg' } as unknown as Blob);
+      await enviarTransferenciaERubricaSolicitud(form);
+      setPaymentModalOpen(false);
+      Alert.alert('Transferencia enviada', 'Tu comprobante fue enviado para validación.');
+    } catch (error) {
+      Alert.alert('No se pudo procesar el pago', error instanceof ApiError ? error.message : 'Revisa la información e intenta nuevamente.');
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
 
   return (
     <View style={styles.portalStack}>
-      <View style={[styles.portalHeroPanel, { backgroundColor: ERUBRICA_COLORS.dark }]}>
-        <View style={styles.portalHeroCopy}>
-          <Text style={[styles.dashboardPanelLabel, { color: '#DDF6E8' }]}>Firma electrónica</Text>
-          <Text style={styles.portalHeroTitle}>E-Rúbrica</Text>
-          <Text style={styles.portalHeroText}>Gestiona solicitudes, documentos firmados y validaciones desde tu móvil.</Text>
-        </View>
-        <View style={[styles.portalHeroBadge, { borderColor: ERUBRICA_COLORS.border }]}>
-          <Text style={styles.portalHeroBadgeText}>{solicitudes.length}</Text>
-          <Text style={styles.portalHeroBadgeLabel}>solicitudes</Text>
-        </View>
-      </View>
-
       {message ? <MessageBox message={message} /> : null}
-      <View style={styles.portalMetrics}>
-        <View style={styles.portalMetricItem}><Text style={[styles.portalMetricValue, { color: ERUBRICA_COLORS.primary }]}>{firmas.length}</Text><Text style={styles.portalMetricLabel}>FIRMAS</Text></View>
-        <View style={styles.portalMetricDivider} />
-        <View style={styles.portalMetricItem}><Text style={[styles.portalMetricValue, { color: ERUBRICA_COLORS.primary }]}>{entregas.length}</Text><Text style={styles.portalMetricLabel}>PENDIENTES</Text></View>
-        <View style={styles.portalMetricDivider} />
-        <View style={styles.portalMetricItem}><Text style={[styles.portalMetricValue, { color: ERUBRICA_COLORS.primary }]}>{notificaciones.length}</Text><Text style={styles.portalMetricLabel}>AVISOS</Text></View>
-      </View>
 
       {tab === 'inicio' ? (
         <View style={styles.clientCard}>
@@ -12600,11 +12846,6 @@ function ERubricaMobileScreen({
           <Text style={styles.clientMeta}>Abre el menú hamburguesa para ingresar a cada módulo de E-Rúbrica.</Text>
         </View>
       ) : null}
-
-      {tab !== 'inicio' ? <View style={styles.portalSectionHeader}>
-        <View style={styles.portalSectionTitleWrap}><Text style={styles.portalSectionTitle}>Actividad reciente</Text></View>
-        <Pressable style={styles.portalSectionAction} onPress={onRefresh}><MaterialCommunityIcons name="refresh" size={22} color={ERUBRICA_COLORS.primary} /></Pressable>
-      </View> : null}
 
       {loading ? <View style={styles.directoryLoading}><ActivityIndicator color={ERUBRICA_COLORS.primary} /><Text style={styles.mutedText}>Cargando E-Rúbrica...</Text></View> : null}
       {tab === 'firmar' ? (
@@ -12707,127 +12948,401 @@ function ERubricaMobileScreen({
           {signedFileUri ? <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Compartir documento firmado" loading={false} onPress={shareSignedDocument} /> : null}
         </View>
       ) : null}
-      {tab === 'validar' ? (
-          <View style={[styles.clientCard, { borderLeftColor: ERUBRICA_COLORS.primary, borderColor: ERUBRICA_COLORS.border }]}>
-          <Text style={styles.clientDetailLabel}>Validar firma por QR</Text>
-          <Text style={styles.clientMeta}>Pega el texto o URL contenido en el código QR del documento.</Text>
-          <Field label="Entrada QR" value={qrInput} onChangeText={setQrInput} autoCapitalize="none" />
-          <PrimaryButton
-            accentColor={ERUBRICA_COLORS.primary}
-            label="Validar"
-            loading={validatingQr}
-            onPress={async () => {
-              if (!qrInput.trim()) return;
-              setValidatingQr(true);
-              setQrResult(null);
-              try { setQrResult(await validarERubricaQr(qrInput)); }
-              catch (error) { setQrResult({ mensaje: error instanceof ApiError ? error.message : 'No se pudo validar el QR.' }); }
-              finally { setValidatingQr(false); }
-            }}
-          />
-          {qrResult ? <Text style={styles.clientDetailValue}>{JSON.stringify(qrResult, null, 2)}</Text> : null}
-        </View>
-      ) : null}
       {tab === 'validar-firma' ? (
-        <View style={styles.erubricaHistoryStack}>
-          <View style={styles.erubricaHistoryHero}>
-            <View style={styles.erubricaHistoryHeroCopy}>
-              <Text style={styles.erubricaHistoryEyebrow}>DOCUMENTOS ELECTRÓNICOS</Text>
-              <Text style={styles.erubricaHistoryTitle}>Validar Firma</Text>
-              <Text style={styles.erubricaHistorySubtitle}>Valida un PDF firmado o el código QR de un documento.</Text>
+        <View style={styles.erubricaSignFlow}>
+          <View style={styles.erubricaValidatePanel}>
+            <View style={styles.erubricaValidateHeader}>
+              <View style={styles.erubricaValidateTitleRow}>
+                <MaterialCommunityIcons name="file-lock-outline" size={18} color={ERUBRICA_COLORS.text} />
+                <Text style={styles.erubricaSignStep}>Documento firmado en PDF</Text>
+              </View>
+              <Pressable style={styles.erubricaSignedDocsButton} onPress={() => selectTab('historial-documentos')}>
+                <MaterialCommunityIcons name="folder-lock-outline" size={15} color="#FFFFFF" />
+                <Text style={styles.erubricaSignedDocsText}>Documentos Firmados</Text>
+              </Pressable>
+            </View>
+
+            <Pressable style={styles.erubricaDropzone} onPress={pickPdfToSign}>
+              <View style={styles.erubricaDropIcon}>
+                <MaterialCommunityIcons name="file-pdf-box" size={27} color={ERUBRICA_COLORS.primary} />
+              </View>
+              <Text style={styles.erubricaDropTitle}>{pdfFile ? pdfFile.name : 'Arrastra tu archivo PDF aquí'}</Text>
+              <Text style={styles.erubricaDropText}>o selecciona un archivo desde tu dispositivo</Text>
+              <View style={styles.erubricaDropButton}>
+                <MaterialCommunityIcons name="file-upload-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.erubricaDropButtonText}>Seleccionar PDF</Text>
+              </View>
+              <View style={styles.erubricaValidateMetaRow}>
+                <View style={styles.erubricaValidateMetaItem}>
+                  <MaterialCommunityIcons name="file-pdf-box" size={18} color={ERUBRICA_COLORS.primary} />
+                  <Text style={styles.erubricaDropMeta}>Formato: PDF</Text>
+                </View>
+                <View style={styles.erubricaValidateMetaItem}>
+                  <MaterialCommunityIcons name="clock-outline" size={18} color={ERUBRICA_COLORS.primary} />
+                  <Text style={styles.erubricaDropMeta}>Máximo: 10 MB</Text>
+                </View>
+                <View style={styles.erubricaValidateMetaItem}>
+                  <MaterialCommunityIcons name="file-document-outline" size={18} color={ERUBRICA_COLORS.primary} />
+                  <Text style={styles.erubricaDropMeta}>Páginas: ilimitado</Text>
+                </View>
+              </View>
+            </Pressable>
+
+            <View style={styles.erubricaPreviewToolbar}>
+              <View style={styles.erubricaPreviewToolbarSide}>
+                <View style={styles.erubricaPreviewToolbarButton}><MaterialCommunityIcons name="chevron-left" size={17} color="#A2B1C1" /></View>
+                <View style={styles.erubricaPreviewToolbarButton}><MaterialCommunityIcons name="chevron-right" size={17} color="#A2B1C1" /></View>
+                <Text style={styles.erubricaPreviewToolbarText}>Página 1 de 0</Text>
+              </View>
+              <Text style={styles.erubricaPreviewToolbarHint}>{pdfFile ? 'PDF cargado' : 'Carga un PDF para visualizarlo.'}</Text>
+            </View>
+
+            <View style={styles.erubricaEmptyPreview}>
+              <View style={styles.erubricaPreviewSidebar}>
+                <Text style={styles.erubricaPreviewPage}>1</Text>
+              </View>
+              <View style={styles.erubricaPreviewCenter}>
+                <MaterialCommunityIcons name="file-pdf-box" size={34} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaPreviewTitle}>Previsualización del PDF</Text>
+                <Text style={styles.erubricaPreviewText}>{pdfFile ? 'Documento listo para analizar.' : 'Selecciona un documento firmado para verlo aquí.'}</Text>
+              </View>
             </View>
           </View>
-          <View style={styles.erubricaSignCard}>
-            <Text style={styles.erubricaSignStep}>PDF firmado</Text>
-            <Text style={styles.erubricaSignHint}>Selecciona el archivo que deseas validar.</Text>
-            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label={pdfFile ? `PDF: ${pdfFile.name}` : 'Seleccionar PDF'} onPress={pickPdfToSign} />
-            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Validar firma del PDF" loading={validatingPdf} onPress={validatePdfSignature} />
+
+          <View style={styles.erubricaValidatePrimaryAction}>
+            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Analizar firma digital" loading={validatingPdf} onPress={validatePdfSignature} />
           </View>
-          <View style={styles.erubricaSignCard}>
-            <Text style={styles.erubricaSignStep}>Código QR</Text>
-            <Text style={styles.erubricaSignHint}>Pega el texto o URL del QR.</Text>
-            <Field label="Entrada QR" value={qrInput} onChangeText={setQrInput} autoCapitalize="none" />
-            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Validar QR" loading={validatingQr} onPress={async () => {
-              if (!qrInput.trim()) return;
-              setValidatingQr(true);
-              setQrResult(null);
-              try { setQrResult(await validarERubricaQr(qrInput)); }
-              catch (error) { setQrResult({ mensaje: error instanceof ApiError ? error.message : 'No se pudo validar el QR.' }); }
-              finally { setValidatingQr(false); }
-            }} />
+
+          <View style={styles.erubricaAdviceCard}>
+            <View style={styles.erubricaAdviceHeader}>
+              <MaterialCommunityIcons name="shield-search" size={18} color={ERUBRICA_COLORS.primary} />
+              <Text style={styles.erubricaAdviceTitle}>Qué se verificará</Text>
+            </View>
+            {['Integridad del documento', 'Certificado digital', 'Revocación OCSP/CRL', 'Sello de tiempo RFC 3161', 'Validez legal'].map((item) => (
+              <View key={item} style={styles.erubricaAdviceRow}>
+                <MaterialCommunityIcons name="check-decagram-outline" size={16} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaAdviceText}>{item}</Text>
+              </View>
+            ))}
           </View>
-          {pdfValidation ? <Text style={styles.clientDetailValue}>{JSON.stringify(pdfValidation, null, 2)}</Text> : null}
-          {qrResult ? <Text style={styles.clientDetailValue}>{JSON.stringify(qrResult, null, 2)}</Text> : null}
+          {pdfValidation ? <View style={styles.erubricaSignCard}><Text style={styles.clientDetailValue}>{JSON.stringify(pdfValidation, null, 2)}</Text></View> : null}
         </View>
       ) : null}
       {tab === 'documentos-por-firmar' ? (
         <View style={styles.erubricaHistoryStack}>
-          <View style={styles.erubricaHistoryHero}>
+          <View style={styles.erubricaPendingHeader}>
             <View style={styles.erubricaHistoryHeroCopy}>
               <Text style={styles.erubricaHistoryEyebrow}>DOCUMENTOS ELECTRÓNICOS</Text>
               <Text style={styles.erubricaHistoryTitle}>Documentos por Firmar</Text>
-              <Text style={styles.erubricaHistorySubtitle}>Documentos pendientes que requieren tu firma electrónica.</Text>
+              <Text style={styles.erubricaHistorySubtitle}>Administra los PDF subidos y elige el documento que vas a firmar.</Text>
+            </View>
+            <Pressable style={styles.erubricaPendingLoadButton} onPress={onSync}>
+              <MaterialCommunityIcons name="folder-upload-outline" size={15} color={ERUBRICA_COLORS.text} />
+              <Text style={styles.erubricaPendingLoadText}>Cargar Documentos</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.erubricaPendingMetrics}>
+            <View style={[styles.erubricaPendingMetric, styles.erubricaPendingMetricCyan]}>
+              <Text style={styles.erubricaHistoryMetricLabel}>PENDIENTES</Text>
+              <Text style={styles.erubricaHistoryMetricValue}>{documentosPorFirmar.length}</Text>
+              <Text style={styles.erubricaHistoryMetricHint}>Documentos por firmar</Text>
+              <View style={[styles.erubricaHistoryMetricBar, { backgroundColor: '#32C8BA' }]} />
+            </View>
+            <View style={[styles.erubricaPendingMetric, styles.erubricaPendingMetricAmber]}>
+              <Text style={styles.erubricaHistoryMetricLabel}>FIRMAS DEL MES</Text>
+              <Text style={styles.erubricaHistoryMetricValue}>{signedMonthCount}</Text>
+              <Text style={styles.erubricaHistoryMetricHint}>{new Date().toLocaleDateString('es-EC', { month: 'long', year: 'numeric' })}</Text>
+              <View style={[styles.erubricaHistoryMetricBar, { backgroundColor: '#F59E0B' }]} />
             </View>
           </View>
-          {documentosPorFirmar.length === 0 ? <EmptyState title="Sin documentos por firmar" text="No tienes documentos pendientes de firma." /> : documentosPorFirmar.slice(0, 10).map((item, index) => (
-            <View key={`erubrica-pendiente-${index}`} style={[styles.clientCard, { borderColor: ERUBRICA_COLORS.border }]}>
-              <View style={styles.clientCardHeader}>
-                <View style={styles.clientHeroTitleBlock}>
-                  <Text style={styles.clientDetailLabel}>{label(item, ['documento', 'nombreDocumento', 'solId', 'id'], 'Documento pendiente')}</Text>
-                  <Text style={styles.clientMeta}>{label(item, ['estado', 'status', 'solEstado'], 'Pendiente')}</Text>
-                </View>
-                <MaterialCommunityIcons name="file-document-edit-outline" size={25} color={ERUBRICA_COLORS.primary} />
+
+          <View style={styles.erubricaHistoryPanel}>
+            <View style={styles.erubricaHistoryFilters}>
+              <View style={styles.erubricaHistorySearchBox}>
+                <MaterialCommunityIcons name="magnify" size={19} color="#5C748A" />
+                <TextInput
+                  value={historialQuery}
+                  onChangeText={setHistorialQuery}
+                  placeholder="Buscar por nombre de documento..."
+                  placeholderTextColor="#8AA0B5"
+                  style={styles.erubricaHistoryInput}
+                />
               </View>
-              <Text style={styles.clientDetailValue}>{label(item, ['descripcion', 'producto', 'solFormatoFirma', 'formato'], 'Pendiente de firma')}</Text>
-              <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Ir a firmar PDF" loading={false} onPress={() => selectTab('firmar')} />
+              <View style={styles.erubricaHistoryFilterRow}>
+                <TextInput value={historialDate} onChangeText={setHistorialDate} placeholder="mm/dd/yyyy" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
+                <TextInput value={historialStatus} onChangeText={setHistorialStatus} placeholder="Todos los estados" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
+              </View>
+              <Pressable style={styles.erubricaHistoryClearButton} onPress={() => { setHistorialQuery(''); setHistorialDate(''); setHistorialStatus(''); }}>
+                <MaterialCommunityIcons name="filter-remove-outline" size={15} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaHistoryClearText}>Limpiar filtros</Text>
+              </Pressable>
             </View>
-          ))}
+            {filteredDocumentosPorFirmar.length === 0 ? <EmptyState title="Sin documentos por firmar" text="No tienes documentos pendientes de firma." /> : filteredDocumentosPorFirmar.slice(0, 10).map((item, index) => {
+              const documentName = label(item, ['documento', 'nombreDocumento', 'nombreArchivo', 'archivo', 'solFormatoFirma', 'SolFormatoFirma', 'solId', 'SolId', 'id'], 'Documento pendiente');
+              const documentCode = label(item, ['codigo', 'numero', 'solId', 'SolId', 'id'], `DOC-${index + 1}`);
+              const signedDate = formatDocumentDate(itemValue(item, ['fecha', 'fechaCreacion', 'createdAt', 'fechaSolicitud', 'solFechaSolicitud', 'SolFechaSolicitud']));
+              const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud'], 'Pendiente');
+              const previewUrl = itemValue(item, ['url', 'downloadUrl', 'documentoUrl', 'ruta', 'archivoUrl', 'pdfUrl', 'previewUrl']);
+              return (
+                <View key={`erubrica-pendiente-${index}`} style={styles.erubricaPendingRow}>
+                  <View style={styles.erubricaPendingPdfBadge}>
+                    <Text style={styles.erubricaPendingPdfText}>PDF</Text>
+                  </View>
+                  <View style={styles.erubricaPendingDocCopy}>
+                    <Text style={styles.erubricaHistoryDocName} numberOfLines={2}>{documentName}</Text>
+                    <Text style={styles.erubricaHistoryDocMeta} numberOfLines={1}>{documentCode}</Text>
+                    <Text style={styles.erubricaHistoryDetailText}>{signedDate}</Text>
+                  </View>
+                  <View style={styles.erubricaPendingSide}>
+                    <View style={styles.erubricaPendingStatusPill}>
+                      <Text style={styles.erubricaPendingStatusText}>{status}</Text>
+                    </View>
+                    <View style={styles.erubricaPendingActionRow}>
+                      <Pressable style={styles.erubricaPendingPreviewButton} onPress={() => previewUrl ? onPreviewRemotePdf(previewUrl, documentName) : Alert.alert('Vista previa no disponible', 'Este registro no incluye un PDF para previsualizar.')}>
+                        <MaterialCommunityIcons name="eye-outline" size={17} color={ERUBRICA_COLORS.primary} />
+                      </Pressable>
+                      <Pressable style={styles.erubricaPendingSignButton} onPress={() => selectTab('firmar')}>
+                        <MaterialCommunityIcons name="pencil-outline" size={18} color="#FFFFFF" />
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+            <Text style={styles.erubricaHistoryFooter}>Mostrando {Math.min(filteredDocumentosPorFirmar.length, 10)} de {filteredDocumentosPorFirmar.length} documentos</Text>
+          </View>
         </View>
       ) : null}
       {tab === 'nueva-solicitud' ? (
-        <View style={styles.erubricaHistoryStack}>
-          <View style={styles.erubricaHistoryHero}>
+        <View style={styles.erubricaRequestStack}>
+          <View style={styles.erubricaPendingHeader}>
             <View style={styles.erubricaHistoryHeroCopy}>
               <Text style={styles.erubricaHistoryEyebrow}>FIRMA ELECTRÓNICA</Text>
-              <Text style={styles.erubricaHistoryTitle}>Nueva Solicitud</Text>
-              <Text style={styles.erubricaHistorySubtitle}>Planes y datos disponibles para iniciar una solicitud.</Text>
+              <Text style={styles.erubricaHistoryTitle}>Nueva solicitud de firma</Text>
+              <Text style={styles.erubricaHistorySubtitle}>Completa la información para generar tu solicitud de firma electrónica.</Text>
             </View>
+            <Pressable style={styles.erubricaPendingLoadButton} onPress={() => selectTab('historial-solicitudes')}>
+              <MaterialCommunityIcons name="account-group-outline" size={15} color={ERUBRICA_COLORS.text} />
+              <Text style={styles.erubricaPendingLoadText}>Solicitudes de clientes</Text>
+            </Pressable>
           </View>
-          <View style={styles.clientCard}>
-            <Text style={styles.clientDetailLabel}>Estado de solicitud</Text>
-            <Text style={styles.clientMeta}>{renovacion ? JSON.stringify(renovacion, null, 2) : 'Cargando información de solicitud...'}</Text>
+
+          <View style={styles.erubricaRequestSteps}>
+            {['Configuración', 'Titular', 'Información', 'Revisión', 'Confirmación'].map((step, index) => {
+              const active = solicitudStep >= index + 1;
+              return (
+                <Pressable key={step} style={styles.erubricaRequestStep} onPress={() => setSolicitudStep(index + 1)}>
+                  <View style={[styles.erubricaRequestStepCircle, active && styles.erubricaRequestStepCircleActive]}>
+                    <Text style={[styles.erubricaRequestStepNumber, active && styles.erubricaRequestStepNumberActive]}>{index + 1}</Text>
+                  </View>
+                  <Text style={styles.erubricaRequestStepLabel}>{step}</Text>
+                </Pressable>
+              );
+            })}
           </View>
-          {catalogos.length === 0 ? <EmptyState title="Sin planes disponibles" text="No hay productos para crear una solicitud desde el móvil." /> : catalogos.slice(0, 6).map((item, index) => (
-            <View key={`erubrica-nueva-producto-${index}`} style={[styles.clientCard, { borderColor: ERUBRICA_COLORS.border }]}>
-              <Text style={styles.clientDetailLabel}>{label(item, ['nombre', 'descripcion', 'name'], 'Plan de firma')}</Text>
-              <Text style={styles.clientMeta}>{label(item, ['detalle', 'duracion', 'vigencia'], 'Disponible para solicitud')}</Text>
+
+          <View style={styles.erubricaRequestPanel}>
+            <Text style={styles.erubricaSignStep}>Configura tu firma electrónica</Text>
+            <Text style={styles.erubricaSignHint}>Selecciona el formato y la vigencia antes de completar los datos del titular.</Text>
+            <View style={styles.erubricaRequestOptionActive}>
+              <MaterialCommunityIcons name="file-certificate-outline" size={19} color="#FFFFFF" />
+              <View style={styles.erubricaPendingDocCopy}>
+                <Text style={styles.erubricaRequestOptionTitle}>Archivo .P12</Text>
+                <Text style={styles.erubricaRequestOptionText}>Descargable para usarlo desde tu equipo.</Text>
+              </View>
+              <MaterialCommunityIcons name="check-circle" size={18} color={ERUBRICA_COLORS.primary} />
             </View>
-          ))}
+
+            <View style={styles.erubricaRequestPlanGrid}>
+              {[
+                { label: '7 días', price: 9 },
+                { label: '30 días', price: 12 },
+                { label: '1 año', price: 21 },
+                { label: '2 años', price: 31 },
+                { label: '3 años', price: 40 },
+                { label: '4 años', price: 49 },
+                { label: '5 años', price: 57 },
+              ].map((plan) => {
+                const active = solicitudPlan.label === plan.label;
+                return (
+                  <Pressable key={plan.label} style={[styles.erubricaRequestPlan, active && styles.erubricaRequestPlanActive]} onPress={() => { setSolicitudPlan(plan); setSolicitudId(null); }}>
+                    <Text style={styles.erubricaRequestPlanTitle}>{plan.label}</Text>
+                    <Text style={styles.erubricaRequestPlanPrice}>${plan.price.toFixed(2)}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.erubricaRequestTaxNote}>Precios sin IVA. El total final se mostrará en el pago con el IVA correspondiente.</Text>
+          </View>
+
+          <View style={styles.erubricaRequestPersonGrid}>
+            {['Persona natural con cédula', 'Persona natural con RUC', 'Representante legal'].map((option) => {
+              const active = solicitudPersona === option;
+              return (
+                <Pressable key={option} style={[styles.erubricaRequestPerson, active && styles.erubricaRequestPersonActive]} onPress={() => { setSolicitudPersona(option); setSolicitudId(null); }}>
+                  <MaterialCommunityIcons name={active ? 'check-circle' : 'card-account-details-outline'} size={18} color={active ? ERUBRICA_COLORS.primary : '#607887'} />
+                  <Text style={styles.erubricaRequestOptionTitle}>{option}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={styles.erubricaRequestPanel}>
+            <Text style={styles.erubricaHistoryEyebrow}>DATOS PERSONALES</Text>
+            <Text style={styles.erubricaSignStep}>Completa la información del solicitante</Text>
+            <Field label="Tipo de documento *" value={solicitudForm.tipoDocumento} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, tipoDocumento: value }))} />
+            <Field label="Identificación *" value={solicitudForm.identificacion} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, identificacion: value }))} />
+            <Field label="Código dactilar *" value={solicitudForm.codigoDactilar} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, codigoDactilar: value }))} autoCapitalize="characters" />
+            {solicitudPersona !== 'Persona natural con cédula' ? (
+              <Field label={solicitudPersona === 'Representante legal' ? 'Posee RUC? *' : 'Posee RUC?'} value={solicitudForm.ruc} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, ruc: value }))} keyboardType="number-pad" />
+            ) : null}
+            <Field label="Nombres *" value={solicitudForm.nombres} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, nombres: value }))} />
+            <Field label="Primer apellido *" value={solicitudForm.primerApellido} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, primerApellido: value }))} />
+            <Field label="Segundo apellido" value={solicitudForm.segundoApellido} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, segundoApellido: value }))} />
+            <Field label="Fecha de nacimiento * (dd/mm/aaaa)" value={solicitudForm.fechaNacimiento} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, fechaNacimiento: value }))} />
+            <Field label="Sexo *" value={solicitudForm.sexo} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, sexo: value }))} />
+            <Field label="Nacionalidad *" value={solicitudForm.nacionalidad} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, nacionalidad: value }))} />
+            <Field label="Celular *" value={solicitudForm.celular} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, celular: value }))} keyboardType="phone-pad" />
+            <Field label="Correo principal *" value={solicitudForm.correo} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, correo: value }))} autoCapitalize="none" keyboardType="email-address" />
+            <Field label="Teléfono secundario" value={solicitudForm.telefonoSecundario} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, telefonoSecundario: value }))} keyboardType="phone-pad" />
+            <Field label="Correo secundario" value={solicitudForm.correoSecundario} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, correoSecundario: value }))} autoCapitalize="none" keyboardType="email-address" />
+            <Field label="Provincia *" value={solicitudForm.provincia} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, provincia: value }))} />
+            <Field label="Cantón *" value={solicitudForm.canton} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, canton: value }))} />
+            <Field label="Dirección *" value={solicitudForm.direccion} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, direccion: value }))} />
+          </View>
+
+          {solicitudPersona === 'Representante legal' ? (
+            <>
+              <View style={styles.erubricaRequestPanel}>
+                <Text style={styles.erubricaHistoryEyebrow}>DATOS DE LA EMPRESA</Text>
+                <Text style={styles.erubricaSignStep}>Información corporativa</Text>
+                <Field label="Razón social de la empresa *" value={solicitudForm.razonSocialEmpresa} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, razonSocialEmpresa: value }))} />
+                <Field label="Departamento" value={solicitudForm.departamento} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, departamento: value }))} />
+                <Field label="Cargo *" value={solicitudForm.cargo} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, cargo: value }))} />
+                <Field label="Motivo de firma *" value={solicitudForm.motivoFirma} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, motivoFirma: value }))} />
+              </View>
+              <View style={styles.erubricaRequestPanel}>
+                <Text style={styles.erubricaHistoryEyebrow}>REPRESENTANTE LEGAL</Text>
+                <Text style={styles.erubricaSignStep}>Información del representante</Text>
+                <Field label="Tipo de documento *" value={solicitudForm.representanteTipoDocumento} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, representanteTipoDocumento: value }))} />
+                <Field label="Identificación *" value={solicitudForm.representanteIdentificacion} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, representanteIdentificacion: value }))} />
+                <Field label="Nombres del representante *" value={solicitudForm.representanteNombres} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, representanteNombres: value }))} />
+                <Field label="Apellidos del representante *" value={solicitudForm.representanteApellidos} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, representanteApellidos: value }))} />
+              </View>
+            </>
+          ) : null}
+
+          <View style={styles.erubricaRequestPanel}>
+            <Text style={styles.erubricaHistoryEyebrow}>DOCUMENTOS DE SOPORTE</Text>
+            <Text style={styles.erubricaSignStep}>Adjunta los archivos requeridos</Text>
+            {solicitudDocumentoItems.map((item) => {
+              const file = solicitudFiles[item.key];
+              return (
+                <Pressable key={item.key} style={styles.erubricaRequestDocument} onPress={() => pickSolicitudFile(item.key, item.types)}>
+                  <MaterialCommunityIcons name={file ? 'check-circle' : 'cloud-upload-outline'} size={20} color={file ? ERUBRICA_COLORS.primary : '#607887'} />
+                  <View style={styles.erubricaPendingDocCopy}>
+                    <Text style={styles.erubricaRequestOptionTitle}>{item.label}</Text>
+                    <Text style={styles.erubricaRequestOptionText}>{file?.name || 'JPG, JPEG, PNG o PDF. Máximo 10 MB.'}</Text>
+                  </View>
+                  <Text style={styles.erubricaRequestDocumentAction}>{file ? 'Cambiar' : 'Subir'}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={styles.erubricaSignActions}>
+            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar formulario" onPress={() => { setSolicitudForm(SOLICITUD_FORM_INITIAL); setSolicitudFiles(SOLICITUD_FILES_INITIAL); setSolicitudId(null); }} />
+            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Siguiente" loading={solicitudSaving} onPress={openPaymentSummary} />
+          </View>
         </View>
       ) : null}
       {tab === 'historial-solicitudes' ? (
         <View style={styles.erubricaHistoryStack}>
-          <View style={styles.erubricaHistoryHero}>
+          <View style={styles.erubricaRequestHistoryHeader}>
             <View style={styles.erubricaHistoryHeroCopy}>
               <Text style={styles.erubricaHistoryEyebrow}>FIRMA ELECTRÓNICA</Text>
               <Text style={styles.erubricaHistoryTitle}>Historial de solicitudes</Text>
-              <Text style={styles.erubricaHistorySubtitle}>Seguimiento de solicitudes creadas, aprobadas o caducadas.</Text>
+              <Text style={styles.erubricaHistorySubtitle}>Consulta el pago y el estado actualizado de tus solicitudes enviadas a Uanataca.</Text>
+            </View>
+            <View style={styles.erubricaRequestHistoryCounters}>
+              <View style={styles.erubricaRequestHistoryCounter}><Text style={styles.erubricaRequestHistoryCounterText}>Total: {solicitudHistoryItems.length}</Text></View>
+              <View style={styles.erubricaRequestHistoryCounter}><Text style={styles.erubricaRequestHistoryCounterText}>Pagados: {solicitudesPagadas}</Text></View>
+              <View style={[styles.erubricaRequestHistoryCounter, styles.erubricaRequestHistoryCounterPending]}><Text style={styles.erubricaRequestHistoryCounterText}>Pendientes: {solicitudesPendientes}</Text></View>
             </View>
           </View>
-          {(historialSolicitudes.length ? historialSolicitudes : solicitudes).length === 0 ? <EmptyState title="Sin historial" text="No hay solicitudes registradas." /> : (historialSolicitudes.length ? historialSolicitudes : solicitudes).slice(0, 10).map((item, index) => (
-            <View key={`erubrica-historial-solicitud-${index}`} style={[styles.clientCard, { borderColor: ERUBRICA_COLORS.border }]}>
-              <Text style={styles.clientDetailLabel}>{label(item, ['solId', 'id', 'numero', 'solicitud'], 'Solicitud')}</Text>
-              <Text style={styles.clientMeta}>{label(item, ['estado', 'status', 'solEstado'], 'Estado no disponible')}</Text>
-              <Text style={styles.clientDetailValue}>{label(item, ['fecha', 'fechaCreacion', 'createdAt', 'producto'], 'Sin detalle adicional')}</Text>
+
+          <View style={styles.erubricaRequestHistoryNotice}>
+            <MaterialCommunityIcons name="email-fast-outline" size={17} color={ERUBRICA_COLORS.primary} />
+            <Text style={styles.erubricaRequestHistoryNoticeText}>Recuerda: lo mejor es responder al correo desde tu computador.</Text>
+          </View>
+
+          <View style={styles.erubricaHistoryPanel}>
+            <View style={styles.erubricaHistoryFilters}>
+              <View style={styles.erubricaHistorySearchBox}>
+                <MaterialCommunityIcons name="magnify" size={19} color="#5C748A" />
+                <TextInput
+                  value={historialQuery}
+                  onChangeText={setHistorialQuery}
+                  placeholder="Buscar por titular o referencia..."
+                  placeholderTextColor="#8AA0B5"
+                  style={styles.erubricaHistoryInput}
+                />
+              </View>
+              <View style={styles.erubricaHistoryFilterRow}>
+                <TextInput value={historialStatus} onChangeText={setHistorialStatus} placeholder="Pago: todos" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
+                <TextInput value={historialDate} onChangeText={setHistorialDate} placeholder="Solicitud: todos" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
+              </View>
+              <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Consultar estado" loading={false} onPress={onSync} />
             </View>
-          ))}
+            <Text style={styles.erubricaHistoryFooter}>{filteredHistorialSolicitudes.length} resultado(s)</Text>
+            {filteredHistorialSolicitudes.length === 0 ? <EmptyState title="Sin historial" text="No hay solicitudes registradas con los filtros actuales." /> : filteredHistorialSolicitudes.slice(0, 10).map((item, index) => {
+              const date = formatSignedDate(item);
+              const titular = buildSolicitudTitular(item);
+              const firma = label(item, ['firma', 'formato', 'solFormatoFirma', 'SolFormatoFirma', 'producto', 'descripcion'], 'Archivo .P12');
+              const vigencia = label(item, ['vigencia', 'duracion', 'plan', 'solVigencia', 'SolVigencia'], '');
+              const monto = Number(itemValue(item, ['subtotal', 'subTotal', 'valorSubtotal', 'solMontoPago', 'SolMontoPago']));
+              const subtotal = Number.isFinite(monto) ? `$${monto.toFixed(2).replace('.', ',')}` : '$0,00';
+              const iva = label(item, ['iva', 'valorIva'], '$0,00');
+              const total = Number.isFinite(monto) ? `$${monto.toFixed(2).replace('.', ',')}` : label(item, ['total', 'valorTotal', 'monto'], '$0,00');
+              const pago = label(item, ['estadoPago', 'pago', 'referenciaPago', 'solPagoExitoso', 'SolPagoExitoso'], 'Pendiente');
+              const estadoSolicitud = label(item, ['estadoSolicitud', 'EstadoSolicitud', 'estado', 'status', 'solEstado'], 'Pendiente');
+              const estadoUanataca = label(item, ['estadoUanataca', 'solUanatacaStatusText', 'SolUanatacaStatusText', 'uanataca', 'estadoProveedor'], 'Pendiente de pago');
+              const soporte = label(item, ['soporte', 'ultimaNotificacion', 'UltimaNotificacion', 'observacion', 'mensaje'], 'Sin avisos');
+              return (
+                <View key={`erubrica-historial-solicitud-${index}`} style={styles.erubricaRequestHistoryRow}>
+                  <View style={styles.erubricaRequestHistoryRowTop}>
+                    <View style={styles.erubricaPendingDocCopy}>
+                      <Text style={styles.erubricaHistoryDocName} numberOfLines={2}>{titular}</Text>
+                      <Text style={styles.erubricaHistoryDocMeta}>{date.date} {date.time}</Text>
+                    </View>
+                    <View style={styles.erubricaPendingStatusPill}>
+                      <Text style={styles.erubricaPendingStatusText}>{estadoSolicitud}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.erubricaRequestHistoryGrid}>
+                    <View style={styles.erubricaRequestHistoryCell}><Text style={styles.erubricaHistoryMetricLabel}>FIRMA</Text><Text style={styles.erubricaRequestHistoryValue}>{firma}{vigencia ? `\n${vigencia}` : ''}</Text></View>
+                    <View style={styles.erubricaRequestHistoryCell}><Text style={styles.erubricaHistoryMetricLabel}>SUBTOTAL</Text><Text style={styles.erubricaRequestHistoryValue}>{subtotal}</Text></View>
+                    <View style={styles.erubricaRequestHistoryCell}><Text style={styles.erubricaHistoryMetricLabel}>IVA</Text><Text style={styles.erubricaRequestHistoryValue}>{iva}</Text></View>
+                    <View style={styles.erubricaRequestHistoryCell}><Text style={styles.erubricaHistoryMetricLabel}>TOTAL</Text><Text style={styles.erubricaRequestHistoryValue}>{total}</Text></View>
+                  </View>
+                  <View style={styles.erubricaRequestHistoryStatusGrid}>
+                    <View style={styles.erubricaRequestHistoryPaymentPill}><Text style={styles.erubricaRequestHistoryPaymentText}>• {pago}</Text></View>
+                    <View style={styles.erubricaRequestHistoryUanatacaPill}><Text style={styles.erubricaRequestHistoryUanatacaText}>• {estadoUanataca}</Text></View>
+                    <Text style={styles.erubricaHistorySigner}>{soporte}</Text>
+                  </View>
+                </View>
+              );
+            })}
+            <Text style={styles.erubricaHistoryFooter}>Página 1 de {Math.max(1, Math.ceil(filteredHistorialSolicitudes.length / 10))}</Text>
+          </View>
         </View>
       ) : null}
       {tab === 'renovacion' ? (
         <View style={styles.clientCard}>
           <Text style={styles.clientDetailLabel}>Renovación de firma</Text>
           <Text style={styles.clientMeta}>Consulta la vigencia de tus certificados y las renovaciones pendientes.</Text>
-          <Text style={styles.clientDetailValue}>{renovacion ? JSON.stringify(renovacion, null, 2) : 'Cargando información de renovación...'}</Text>
+          <Text style={styles.clientDetailValue}>{renovacionActual ? JSON.stringify(renovacionActual, null, 2) : 'Cargando información de renovación...'}</Text>
         </View>
       ) : null}
       {tab === 'catalogos' ? (
@@ -12838,44 +13353,192 @@ function ERubricaMobileScreen({
         </View>
       ) : null}
       {tab === 'plan-disponible' ? (
-        <View style={styles.erubricaHistoryStack}>
-          <View style={styles.erubricaHistoryHero}>
-            <View style={styles.erubricaHistoryHeroCopy}>
-              <Text style={styles.erubricaHistoryEyebrow}>CONFIGURACIÓN</Text>
-              <Text style={styles.erubricaHistoryTitle}>Plan disponible</Text>
-              <Text style={styles.erubricaHistorySubtitle}>Saldo y planes de firma disponibles para tu cuenta.</Text>
+        <View style={styles.erubricaPlanStack}>
+          <View style={styles.erubricaPlanHeader}>
+            <View style={styles.erubricaPlanHeaderTop}>
+              <View style={styles.erubricaPlanHeaderBadge}>
+                <MaterialCommunityIcons name="card-account-details-star-outline" size={15} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaPlanHeaderEyebrow}>CONFIGURACIÓN</Text>
+              </View>
+              <Pressable style={styles.erubricaPlanBackButton} onPress={() => selectTab('inicio')}>
+                <MaterialCommunityIcons name="arrow-left" size={15} color={ERUBRICA_COLORS.text} />
+                <Text style={styles.erubricaPendingLoadText}>Volver al inicio</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.erubricaPlanHeaderTitle}>Mi Plan Disponible</Text>
+            <Text style={styles.erubricaPlanHeaderSubtitle}>Consulta los detalles de tu suscripción activa para firma y validación de documentos electrónicos.</Text>
+            <View style={styles.erubricaPlanHeaderStatusRow}>
+              <View style={styles.erubricaPlanHeaderStatusPill}>
+                <MaterialCommunityIcons name="check-circle-outline" size={14} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaPlanHeaderStatusText}>{planEstado}</Text>
+              </View>
+              <Text style={styles.erubricaPlanHeaderDate}>Vence: {planFechaVencimiento}</Text>
             </View>
           </View>
-          <View style={styles.portalMetrics}>
-            <View style={styles.portalMetricItem}><Text style={[styles.portalMetricValue, { color: ERUBRICA_COLORS.primary }]}>{saldo === null ? '-' : saldo}</Text><Text style={styles.portalMetricLabel}>SALDO</Text></View>
-            <View style={styles.portalMetricDivider} />
-            <View style={styles.portalMetricItem}><Text style={[styles.portalMetricValue, { color: ERUBRICA_COLORS.primary }]}>{catalogos.length}</Text><Text style={styles.portalMetricLabel}>PLANES</Text></View>
-          </View>
-          {catalogos.length === 0 ? <EmptyState title="Sin planes" text="No hay planes disponibles para mostrar." /> : catalogos.slice(0, 20).map((item, index) => (
-            <View key={`erubrica-plan-${index}`} style={[styles.clientCard, { borderColor: ERUBRICA_COLORS.border }]}>
-              <Text style={styles.clientDetailLabel}>{label(item, ['nombre', 'descripcion', 'name'], 'Plan')}</Text>
-              <Text style={styles.clientMeta}>{label(item, ['precio', 'valor', 'vigencia', 'detalle'], 'Disponible')}</Text>
+
+          <View style={styles.erubricaPlanCard}>
+            <View style={styles.erubricaPlanHero}>
+              <View style={styles.erubricaPlanPills}>
+                <Text style={styles.erubricaPlanPill}>Firma vigente</Text>
+                <Text style={styles.erubricaPlanPillAlt}>Servicio: E-Rúbrica</Text>
+              </View>
+              <View style={styles.erubricaPlanHeroBody}>
+                <View style={styles.erubricaPlanIcon}>
+                  <MaterialCommunityIcons name="key-variant" size={25} color="#CFF8D8" />
+                </View>
+                <View style={styles.erubricaHistoryHeroCopy}>
+                  <Text style={styles.erubricaHistoryEyebrow}>TU ACCESO DIGITAL</Text>
+                  <Text style={styles.erubricaPlanTitle}>Plan de E-Rúbrica</Text>
+                  <Text style={styles.erubricaPlanText}>Firma, valida y protege tus documentos con respaldo legal.</Text>
+                </View>
+              </View>
+              <View style={styles.erubricaPlanDaysCircle}>
+                <Text style={styles.erubricaPlanDays}>{planDiasRestantes}</Text>
+                <Text style={styles.erubricaPlanDaysLabel}>DÍAS RESTANTES</Text>
+              </View>
             </View>
-          ))}
+            <View style={styles.erubricaPlanDetails}>
+              <View style={styles.erubricaRequestHistoryCell}><Text style={styles.erubricaHistoryMetricLabel}>FECHA DE VENCIMIENTO</Text><Text style={styles.erubricaRequestHistoryValue}>{planFechaVencimiento}</Text></View>
+              <View style={styles.erubricaRequestHistoryCell}><Text style={styles.erubricaHistoryMetricLabel}>ESTADO DEL ACCESO</Text><Text style={[styles.erubricaRequestHistoryValue, { color: ERUBRICA_COLORS.primary }]}>{planEstado}</Text></View>
+            </View>
+            <View style={styles.erubricaPendingActionRow}>
+              <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Solicitar Nueva Firma" loading={false} onPress={() => selectTab('nueva-solicitud')} />
+              <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Ver Mis Trámites" onPress={() => selectTab('historial-solicitudes')} />
+            </View>
+          </View>
+
+          <View style={styles.erubricaBenefitsCard}>
+            <Text style={styles.erubricaSignStep}>Beneficios Incluidos</Text>
+            {[
+              ['Firmado de PDF ilimitado', 'Firma digitalmente todos los contratos y documentos que necesites.'],
+              ['Estándar XAdES / PAdES', 'Garantiza plena validez legal ante el SRI, aduanas y juzgados del Ecuador.'],
+              ['Seguridad y Respaldo', 'Tus firmas y contraseñas no se almacenan, garantizando confidencialidad.'],
+              ['Soporte Prioritario', 'Atención técnica preferencial para resolver bloqueos o dudas del certificado.'],
+            ].map(([title, text]) => (
+              <View key={title} style={styles.erubricaBenefitRow}>
+                <MaterialCommunityIcons name="check-circle-outline" size={18} color={ERUBRICA_COLORS.primary} />
+                <View style={styles.erubricaPendingDocCopy}>
+                  <Text style={styles.erubricaRequestOptionTitle}>{title}</Text>
+                  <Text style={styles.erubricaRequestOptionText}>{text}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
         </View>
       ) : null}
       {tab === 'firma-config' ? (
-        <View style={styles.erubricaHistoryStack}>
-          <View style={styles.erubricaHistoryHero}>
-            <View style={styles.erubricaHistoryHeroCopy}>
-              <Text style={styles.erubricaHistoryEyebrow}>CONFIGURACIÓN</Text>
-              <Text style={styles.erubricaHistoryTitle}>Firma</Text>
-              <Text style={styles.erubricaHistorySubtitle}>Certificados disponibles y accesos de firma para E-Rúbrica.</Text>
+        <View style={styles.erubricaConfigStack}>
+          <View style={styles.erubricaConfigIntroCard}>
+            <View style={styles.erubricaConfigIntroIcon}>
+              <MaterialCommunityIcons name="file-check-outline" size={31} color={ERUBRICA_COLORS.primary} />
+              <View style={styles.erubricaConfigShieldBadge}>
+                <MaterialCommunityIcons name="shield-check-outline" size={18} color="#FFFFFF" />
+              </View>
+            </View>
+            <View style={styles.erubricaConfigIntroAccent} />
+            <View style={styles.erubricaConfigIntroCopy}>
+              <Text style={styles.erubricaConfigTitle}>Configura tu firma electrónica</Text>
+              <Text style={styles.erubricaConfigSubtitle}>Carga tu certificado digital y configura su clave de acceso para firmar documentos de forma segura.</Text>
             </View>
           </View>
-          {firmas.length === 0 ? <EmptyState title="Sin firma configurada" text="No hay certificados disponibles para esta cuenta." /> : firmas.slice(0, 6).map((item, index) => (
-            <View key={`erubrica-firma-config-${index}`} style={[styles.clientCard, { borderColor: ERUBRICA_COLORS.border }]}>
-              <Text style={styles.clientDetailLabel}>{label(item, ['nombreTitular', 'titular', 'razonSocial'], 'Firma electrónica')}</Text>
-              <Text style={styles.clientMeta}>{label(item, ['estado', 'estadoVigencia', 'status'], 'Estado no disponible')}</Text>
-              <Text style={styles.clientDetailValue}>{label(item, ['fechaExpiracion', 'diasRestantes', 'numeroSerie'], 'Sin detalle adicional')}</Text>
+
+          <View style={styles.erubricaConfigStatusCard}>
+            <MaterialCommunityIcons name="shield-check-outline" size={19} color={ERUBRICA_COLORS.primary} />
+            <View style={styles.erubricaPendingDocCopy}>
+              <Text style={styles.erubricaConfigStatusTitle}>{firmas.length ? 'Firma vigente' : 'Firma pendiente'}</Text>
+              <Text style={styles.erubricaConfigStatusText}>{firmaDiasRestantes} para renovar. Expira el {firmaExpira}.</Text>
+              <Text style={styles.erubricaConfigStatusOwner}>Titular: {firmaTitular}</Text>
             </View>
-          ))}
-          <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Firmar un PDF" onPress={() => selectTab('firmar')} />
+          </View>
+
+          <View style={styles.erubricaConfigStepCard}>
+            <View style={styles.erubricaConfigStepHeader}>
+              <View style={styles.erubricaConfigStepNumber}><Text style={styles.erubricaConfigStepNumberText}>1</Text></View>
+              <View style={styles.erubricaPendingDocCopy}>
+                <Text style={styles.erubricaConfigStepTitle}>Certificado digital</Text>
+                <Text style={styles.erubricaConfigStepHint}>Selecciona tu archivo de certificado digital en formato .p12</Text>
+              </View>
+              <Pressable style={styles.erubricaConfigSelectButton} onPress={pickCertificate}>
+                <MaterialCommunityIcons name="file-upload-outline" size={15} color="#FFFFFF" />
+                <Text style={styles.erubricaConfigSelectText}>Seleccionar</Text>
+              </Pressable>
+            </View>
+            <Pressable style={styles.erubricaConfigFileRow} onPress={pickCertificate}>
+              <View style={styles.erubricaDropIcon}>
+                <MaterialCommunityIcons name="file-lock-outline" size={20} color={ERUBRICA_COLORS.primary} />
+              </View>
+              <View style={styles.erubricaPendingDocCopy}>
+                <Text style={styles.erubricaRequestHistoryValue} numberOfLines={1}>{certificateFile ? certificateFile.name : 'Selecciona tu certificado .p12'}</Text>
+                <Text style={styles.erubricaRequestOptionText}>Formato .p12</Text>
+              </View>
+              {certificateFile ? <MaterialCommunityIcons name="check-circle" size={18} color={ERUBRICA_COLORS.primary} /> : null}
+              {certificateFile ? (
+                <Pressable style={styles.erubricaConfigDeleteButton} onPress={() => setCertificateFile(null)}>
+                  <MaterialCommunityIcons name="trash-can-outline" size={17} color="#5C748A" />
+                </Pressable>
+              ) : null}
+            </Pressable>
+          </View>
+
+          <View style={styles.erubricaConfigStepCard}>
+            <View style={styles.erubricaConfigStepHeader}>
+              <View style={styles.erubricaConfigStepNumber}><Text style={styles.erubricaConfigStepNumberText}>2</Text></View>
+              <View style={styles.erubricaPendingDocCopy}>
+                <Text style={styles.erubricaConfigStepTitle}>Clave de acceso</Text>
+                <Text style={styles.erubricaConfigStepHint}>Ingresa la clave del certificado (.p12) para habilitar la firma electrónica.</Text>
+              </View>
+            </View>
+            <Field label="Clave del certificado" value={certificatePassword} onChangeText={setCertificatePassword} secureTextEntry />
+            {certificatePassword.trim() ? (
+              <View style={styles.erubricaConfigSuccessRow}>
+                <MaterialCommunityIcons name="shield-check-outline" size={15} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaConfigSuccessText}>Clave configurada correctamente.</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.erubricaConfigSideGrid}>
+            <View style={styles.erubricaConfigSideCard}>
+              <Text style={styles.erubricaConfigSideTitle}>Resumen de validación</Text>
+              {[
+                ['file-check-outline', certificateFile ? 'Archivo detectado' : 'Archivo pendiente', certificateFile?.name ?? 'Selecciona el certificado .p12'],
+                ['check-circle-outline', certificateFile ? 'Formato válido' : 'Formato por validar', 'Certificado .p12 reconocido'],
+                ['key-outline', certificatePassword.trim() ? 'Clave ingresada' : 'Clave pendiente', certificatePassword.trim() ? 'Configurada' : 'Requerida para guardar'],
+                ['circle', certificateFile && certificatePassword.trim() ? 'Lista para usar' : 'Pendiente de completar', 'Guarda para confirmar'],
+              ].map(([icon, title, text]) => (
+                <View key={title} style={styles.erubricaConfigSummaryRow}>
+                  <View style={styles.erubricaDropIcon}><MaterialCommunityIcons name={icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']} size={17} color={ERUBRICA_COLORS.primary} /></View>
+                  <View style={styles.erubricaPendingDocCopy}>
+                    <Text style={styles.erubricaRequestOptionTitle}>{title}</Text>
+                    <Text style={styles.erubricaRequestOptionText} numberOfLines={1}>{text}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+            <View style={styles.erubricaConfigSideCard}>
+              <View style={styles.erubricaConfigProtectedHeader}>
+                <View style={styles.erubricaPendingDocCopy}>
+                  <Text style={styles.erubricaConfigSideTitle}>Tu información está protegida</Text>
+                  <Text style={styles.erubricaRequestOptionText}>Usamos cifrado de nivel empresarial para proteger tu certificado y clave de acceso.</Text>
+                </View>
+                <View style={styles.erubricaConfigProtectedIcon}>
+                  <MaterialCommunityIcons name="shield-check-outline" size={23} color="#FFFFFF" />
+                </View>
+              </View>
+              {['La clave no se almacena en texto plano', 'Conexiones seguras y cifradas', 'Cumplimos estándares de seguridad'].map((item) => (
+                <View key={item} style={styles.erubricaAdviceRow}>
+                  <MaterialCommunityIcons name="check-circle-outline" size={15} color={ERUBRICA_COLORS.primary} />
+                  <Text style={styles.erubricaAdviceText}>{item}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.erubricaConfigActionBar}>
+            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Cancelar" onPress={() => selectTab('inicio')} />
+            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar" onPress={() => { setCertificateFile(null); setCertificatePassword(''); }} />
+            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Guardar firma" loading={false} onPress={() => certificateFile && certificatePassword.trim() ? Alert.alert('Firma configurada', 'Certificado y clave listos para firmar documentos.') : Alert.alert('Datos incompletos', 'Selecciona el archivo .p12 e ingresa la clave.')} />
+          </View>
         </View>
       ) : null}
       {tab === 'proveedor' ? (
@@ -12898,15 +13561,15 @@ function ERubricaMobileScreen({
         <View key={`erubrica-solicitud-${index}`} style={[styles.clientCard, { borderLeftColor: ERUBRICA_COLORS.primary, borderColor: ERUBRICA_COLORS.border }]}>
             <View style={styles.clientCardHeader}>
             <View style={styles.clientHeroTitleBlock}>
-              <Text style={styles.clientDetailLabel}>{label(item, ['solId', 'id', 'numero', 'solicitud'], 'Solicitud de firma')}</Text>
-              <Text style={styles.clientMeta}>{label(item, ['estado', 'status', 'solEstado'], 'Pendiente')}</Text>
+              <Text style={styles.clientDetailLabel}>{label(item, ['solId', 'SolId', 'id', 'numero', 'solicitud'], 'Solicitud de firma')}</Text>
+              <Text style={styles.clientMeta}>{label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud'], 'Pendiente')}</Text>
             </View>
             <MaterialCommunityIcons name="file-sign" size={25} color={ERUBRICA_COLORS.primary} />
           </View>
-              <Text style={styles.clientDetailValue}>{label(item, ['solFormatoFirma', 'formato', 'producto', 'descripcion'], 'Solicitud E-Rúbrica')}</Text>
-              {Number(label(item, ['solId', 'id'], '0')) > 0 ? <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Descargar firma .p12" onPress={async () => {
+              <Text style={styles.clientDetailValue}>{label(item, ['solFormatoFirma', 'SolFormatoFirma', 'formato', 'producto', 'descripcion'], 'Solicitud E-Rúbrica')}</Text>
+              {Number(label(item, ['solId', 'SolId', 'id'], '0')) > 0 ? <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Descargar firma .p12" onPress={async () => {
                 try {
-                  const solId = Number(label(item, ['solId', 'id'], '0'));
+              const solId = Number(label(item, ['solId', 'SolId', 'id'], '0'));
                   const result = await descargarERubricaFirmaP12(solId);
                   const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}firma-${solId}.p12`;
                   await FileSystem.writeAsStringAsync(uri, arrayBufferToBase64(result.bytes), { encoding: FileSystem.EncodingType.Base64 });
@@ -12924,7 +13587,7 @@ function ERubricaMobileScreen({
               <Text style={styles.erubricaHistoryTitle}>Historial Documentos Firmados</Text>
               <Text style={styles.erubricaHistorySubtitle}>Consulta, descarga o valida los PDF que has firmado electrónicamente.</Text>
             </View>
-            <Pressable style={styles.erubricaHistoryValidateButton} onPress={() => selectTab('validar')}>
+            <Pressable style={styles.erubricaHistoryValidateButton} onPress={() => selectTab('validar-firma')}>
               <MaterialCommunityIcons name="shield-check-outline" size={14} color={ERUBRICA_COLORS.text} />
               <Text style={styles.erubricaHistoryValidateText}>Validar firma</Text>
             </Pressable>
@@ -12974,11 +13637,11 @@ function ERubricaMobileScreen({
               <EmptyState title="Sin documentos firmados" text="No se encontraron documentos con los filtros actuales." />
             ) : filteredFirmas.slice(0, 10).map((item, index) => {
               const signedDate = formatSignedDate(item);
-              const documentName = label(item, ['nombreDocumento', 'documento', 'archivo', 'fileName', 'nombre', 'descripcion'], 'Documento firmado');
-              const signedBy = label(item, ['firmadoPor', 'usuario', 'nombreTitular', 'titular', 'razonSocial'], 'Usuario');
-              const signerEmail = label(item, ['email', 'correo', 'correoUsuario'], '');
+              const documentName = label(item, ['nombreDocumento', 'documento', 'archivo', 'fileName', 'solFormatoFirma', 'SolFormatoFirma', 'nombre', 'descripcion'], 'Documento firmado');
+              const signedBy = buildSolicitudTitular(item, 'Usuario');
+              const signerEmail = label(item, ['email', 'correo', 'correoUsuario', 'solCorreo1', 'SolCorreo1'], '');
               const size = label(item, ['tamano', 'tamaño', 'size', 'peso'], 'No disponible');
-              const status = label(item, ['estado', 'status', 'estadoFirma'], 'Válido');
+              const status = label(item, ['estado', 'status', 'estadoFirma', 'estadoSolicitud', 'EstadoSolicitud'], 'Válido');
               const downloadUrl = itemValue(item, ['url', 'downloadUrl', 'documentoUrl', 'ruta', 'archivoUrl']);
               return (
                 <View key={`erubrica-historial-${index}`} style={styles.erubricaHistoryRow}>
@@ -13016,26 +13679,95 @@ function ERubricaMobileScreen({
       ) : null}
 
       {tab === 'ver-mis-firmas' && !loading ? (
-        <View style={styles.erubricaHistoryStack}>
-          <View style={styles.erubricaHistoryHero}>
-            <View style={styles.erubricaHistoryHeroCopy}>
-              <Text style={styles.erubricaHistoryEyebrow}>MIS FIRMAS</Text>
-              <Text style={styles.erubricaHistoryTitle}>Ver mis firmas</Text>
-              <Text style={styles.erubricaHistorySubtitle}>Certificados y firmas electrónicas asociadas a tu usuario.</Text>
+        <View style={styles.erubricaSignatureStack}>
+          <View style={styles.erubricaSignatureHero}>
+            <View style={styles.erubricaSignatureHeroCopy}>
+              <Text style={styles.erubricaSignatureEyebrow}>SEGURIDAD DE FIRMA</Text>
+              <Text style={styles.erubricaSignatureTitle}>Tu firma electrónica, clara y bajo control</Text>
+              <Text style={styles.erubricaSignatureText}>Consulta la firma activa de tu cuenta o valida temporalmente otro archivo sin reemplazar tu configuración.</Text>
+              <Pressable style={styles.erubricaSignatureRefreshButton} onPress={onRefresh}>
+                <MaterialCommunityIcons name="refresh" size={14} color={ERUBRICA_COLORS.text} />
+                <Text style={styles.erubricaPendingLoadText}>Actualizar información</Text>
+              </Pressable>
+            </View>
+            <View style={styles.erubricaSignatureStatusPanel}>
+              <View style={styles.erubricaSignatureStatusIcon}>
+                <MaterialCommunityIcons name="check-decagram" size={29} color="#88F0B1" />
+              </View>
+              <Text style={styles.erubricaSignatureStatusLabel}>ESTADO ACTUAL</Text>
+              <Text style={styles.erubricaSignatureStatusText}>{firmas.length ? 'Firma válida y vigente' : 'Sin firma activa'}</Text>
+              <Text style={styles.erubricaSignatureStatusName} numberOfLines={2}>{firmaTitular}</Text>
             </View>
           </View>
-          {firmas.length === 0 ? <EmptyState title="Sin firmas" text="No hay certificados o firmas disponibles." /> : firmas.slice(0, 10).map((item, index) => (
-            <View key={`erubrica-ver-firma-${index}`} style={[styles.clientCard, { borderColor: ERUBRICA_COLORS.border }]}>
-              <View style={styles.clientCardHeader}>
-                <View style={styles.clientHeroTitleBlock}>
-                  <Text style={styles.clientDetailLabel}>{label(item, ['nombreTitular', 'titular', 'razonSocial'], 'Firma electrónica')}</Text>
-                  <Text style={styles.clientMeta}>{label(item, ['estado', 'estadoVigencia', 'status'], 'Estado no disponible')}</Text>
+
+          <View style={styles.erubricaSignatureGrid}>
+            <View style={styles.erubricaSignatureCard}>
+              <View style={styles.erubricaAdviceHeader}>
+                <View style={styles.erubricaDropIcon}>
+                  <MaterialCommunityIcons name="card-account-details-outline" size={20} color={ERUBRICA_COLORS.primary} />
                 </View>
-                <MaterialCommunityIcons name="key-variant" size={24} color={ERUBRICA_COLORS.primary} />
+                <View style={styles.erubricaPendingDocCopy}>
+                  <Text style={styles.erubricaHistoryEyebrow}>FIRMA ACTIVA DE LA CUENTA</Text>
+                  <Text style={styles.erubricaSignStep}>Información del certificado</Text>
+                  <Text style={styles.erubricaSignHint}>Datos obtenidos directamente desde la API de validación de firma.</Text>
+                </View>
               </View>
-              <Text style={styles.clientDetailValue}>{label(item, ['fechaExpiracion', 'diasRestantes', 'numeroSerie'], 'Sin detalle adicional')}</Text>
+              {firmas.length === 0 ? <EmptyState title="Sin firmas" text="No hay certificados o firmas disponibles." /> : (
+                <>
+                  <View style={styles.erubricaSignatureVerified}>
+                    <MaterialCommunityIcons name="check-circle" size={19} color={ERUBRICA_COLORS.primary} />
+                    <View style={styles.erubricaPendingDocCopy}>
+                      <Text style={styles.erubricaHistoryMetricLabel}>CERTIFICADO VERIFICADO</Text>
+                      <Text style={styles.erubricaRequestHistoryValue}>{firmaTitular}</Text>
+                      <Text style={styles.erubricaRequestOptionText}>La firma configurada es correcta y se encuentra vigente.</Text>
+                    </View>
+                    <Text style={styles.erubricaSignatureValidPill}>{firmaEstado}</Text>
+                  </View>
+                  <View style={styles.erubricaSignatureInfoGrid}>
+                    {[
+                      ['Titular', firmaTitular],
+                      ['Identificación', firmaIdentificacion],
+                      ['Emitida', firmaEmision],
+                      ['Expira', firmaExpira],
+                      ['Vigencia restante', firmaDiasRestantes],
+                      ['Autoridad emisora', firmaAutoridad],
+                      ['Número de serie', firmaSerie],
+                      ['Huella digital', firmaHuella],
+                    ].map(([title, value]) => (
+                      <View key={title} style={styles.erubricaSignatureInfoCell}>
+                        <Text style={styles.erubricaHistoryMetricLabel}>{title}</Text>
+                        <Text style={styles.erubricaRequestHistoryValue} numberOfLines={title === 'Huella digital' ? 3 : 2}>{value}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
             </View>
-          ))}
+
+            <View style={styles.erubricaSignatureCard}>
+              <View style={styles.erubricaAdviceHeader}>
+                <View style={styles.erubricaDropIcon}>
+                  <MaterialCommunityIcons name="shield-check-outline" size={20} color={ERUBRICA_COLORS.primary} />
+                </View>
+                <View style={styles.erubricaPendingDocCopy}>
+                  <Text style={styles.erubricaHistoryEyebrow}>VALIDACIÓN TEMPORAL</Text>
+                  <Text style={styles.erubricaSignStep}>Comprueba un archivo y su clave</Text>
+                  <Text style={styles.erubricaSignHint}>El archivo se usa una sola vez y no modifica la firma activa.</Text>
+                </View>
+              </View>
+              <View style={styles.erubricaValidationStrip}>
+                <MaterialCommunityIcons name="incognito" size={16} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaValidationStripText}>Ni el archivo ni la clave se guardan después de la validación.</Text>
+              </View>
+              <Pressable style={styles.erubricaDropzone} onPress={pickCertificate}>
+                <MaterialCommunityIcons name="cloud-upload-outline" size={24} color={ERUBRICA_COLORS.primary} />
+                <Text style={styles.erubricaDropTitle}>{certificateFile ? certificateFile.name : 'Selecciona tu archivo .p12'}</Text>
+                <Text style={styles.erubricaDropText}>Haz clic para buscar · Máximo 5 MB</Text>
+              </Pressable>
+              <Field label="Clave del certificado" value={certificatePassword} onChangeText={setCertificatePassword} secureTextEntry />
+              <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Validar archivo y clave" loading={false} onPress={() => certificateFile && certificatePassword.trim() ? Alert.alert('Validación temporal', 'Archivo y clave listos para validar con la API de firma.') : Alert.alert('Datos incompletos', 'Selecciona el archivo .p12 e ingresa la clave.')} />
+            </View>
+          </View>
         </View>
       ) : null}
 
@@ -13048,7 +13780,65 @@ function ERubricaMobileScreen({
         </View>
       ))}
 
-      {['solicitudes', 'documentos-por-firmar', 'historial-solicitudes', 'proveedor'].includes(tab) ? <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Sincronizar solicitudes pendientes" loading={false} onPress={onSync} /> : null}
+      {['solicitudes', 'historial-solicitudes', 'proveedor'].includes(tab) ? <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Sincronizar solicitudes pendientes" loading={false} onPress={onSync} /> : null}
+      <Modal visible={paymentModalOpen} transparent animationType="fade" onRequestClose={() => setPaymentModalOpen(false)}>
+        <View style={styles.erubricaPaymentOverlay}>
+          <View style={styles.erubricaPaymentModal}>
+            <View style={styles.erubricaPaymentHeader}>
+              <View style={styles.erubricaHistoryHeroCopy}>
+                <Text style={styles.erubricaHistoryEyebrow}>RESUMEN DE PAGO</Text>
+                <Text style={styles.erubricaPaymentTitle}>Firma electrónica {solicitudPlan.label}</Text>
+                <Text style={styles.erubricaHistorySubtitle}>Elige pagar en línea o registrar una transferencia para aprobación.</Text>
+              </View>
+              <Pressable style={styles.erubricaPaymentClose} onPress={() => setPaymentModalOpen(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#1787D5" />
+              </Pressable>
+            </View>
+            <View style={styles.erubricaPaymentSummaryGrid}>
+              <View style={styles.erubricaPaymentSummaryBox}><Text style={styles.erubricaHistoryMetricLabel}>SERVICIO</Text><Text style={styles.erubricaPaymentSummaryValue}>e-Rúbrica</Text></View>
+              <View style={styles.erubricaPaymentSummaryBox}><Text style={styles.erubricaHistoryMetricLabel}>SUBTOTAL</Text><Text style={styles.erubricaPaymentSummaryValue}>USD {solicitudSubtotal.toFixed(2)}</Text></View>
+              <View style={styles.erubricaPaymentSummaryBox}><Text style={styles.erubricaHistoryMetricLabel}>IVA 15%</Text><Text style={styles.erubricaPaymentSummaryValue}>USD {solicitudIva.toFixed(2)}</Text></View>
+              <View style={[styles.erubricaPaymentSummaryBox, styles.erubricaPaymentTotalBox]}><Text style={styles.erubricaHistoryMetricLabel}>TOTAL</Text><Text style={styles.erubricaPaymentSummaryValue}>USD {solicitudTotal.toFixed(2)}</Text></View>
+            </View>
+            <View style={styles.erubricaPaymentMethodGrid}>
+              <Pressable style={[styles.erubricaPaymentMethod, paymentMethod === 'deuna' && styles.erubricaPaymentMethodActive]} onPress={() => setPaymentMethod('deuna')}>
+                <MaterialCommunityIcons name="cellphone-check" size={22} color="#1787D5" />
+                <View style={styles.erubricaPendingDocCopy}><Text style={styles.erubricaRequestOptionTitle}>DeUna / Pago en línea</Text><Text style={styles.erubricaRequestOptionText}>Abre el checkout seguro y se acredita al aprobarse.</Text></View>
+              </Pressable>
+              <Pressable style={[styles.erubricaPaymentMethod, paymentMethod === 'transferencia' && styles.erubricaPaymentMethodActive]} onPress={() => setPaymentMethod('transferencia')}>
+                <MaterialCommunityIcons name="bank-outline" size={22} color="#1787D5" />
+                <View style={styles.erubricaPendingDocCopy}><Text style={styles.erubricaRequestOptionTitle}>Transferencia bancaria</Text><Text style={styles.erubricaRequestOptionText}>Se valida manualmente en un plazo máximo de 24 horas.</Text></View>
+              </Pressable>
+            </View>
+            {paymentMethod === 'transferencia' ? (
+              <View style={styles.erubricaPaymentTransferGrid}>
+                <View style={styles.erubricaRequestPanel}>
+                  <Text style={styles.erubricaPaymentTitle}>Información de pago</Text>
+                  <Field label="Banco *" value={transferForm.banco} onChangeText={(value) => setTransferForm((current) => ({ ...current, banco: value }))} />
+                  <Field label="Titular de la cuenta *" value={transferForm.titular} onChangeText={(value) => setTransferForm((current) => ({ ...current, titular: value }))} />
+                  <Field label="N. cuenta de origen *" value={transferForm.cuenta} onChangeText={(value) => setTransferForm((current) => ({ ...current, cuenta: value }))} />
+                  <Field label="N. comprobante *" value={transferForm.comprobante} onChangeText={(value) => setTransferForm((current) => ({ ...current, comprobante: value }))} />
+                  <Pressable style={styles.erubricaDropzone} onPress={pickTransferReceipt}>
+                    <MaterialCommunityIcons name="image-plus" size={24} color="#1787D5" />
+                    <Text style={styles.erubricaDropTitle}>{transferReceipt?.fileName ?? 'Arrastra o selecciona el comprobante'}</Text>
+                    <Text style={styles.erubricaDropText}>JPG o PNG. Máximo 5MB.</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.erubricaPaymentBankBox}>
+                  <Text style={styles.erubricaRequestOptionTitle}>Total a pagar</Text>
+                  <Text style={styles.erubricaPaymentBankText}>Subtotal USD {solicitudSubtotal.toFixed(2)}{`\n`}IVA 15% USD {solicitudIva.toFixed(2)}{`\n`}Total USD {solicitudTotal.toFixed(2)}</Text>
+                  <Text style={styles.erubricaRequestOptionTitle}>Pagar a</Text>
+                  <Text style={styles.erubricaPaymentBankText}>Banco: Banco Pichincha{`\n`}Tipo de cuenta: Cuenta corriente{`\n`}Número de cuenta: 2100346647{`\n`}RUC: 1793233799001{`\n`}Nombre: NUMERICASOFTWARE S.A.S.{`\n`}e-mail: contabilidad@numericasoftware.com</Text>
+                </View>
+              </View>
+            ) : null}
+            <View style={styles.erubricaPaymentActions}>
+              <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Cancelar" onPress={() => setPaymentModalOpen(false)} />
+              <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label={paymentMethod === 'deuna' ? 'Pagar con DeUna' : 'Enviar transferencia'} loading={paymentLoading} onPress={payERubricaRequest} />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

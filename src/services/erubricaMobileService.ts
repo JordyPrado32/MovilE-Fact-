@@ -1,5 +1,6 @@
 import { apiRequest, apiRequestBinary } from './apiClient';
 import { FirmaEstado } from '../types/business';
+import { ERUBRICA_SOLICITUD_PAGO_PATH, ERUBRICA_SOLICITUD_PATH, ERUBRICA_SOLICITUD_TRANSFERENCIA_PATH } from '../config/api';
 
 export type ERubricaDashboard = {
   solicitudes?: unknown[];
@@ -119,3 +120,32 @@ export const validarERubricaFirmaPdf = (pdf: { uri: string; name: string; mimeTy
 
 export const firmarERubricaDocumento = (form: FormData) =>
   apiRequestBinary(`${ROOT}/documentos/firmar`, { method: 'POST', body: form });
+
+export type ERubricaPagoResponse = {
+  paymentUrl?: string | null;
+  checkoutUrl?: string | null;
+  url?: string | null;
+  solicitudId?: string | number | null;
+  status?: string | null;
+};
+
+export const crearERubricaSolicitud = (form: FormData) =>
+  apiRequest<ERubricaPagoResponse | Record<string, unknown>>(ERUBRICA_SOLICITUD_PATH, {
+    method: 'POST',
+    body: form,
+    timeoutMs: 60000,
+  });
+
+export const iniciarPagoERubricaSolicitud = (solicitudId: number) =>
+  apiRequest<ERubricaPagoResponse>(ERUBRICA_SOLICITUD_PAGO_PATH, {
+    method: 'POST',
+    body: JSON.stringify({ solicitudId }),
+    timeoutMs: 30000,
+  });
+
+export const enviarTransferenciaERubricaSolicitud = (form: FormData) =>
+  apiRequest<ERubricaPagoResponse>(ERUBRICA_SOLICITUD_TRANSFERENCIA_PATH, {
+    method: 'POST',
+    body: form,
+    timeoutMs: 30000,
+  });
