@@ -128,7 +128,7 @@ export async function apiRequestBinary(path: string, options: RequestOptions = {
         timeoutMs: requestTimeoutMs,
       });
     }
-    throw new ApiError(response.status, text || `HTTP ${response.status}: ${DEFAULT_ERROR_MESSAGE}`);
+    throw new ApiError(response.status, getErrorMessage(response.status, text, path));
   }
 
   return { bytes: await response.arrayBuffer(), contentType: response.headers.get('content-type') ?? 'application/pdf' };
@@ -143,8 +143,20 @@ function safeParseJson(text: string) {
 }
 
 function getErrorMessage(status: number, body: unknown, path: string) {
+  if (status === 429) {
+    return 'Se alcanzó el límite temporal de solicitudes. Espera unos segundos e inténtalo nuevamente.';
+  }
+
   if (status === 404) {
-    return `HTTP 404: Ruta no encontrada en el backend (${path}). Revisa que el controlador exista o configura la ruta real en .env.`;
+    return 'No se encontró el recurso solicitado. Intenta nuevamente.';
+  }
+
+  if (status >= 500) {
+    return 'El servidor no pudo completar la operación. Intenta nuevamente.';
+  }
+
+  if (status === 401 || status === 403) {
+    return 'No tienes permisos para realizar esta operación.';
   }
 
   if (typeof body === 'string') {
@@ -160,15 +172,24 @@ function getErrorMessage(status: number, body: unknown, path: string) {
         : `HTTP ${status}: ${DEFAULT_ERROR_MESSAGE}`;
     }
 
-    return message;
+    return sanitizeUserMessage(message);
   }
 
   if (body && typeof body === 'object') {
     const errorBody = body as { message?: string; title?: string; detail?: string };
-    return errorBody.message ?? errorBody.title ?? errorBody.detail ?? `HTTP ${status}: ${DEFAULT_ERROR_MESSAGE}`;
+    return sanitizeUserMessage(errorBody.message ?? errorBody.title ?? errorBody.detail ?? '');
   }
 
-  return `HTTP ${status}: ${DEFAULT_ERROR_MESSAGE}`;
+  return DEFAULT_ERROR_MESSAGE;
+}
+
+function sanitizeUserMessage(value: string) {
+  const message = value.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!message || message.length > 280 || /<[^>]+>|\b(stack trace|exception| at |innerexception|system\.)\b/i.test(message)) {
+    return DEFAULT_ERROR_MESSAGE;
+  }
+
+  return message;
 }
 
 function looksLikeHtml(value: string) {
@@ -182,7 +203,7 @@ function logApiError(
   context: { contentType?: string; elapsedMs?: number; method?: string; timeoutMs?: number } = {},
 ) {
   const bodyText = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
-  const preview = bodyText.length > 4000 ? `${bodyText.slice(0, 4000)}... [truncado]` : bodyText;
+  const preview = sanitizeDiagnosticBody(bodyText);
   console.error('[API ERROR]', {
     baseUrl: API_BASE_URL,
     path,
@@ -193,9 +214,21 @@ function logApiError(
     contentType: context.contentType,
     localDebug: getLocalApiErrorDebug(bodyText),
     body: preview,
+    bodyLength: bodyText.length,
   });
 
   logLocalApiErrorDetails(path, status, bodyText, context);
+}
+
+function sanitizeDiagnosticBody(bodyText: string) {
+  if (!bodyText.trim()) return undefined;
+  const message = safeParseJson(bodyText);
+  if (message && typeof message === 'object') {
+    const value = message as { message?: unknown; title?: unknown; detail?: unknown };
+    return sanitizeUserMessage(String(value.message ?? value.title ?? value.detail ?? ''));
+  }
+
+  return sanitizeUserMessage(bodyText);
 }
 
 function getLocalApiErrorDebug(bodyText: string) {

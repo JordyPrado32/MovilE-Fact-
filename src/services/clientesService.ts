@@ -17,6 +17,7 @@ type ClienteApi = Cliente & {
   Observaciones?: string | null;
   Oblgconta?: string | null;
   TipoCliente?: number | null;
+  TclCodigo?: number | null;
   Estado?: boolean | null;
   Pais?: number | null;
   Provincia?: number | null;
@@ -30,6 +31,8 @@ type ClienteApi = Cliente & {
 };
 
 export function normalizeCliente(cliente: ClienteApi): Cliente {
+  const tipoClienteRaw: unknown = cliente.tipoCliente ?? cliente.TipoCliente ?? cliente.TclCodigo;
+  const tipoCliente = tipoClienteRaw === null || tipoClienteRaw === undefined || tipoClienteRaw === '' ? null : Number(tipoClienteRaw);
   return {
     codcliente: cliente.codcliente ?? cliente.Codcliente ?? 0,
     apellidos: cliente.apellidos ?? cliente.Apellidos,
@@ -45,7 +48,7 @@ export function normalizeCliente(cliente: ClienteApi): Cliente {
     correosAdicionales: cliente.correosAdicionales ?? cliente.CorreosAdicionales ?? [],
     observaciones: cliente.observaciones ?? cliente.Observaciones,
     oblgconta: cliente.oblgconta ?? cliente.Oblgconta,
-    tipoCliente: cliente.tipoCliente ?? cliente.TipoCliente,
+    tipoCliente: Number.isFinite(tipoCliente) ? tipoCliente : null,
     estado: cliente.estado ?? cliente.Estado,
     pais: cliente.pais ?? cliente.Pais,
     provincia: cliente.provincia ?? cliente.Provincia,

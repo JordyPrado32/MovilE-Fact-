@@ -1,4 +1,4 @@
-import { ApiError, apiRequest } from './apiClient';
+import { ApiError, apiRequest, apiRequestBinary } from './apiClient';
 import { DOCUMENTOS_COMPRA_PAGO_PATH } from '../config/api';
 
 export type OperationalModule =
@@ -154,6 +154,14 @@ export function iniciarPagoCompraDocumentos(userId: number, payload: CompraDocum
 
 export function getCompraDocumentosEstado(userId: number) {
   return apiRequest<CompraDocumentosEstado>(`/api/documentos/compra?idUsuario=${userId}`);
+}
+
+export function getEstadoCuentaPdf(userId: number, idCliente: number) {
+  return apiRequestBinary(`/api/cuentas-cobrar/estado-cuenta/${idCliente}/pdf?idUsuario=${userId}`);
+}
+
+export function getEstadoCuentaExcel(userId: number, idCliente: number) {
+  return apiRequestBinary(`/api/cuentas-cobrar/estado-cuenta/${idCliente}/excel?idUsuario=${userId}`);
 }
 
 export function updateOperationalItem(module: OperationalModule, tab: string, id: string, payload: ApiRow, context: OperationalRequestContext = {}) {

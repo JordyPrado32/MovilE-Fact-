@@ -5,7 +5,7 @@ import { styles } from '../../styles/appStyles';
 
 type DocumentAction = {
   label: string;
-  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  icon: string;
   tone: 'primary' | 'success' | 'danger' | 'warning' | 'purple';
   onPress: () => void;
 };
@@ -41,7 +41,7 @@ export function DocumentActionsMenu({ actions }: { actions: DocumentAction[] }) 
                     }}
                   >
                     <View style={styles.documentActionIcon}>
-                      <MaterialCommunityIcons name={action.icon} size={16} color={color} />
+                      <MaterialCommunityIcons name={action.icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']} size={16} color={color} />
                     </View>
                     <Text style={[styles.documentActionText, { color }]}>{action.label}</Text>
                   </Pressable>

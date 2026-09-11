@@ -282,8 +282,11 @@ function normalizePrices(...sources: Array<Array<number | string> | null | undef
 }
 
 function normalizeProducto(producto: ProductoApi): Producto {
-  const precioBase = normalizeNumber(producto.precioBase ?? producto.PrecioBase ?? producto.Precio ?? producto.PrecioUnitario ?? producto.ValorUnitario ?? producto.valorUnitario ?? producto.Pvp ?? producto.PVP ?? producto.ProPrecio ?? producto.proPrecio ?? producto.proprecio);
   const precios = normalizePrices(producto.precios, producto.Precios, producto.preciosAdicionales, producto.PreciosAdicionales);
+  const preciosDirectos = [producto.precioBase, producto.PrecioBase, producto.Precio, producto.PrecioUnitario, producto.ValorUnitario, producto.valorUnitario, producto.Pvp, producto.PVP, producto.ProPrecio, producto.proPrecio, producto.proprecio]
+    .map((value) => normalizeOptionalNumber(value))
+    .filter((value): value is number => value !== null);
+  const precioBase = preciosDirectos.find((value) => value > 0) ?? precios.find((value) => value > 0) ?? preciosDirectos[0] ?? precios[0] ?? 0;
   const codigoImpuesto = producto.Codigoimpuesto ?? producto.codigoimpuesto;
   const tarifa =
     normalizeOptionalNumber(pickValue(producto, ['Porcentajeimpuesto', 'porcentajeimpuesto', 'tarifa', 'Tarifa', 'idTarifa', 'IdTarifa', 'idTarifaIva', 'IdTarifaIva', 'TarifaIva', 'TarifaIVA', 'IdIva', 'IdIVA', 'IvaTarifa', 'IVAId', 'IdPorcentajeIva', 'PorcentajeIva', 'IvaCodigo', 'ivaCodigo', 'PorCodigo', 'porCodigo', 'porcodigo', 'PORCODIGO', 'por_codigo'])) ??
@@ -325,7 +328,7 @@ function normalizeProducto(producto: ProductoApi): Producto {
       producto.procodigobarras ??
       String(producto.codproducto ?? producto.Codproducto ?? producto.CodProducto ?? producto.IdProducto ?? producto.Codigo ?? producto.ProCodigo ?? producto.procodigo ?? ''),
     precioBase,
-    precios: precios.length ? precios : [precioBase],
+    precios: precios.some((value) => value > 0) ? precios : [precioBase],
     iva: normalizeBoolean(pickValue(producto, ['iva', 'Iva', 'IVA', 'tieneIva', 'TieneIva', 'aplicaIva', 'AplicaIva', 'usaIva', 'UsaIva', 'grabaIva', 'GrabaIva', 'proIva', 'ProIva', 'PROIVA', 'pro_iva', 'proGrabaIva', 'ProGrabaIva', 'PROGRABAIVA', 'proGrabaIVA', 'ProGrabaIVA', 'pro_graba_iva', 'pro_grabaiva']) ?? pickByPattern(producto, ['iva'], ['codigo', 'descripcion']) ?? (codigoImpuesto === '2' || tarifa !== null)),
     tarifa,
     tarifaDescripcion,

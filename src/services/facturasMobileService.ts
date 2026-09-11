@@ -1,6 +1,9 @@
 import { apiRequest } from './apiClient';
 import { Cliente } from '../types/business';
 import { normalizeCliente } from './clientesService';
+import type { DocumentPdfFormat } from '../utils/documentFormatting';
+
+const FACTURA_SAVE_TIMEOUT_MS = 120000;
 
 export type FacturaListItem = {
   codfactura: number;
@@ -42,7 +45,7 @@ export type FacturaProducto = {
 export type FacturaPreparacion = {
   emisores?: { codemisor?: number; codigo?: number; ruc?: string | null; razonsocial?: string | null; razonSocial?: string | null }[];
   porcentajesIva?: { codigo?: string | number | null; descripcion?: string | null; valor?: number | null; valorCalculo?: number | null }[];
-  tiposCliente?: unknown[];
+  tiposCliente?: { codigo?: number | null; descripcion?: string | null }[];
   paises?: unknown[];
   caja?: {
     serieFactura?: string | null;
@@ -97,11 +100,35 @@ export type FacturaGuardarInput = {
 
 export async function getFacturaPreparacion(userId: number) {
   const response = await apiRequest<FacturaPreparacion>(`/api/facturas/preparacion?idUsuario=${userId}`);
+  return normalizeFacturaPreparacion(response as FacturaPreparacion & Record<string, unknown>);
+}
+
+export function normalizeFacturaPreparacion(response: FacturaPreparacion & Record<string, unknown>): FacturaPreparacion {
   const raw = response as FacturaPreparacion & Record<string, unknown>;
+  const emisores = pickValue(raw, ['emisores', 'Emisores']);
   const formasPago = (response.formasPago ?? raw.FormasPago ?? []) as Record<string, unknown>[];
+  const porcentajesIva = pickValue(raw, ['porcentajesIva', 'PorcentajesIva', 'porcentajesIVA', 'PorcentajesIVA']);
+  const tiposCliente = pickValue(raw, ['tiposCliente', 'TiposCliente', 'tiposcliente']);
 
   return {
     ...response,
+    emisores: Array.isArray(emisores)
+      ? emisores
+        .map((value) => {
+          const row = isRecord(value) ? value : {};
+          const codigo = numberValue(pickValue(row, ['codemisor', 'Codemisor', 'codEmisor', 'CodEmisor', 'codigo', 'Codigo'])) ?? undefined;
+          return {
+            codemisor: codigo,
+            codigo,
+            ruc: text(pickValue(row, ['ruc', 'Ruc', 'RUC'])) || null,
+            razonsocial: text(pickValue(row, ['razonsocial', 'Razonsocial', 'RazonSocial'])) || null,
+            razonSocial: text(pickValue(row, ['razonSocial', 'RazonSocial', 'razonsocial', 'Razonsocial'])) || null,
+          };
+        })
+        .filter((item) => (item.codemisor ?? 0) > 0)
+      : [],
+    porcentajesIva: Array.isArray(porcentajesIva) ? porcentajesIva.map(normalizePorcentajeIva) : [],
+    tiposCliente: Array.isArray(tiposCliente) ? tiposCliente.map(normalizeTipoCliente) : [],
     formasPago: formasPago
       .map((item) => ({
         id: Number(item.id ?? item.Id) || undefined,
@@ -207,12 +234,13 @@ export function guardarFactura(input: FacturaGuardarInput) {
         detalles,
         correosFactura: input.correos?.filter(Boolean).map((correo) => ({ correo, guardarEnCliente: false })) ?? [],
       }),
+      timeoutMs: FACTURA_SAVE_TIMEOUT_MS,
     },
   );
 }
 
-export function getFacturaPdf(userId: number, codfactura: number) {
-  return apiRequest<{ url: string }>(`/api/facturas/${codfactura}/pdf?idUsuario=${userId}`);
+export function getFacturaPdf(userId: number, codfactura: number, formato: DocumentPdfFormat = 'A4') {
+  return apiRequest<{ url: string }>(`/api/facturas/${codfactura}/pdf?idUsuario=${userId}&formato=${formato}`);
 }
 
 export function getFacturaXml(userId: number, codfactura: number) {
@@ -231,7 +259,7 @@ export function anularFactura(userId: number, codfactura: number) {
 }
 
 export function reintentarFacturaSri(userId: number, codfactura: number) {
-  return apiRequest<void>(`/api/facturas/${codfactura}/reintentar-sri?idUsuario=${userId}`, { method: 'POST' });
+  return apiRequest<{ estado?: string; mensaje?: string }>(`/api/facturas/${codfactura}/reintentar-sri?idUsuario=${userId}`, { method: 'POST' });
 }
 
 function normalizeFacturaRows(response: ApiRow[] | Record<string, unknown>): ApiRow[] {
@@ -281,7 +309,7 @@ function normalizeFacturaCliente(cliente: Cliente & Record<string, unknown>): Cl
     celular: text(pickValue(row, ['celular', 'Celular'])) || null,
     correo: text(pickValue(row, ['correo', 'Correo', 'Email'])) || null,
     oblgconta: text(pickValue(row, ['oblgconta', 'Oblgconta', 'ObligadoContabilidad'])) || null,
-    tipoCliente: numberValue(pickValue(row, ['tipoCliente', 'TipoCliente'])),
+    tipoCliente: numberValue(pickValue(row, ['tipoCliente', 'TipoCliente', 'tclCodigo', 'TclCodigo'])),
     tipoidentificacion: text(pickValue(row, ['tipoidentificacion', 'Tipoidentificacion', 'TipoIdentificacion'])) || null,
   };
 }
@@ -292,9 +320,9 @@ function normalizeFacturaProducto(row: ApiRow): FacturaProducto {
     codprincipal: text(pickValue(row, ['codprincipal', 'Codprincipal', 'CodPrincipal', 'codigoPrincipal', 'CodigoPrincipal', 'codigoProducto', 'CodigoProducto', 'codigo', 'Codigo', 'sku', 'Sku', 'referencia', 'Referencia', 'codigoBarra', 'CodigoBarra'])) || null,
     codauxiliar: text(pickValue(row, ['codauxiliar', 'Codauxiliar', 'CodAuxiliar', 'codigoAuxiliar', 'CodigoAuxiliar', 'codigoAlterno', 'CodigoAlterno'])) || null,
     descripcion: text(pickValue(row, ['descripcion', 'Descripcion', 'nombreProducto', 'NombreProducto', 'producto', 'Producto', 'nombre', 'Nombre', 'descripproducto', 'DescripProducto', 'descripProducto', 'descripcionProducto', 'DescripcionProducto', 'detalle', 'Detalle', 'concepto', 'Concepto', 'item', 'Item', 'label', 'Label', 'text', 'Text'])) || null,
-    precioUnitario: numberValue(pickValue(row, ['precioUnitario', 'PrecioUnitario', 'valorUnitario', 'ValorUnitario', 'precioVenta', 'PrecioVenta', 'pvp', 'Pvp', 'PVP', 'precio1', 'Precio1', 'precioproducto', 'PrecioProducto', 'precioProducto', 'precioBase', 'PrecioBase', 'valor', 'Valor', 'precio', 'Precio', 'monto', 'Monto', 'importe', 'Importe'])) ?? 0,
+    precioUnitario: pickNumberValue(row, ['precioUnitario', 'PrecioUnitario', 'valorUnitario', 'ValorUnitario', 'precioVenta', 'PrecioVenta', 'pvp', 'Pvp', 'PVP', 'precio1', 'Precio1', 'precioproducto', 'PrecioProducto', 'precioProducto', 'precioBase', 'PrecioBase', 'valor', 'Valor', 'precio', 'Precio', 'monto', 'Monto', 'importe', 'Importe']) ?? 0,
     costo: numberValue(pickValue(row, ['costo', 'Costo', 'costoProducto', 'CostoProducto'])) ?? 0,
-    tarifaIva: numberValue(pickValue(row, ['tarifaIva', 'TarifaIva', 'tarifaIVA', 'TarifaIVA', 'porcentajeIva', 'PorcentajeIva', 'porcentajeIVA', 'porcentajeImpuesto', 'PorcentajeImpuesto', 'tarifa', 'Tarifa', 'iva', 'Iva', 'IVA'])) ?? 0,
+    tarifaIva: percentageValue(pickNumberValue(row, ['tarifaIva', 'TarifaIva', 'tarifaIVA', 'TarifaIVA', 'porcentajeIva', 'PorcentajeIva', 'porcentajeIVA', 'porcentajeImpuesto', 'PorcentajeImpuesto', 'tarifa', 'Tarifa', 'iva', 'Iva', 'IVA'])) ?? 0,
     codigoImpuestoSri: text(pickValue(row, ['codigoImpuestoSri', 'CodigoImpuestoSri', 'codigoimpuesto', 'Codigoimpuesto'])) || null,
   };
 }
@@ -331,9 +359,9 @@ function toFacturaProducto(row: ApiRow): FacturaProducto {
     codprincipal: text(pickValue(row, ['codprincipal', 'Codprincipal', 'CodPrincipal', 'codigoPrincipal', 'CodigoPrincipal'])) || null,
     codauxiliar: text(pickValue(row, ['codauxiliar', 'Codauxiliar', 'CodAuxiliar', 'codigoAuxiliar', 'CodigoAuxiliar'])) || null,
     descripcion: text(pickValue(row, ['descripcion', 'Descripcion', 'descripproducto', 'Descripproducto', 'nombre', 'Nombre'])) || null,
-    precioUnitario: numberValue(pickValue(row, ['precioUnitario', 'PrecioUnitario', 'preciounitario', 'Preciounitario', 'precio', 'Precio', 'precioBase', 'PrecioBase'])) ?? 0,
+    precioUnitario: pickNumberValue(row, ['precioUnitario', 'PrecioUnitario', 'preciounitario', 'Preciounitario', 'valorUnitario', 'ValorUnitario', 'precioVenta', 'PrecioVenta', 'pvp', 'Pvp', 'PVP', 'precio1', 'Precio1', 'precio', 'Precio', 'precioBase', 'PrecioBase', 'valor', 'Valor']) ?? 0,
     costo: numberValue(pickValue(row, ['costo', 'Costo'])) ?? 0,
-    tarifaIva: numberValue(pickValue(row, ['tarifaIva', 'TarifaIva', 'tarifa', 'Tarifa', 'iva', 'Iva'])) ?? 0,
+    tarifaIva: percentageValue(pickNumberValue(row, ['tarifaIva', 'TarifaIva', 'tarifa', 'Tarifa', 'iva', 'Iva'])) ?? 0,
   };
 }
 
@@ -346,6 +374,39 @@ function pickValue(row: ApiRow, keys: string[]) {
   const entry = Object.entries(row).find(([key, value]) => value !== null && value !== undefined && normalizedKeys.includes(normalizeKey(key)));
 
   return entry?.[1];
+}
+
+function pickNumberValue(row: ApiRow, keys: string[]) {
+  const normalizedKeys = keys.map(normalizeKey);
+  const values = Object.entries(row)
+    .filter(([key, value]) => value !== null && value !== undefined && (keys.includes(key) || normalizedKeys.includes(normalizeKey(key))))
+    .map(([, value]) => numberValue(value))
+    .filter((value): value is number => value !== null);
+  return values.find((value) => value > 0) ?? values.find((value) => value === 0) ?? null;
+}
+
+function normalizePorcentajeIva(value: unknown) {
+  const row = isRecord(value) ? value : {};
+  const values = [
+    pickValue(row, ['valorCalculo', 'ValorCalculo']),
+    pickValue(row, ['valor', 'Valor']),
+    pickValue(row, ['porcentaje', 'Porcentaje', 'porcentajeIva', 'PorcentajeIva', 'tarifa', 'Tarifa']),
+  ];
+  const porcentaje = values.map(percentageValue).find((item) => item !== null && item > 0) ?? values.map(percentageValue).find((item) => item !== null) ?? percentageValue(pickValue(row, ['descripcion', 'Descripcion'])) ?? 0;
+  return {
+    codigo: pickValue(row, ['codigo', 'Codigo', 'codigoPorcentaje', 'CodigoPorcentaje']) as string | number | null,
+    descripcion: `${porcentaje}%`,
+    valor: porcentaje,
+    valorCalculo: porcentaje,
+  };
+}
+
+function normalizeTipoCliente(value: unknown) {
+  const row = isRecord(value) ? value : {};
+  return {
+    codigo: numberValue(pickValue(row, ['codigo', 'Codigo', 'tclCodigo', 'TclCodigo'])) ?? 0,
+    descripcion: text(pickValue(row, ['descripcion', 'Descripcion', 'tclDescripcion', 'TclDescripcion'])) || 'Sin tipo',
+  };
 }
 
 function normalizeKey(value: string) {
@@ -375,6 +436,12 @@ function numberValue(value: unknown) {
   }
   const number = Number(normalized);
   return Number.isFinite(number) ? number : null;
+}
+
+function percentageValue(value: unknown) {
+  const parsed = numberValue(value);
+  if (parsed === null) return null;
+  return parsed > 0 && parsed <= 1 ? parsed * 100 : parsed;
 }
 
 function booleanValue(value: unknown) {

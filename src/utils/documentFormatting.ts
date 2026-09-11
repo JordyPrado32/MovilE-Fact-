@@ -18,3 +18,5 @@ export function listItemKey(prefix: string, parts: Array<string | number | null 
     .join('-');
   return `${prefix}-${stable || 'item'}-${index}`;
 }
+
+export type DocumentPdfFormat = 'A4';

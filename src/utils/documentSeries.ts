@@ -137,12 +137,20 @@ export function getNextSequence(preparacion: FacturaPreparacion | null, serie: s
 }
 
 function getSerieCodemisor(preparacion: FacturaPreparacion | null, serie: string) {
-  return getSelectedSerie(preparacion, serie)?.codemisor ?? preparacion?.caja?.codemisor;
+  return getActiveEmisorCode(preparacion)
+    ?? getSelectedSerie(preparacion, serie)?.codemisor
+    ?? preparacion?.caja?.codemisor;
+}
+
+function getActiveEmisorCode(preparacion: FacturaPreparacion | null) {
+  const emisor = preparacion?.emisores?.find((item) => Number(item.codemisor ?? item.codigo) > 0);
+  const codigo = Number(emisor?.codemisor ?? emisor?.codigo ?? 0);
+  return codigo > 0 ? codigo : null;
 }
 
 export function getSerieCodemisorFromOptions(options: DocumentSerieOption[], serie: string, preparacion: FacturaPreparacion | null) {
   const selected = getSelectedDocumentSerieOption(options, serie);
-  return selected?.codemisor ?? getSerieCodemisor(preparacion, serie);
+  return getActiveEmisorCode(preparacion) ?? selected?.codemisor ?? getSerieCodemisor(preparacion, serie);
 }
 
 function getPuntoSerieForDocument(punto: PuntoEmision, kind: DocumentSeriesKind) {

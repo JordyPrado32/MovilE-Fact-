@@ -1,5 +1,6 @@
 import { ApiError, apiRequest } from './apiClient';
 import { RETENCIONES_GENERADAS_PATH } from '../config/api';
+import type { DocumentPdfFormat } from '../utils/documentFormatting';
 
 type ApiRow = Record<string, unknown>;
 
@@ -28,6 +29,8 @@ const RETENCION_BASE_KEYS = [
   'ValorBase',
   'importeBase',
   'ImporteBase',
+  'baseTotal',
+  'BaseTotal',
 ];
 
 const RETENIDO_KEYS = [
@@ -57,6 +60,8 @@ const RETENIDO_KEYS = [
   'ValRetenido',
   'valret',
   'Valret',
+  'totalRetenido',
+  'TotalRetenido',
   'valRetencion',
   'ValRetencion',
   'impuestoRetenido',
@@ -103,6 +108,8 @@ export type RetencionListItem = {
   retenido?: number | null;
   pdfUrl?: string | null;
   xmlUrl?: string | null;
+  numeroAutorizacion?: string | null;
+  mensajeSri?: string | null;
 };
 
 export async function getRetenciones(userId: number, top = 0) {
@@ -117,8 +124,8 @@ export async function getRetenciones(userId: number, top = 0) {
   return (retenciones.length ? retenciones : rows).map(toRetencionListItem);
 }
 
-export function getRetencionPdf(userId: number, codRetencion: number) {
-  return apiRequest<{ url: string }>(`/api/retenciones/${codRetencion}/pdf?idUsuario=${userId}`);
+export function getRetencionPdf(userId: number, codRetencion: number, formato: DocumentPdfFormat = 'A4') {
+  return apiRequest<{ url: string }>(`/api/retenciones/${codRetencion}/pdf?idUsuario=${userId}&formato=${formato}`);
 }
 
 export function getRetencionXml(userId: number, codRetencion: number) {
@@ -130,6 +137,10 @@ export function enviarRetencionCorreo(userId: number, codRetencion: number) {
     method: 'POST',
     body: JSON.stringify({ idUsuario: userId, forzarReenvio: true, correosCopia: [] }),
   });
+}
+
+export function emitirRetencionSri(userId: number, codRetencion: number) {
+  return apiRequest<{ estado?: string; mensaje?: string; autorizacion?: string }>(`/api/retenciones/${codRetencion}/emitir?idUsuario=${userId}`, { method: 'POST' });
 }
 
 function normalizeRows(response: ApiRow[] | Record<string, unknown>): ApiRow[] {
@@ -183,7 +194,7 @@ function isRetencionRow(row: ApiRow) {
 
 function toRetencionListItem(row: ApiRow): RetencionListItem {
   const serie = text(pickValue(row, ['serie', 'Serie']));
-  const numero = text(pickValue(row, ['numero', 'Numero', 'numRetencion', 'NumRetencion', 'secuencial', 'Secuencial']));
+  const numero = text(pickValue(row, ['numero', 'Numero', 'numeroRetencion', 'NumeroRetencion', 'numRetencion', 'NumRetencion', 'secuencial', 'Secuencial']));
   const numeroCompleto = text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento']));
   const base = numberValue(pickValue(row, RETENCION_BASE_KEYS)) ?? sumNestedNumbers(row, RETENCION_DETAIL_KEYS, RETENCION_BASE_KEYS);
   const retenido = numberValue(pickValue(row, RETENIDO_KEYS)) ?? sumNestedNumbers(row, RETENCION_DETAIL_KEYS, RETENIDO_KEYS);
@@ -201,6 +212,8 @@ function toRetencionListItem(row: ApiRow): RetencionListItem {
     retenido,
     pdfUrl: text(pickValue(row, ['pdfUrl', 'PdfUrl', 'urlPdf', 'UrlPdf'])) || null,
     xmlUrl: text(pickValue(row, ['xmlUrl', 'XmlUrl', 'urlXml', 'UrlXml'])) || null,
+    numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'numAutorizacion', 'NumAutorizacion', 'claveAcceso', 'ClaveAcceso'])) || null,
+    mensajeSri: text(pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje', 'errorSri', 'ErrorSri', 'observacion', 'Observacion'])) || null,
   };
 }
 

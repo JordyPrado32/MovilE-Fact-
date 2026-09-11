@@ -1,6 +1,7 @@
 import { ApiError, apiRequest } from './apiClient';
 import { Cliente } from '../types/business';
-import { FacturaListItem, FacturaPreparacion, FacturaProducto, buscarFacturaClientes, buscarFacturaProductos, getFacturas } from './facturasMobileService';
+import { FacturaListItem, FacturaPreparacion, FacturaProducto, buscarFacturaClientes, buscarFacturaProductos, getFacturas, normalizeFacturaPreparacion } from './facturasMobileService';
+import type { DocumentPdfFormat } from '../utils/documentFormatting';
 
 type ApiRow = Record<string, unknown>;
 
@@ -15,6 +16,8 @@ export type GuiaRemisionListItem = {
   fechaTraslado?: string | null;
   estadoSri?: string | null;
   autorizado?: boolean | null;
+  numeroAutorizacion?: string | null;
+  mensajeSri?: string | null;
 };
 
 export type GuiaRemisionDetalleInput = {
@@ -42,11 +45,11 @@ export type GuiaRemisionGuardarInput = {
 };
 
 export function getGuiaRemisionPreparacion(userId: number) {
-  return requestWithFallback<FacturaPreparacion>([
+  return requestWithFallback<FacturaPreparacion & Record<string, unknown>>([
     `/api/guias-remision/preparacion?idUsuario=${userId}`,
     `/api/guia-remision/preparacion?idUsuario=${userId}`,
     `/api/facturas/preparacion?idUsuario=${userId}`,
-  ]);
+  ]).then(normalizeFacturaPreparacion);
 }
 
 export async function getGuiasRemision(userId: number, top = 0) {
@@ -161,11 +164,11 @@ export function emitirGuiaRemision(userId: number, sec: number) {
   return apiRequest<{ estado?: string; mensaje?: string; autorizacion?: string }>(`/api/guias-remision/${sec}/emitir?idUsuario=${userId}`, { method: 'POST' });
 }
 
-export function getGuiaRemisionPdf(userId: number, codGuia: number) {
+export function getGuiaRemisionPdf(userId: number, codGuia: number, formato: DocumentPdfFormat = 'A4') {
   return requestWithFallback<{ url: string }>([
-    `/api/guias-remision/${codGuia}/pdf?idUsuario=${userId}`,
-    `/api/guia-remision/${codGuia}/pdf?idUsuario=${userId}`,
-    `/api/guiasremision/${codGuia}/pdf?idUsuario=${userId}`,
+    `/api/guias-remision/${codGuia}/pdf?idUsuario=${userId}&formato=${formato}`,
+    `/api/guia-remision/${codGuia}/pdf?idUsuario=${userId}&formato=${formato}`,
+    `/api/guiasremision/${codGuia}/pdf?idUsuario=${userId}&formato=${formato}`,
   ]);
 }
 
@@ -252,6 +255,8 @@ function toGuiaListItem(row: ApiRow): GuiaRemisionListItem {
     fechaTraslado: text(pickValue(row, ['fechaTraslado', 'FechaTraslado', 'fechaInicioTraslado', 'FechaInicioTraslado', 'fechaInicioTransporte', 'FechaInicioTransporte', 'fechaIniTraslado', 'FechaIniTraslado', 'fechaSalida', 'FechaSalida'])) || null,
     estadoSri: text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estado', 'Estado'])) || null,
     autorizado: booleanValue(pickValue(row, ['autorizado', 'Autorizado'])),
+    numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'numAutorizacion', 'NumAutorizacion', 'claveAcceso', 'ClaveAcceso'])) || null,
+    mensajeSri: text(pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje', 'errorSri', 'ErrorSri', 'observacion', 'Observacion'])) || null,
   };
 }
 

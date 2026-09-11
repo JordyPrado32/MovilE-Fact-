@@ -1,19 +1,41 @@
 import { ApiError, apiRequest } from './apiClient';
 import { Cliente } from '../types/business';
-import { FacturaListItem, FacturaPreparacion, FacturaProducto, getFacturas } from './facturasMobileService';
+import { FacturaListItem, FacturaPreparacion, FacturaProducto, getFacturas, normalizeFacturaPreparacion } from './facturasMobileService';
+import type { DocumentPdfFormat } from '../utils/documentFormatting';
 
 type ApiRow = Record<string, unknown>;
 
 export type NotaCreditoListItem = {
   codNotaCredito: number;
+  documentoModificadoId?: number | null;
+  serie?: string | null;
   numeroNota?: string | null;
+  numeroCompleto?: string | null;
   facturaModificada?: string | null;
+  numeroDocModificado?: string | null;
   fechaSustento?: string | null;
+  fechaDocumentoModificado?: string | null;
   cliente?: string | null;
   identificacionCliente?: string | null;
+  tipoIdentificacionCliente?: string | null;
   estadoSri?: string | null;
   autorizado?: boolean | null;
+  numeroAutorizacion?: string | null;
+  fechaAutorizacion?: string | null;
+  claveAcceso?: string | null;
+  mensajeSri?: string | null;
+  subtotal?: number | null;
+  subtotalIva?: number | null;
+  subtotalCero?: number | null;
+  descuentos?: number | null;
+  iva?: number | null;
+  ice?: number | null;
+  motivo?: string | null;
   total?: number | null;
+  fechaVencimientoDocumento?: string | null;
+  saldoPendienteDocumento?: number | null;
+  xmlUrl?: string | null;
+  estado?: boolean | null;
 };
 
 export type NotaCreditoLineaInput = {
@@ -45,11 +67,11 @@ export type NotaCreditoGuardarInput = {
 };
 
 export function getNotaCreditoPreparacion(userId: number) {
-  return requestWithFallback<FacturaPreparacion>([
+  return requestWithFallback<FacturaPreparacion & Record<string, unknown>>([
     `/api/notas-credito/preparacion?idUsuario=${userId}`,
     `/api/nota-credito/preparacion?idUsuario=${userId}`,
     `/api/facturas/preparacion?idUsuario=${userId}`,
-  ]);
+  ]).then(normalizeFacturaPreparacion);
 }
 
 export async function getNotasCredito(userId: number, top = 0) {
@@ -97,22 +119,6 @@ export async function guardarNotaCredito(input: NotaCreditoGuardarInput) {
   }, 0);
 
   const notaCredito = {
-    codemisor: input.codemisor,
-    coddocumento: 4,
-    tipodocumento: 4,
-    serie: input.serie?.replace(/-/g, '') || null,
-    codfactura: input.facturaModificada?.codfactura || null,
-    codClientes: input.cliente.codcliente || null,
-    facturaModificada: input.facturaModificada?.numeroCompleto ?? input.facturaModificada?.numfactura ?? null,
-    motivo: input.motivo || null,
-    observacion: input.observacion || null,
-    estado: true,
-    autorizado: false,
-    fechaemision: new Date().toISOString(),
-    subtotal,
-    descuentos: input.detalles.reduce((sum, item) => sum + item.descuento, 0),
-    iva,
-    valortotal: subtotal + iva,
     CodEmisor: input.codemisor,
     CodClientes: input.cliente.codcliente || null,
     CodDocumento: '04',
@@ -135,16 +141,16 @@ export async function guardarNotaCredito(input: NotaCreditoGuardarInput) {
     const base = Math.max(item.cantidad * item.precio - item.descuento, 0);
     const valorIva = base * (item.tarifa / 100);
     return {
-      codproducto: item.producto.codproducto,
-      codprincipal: item.producto.codprincipal,
-      codauxiliar: item.producto.codauxiliar,
-      descripcion: item.producto.descripcion ?? 'Producto',
-      cantidad: item.cantidad,
-      preciounitario: item.precio,
-      descuento: item.descuento,
-      subtotal: base,
-      iva: item.tarifa,
-      total: base + valorIva,
+      Codproducto: item.producto.codproducto,
+      Codprincipal: item.producto.codprincipal,
+      Codauxiliar: item.producto.codauxiliar,
+      Descripcion: item.producto.descripcion ?? 'Producto',
+      Cantidad: item.cantidad,
+      Preciounitario: item.precio,
+      Descuento: item.descuento,
+      Subtotal: base,
+      Iva: Math.round(item.tarifa),
+      Total: base + valorIva,
     };
   });
 
@@ -166,8 +172,21 @@ export function emitirNotaCredito(userId: number, sec: number) {
   return apiRequest<{ estado?: string; mensaje?: string; autorizacion?: string }>(`/api/notas-credito/${sec}/emitir?idUsuario=${userId}`, { method: 'POST' });
 }
 
-export function getNotaCreditoPdf(userId: number, codNotaCredito: number) {
-  return apiRequest<{ url: string }>(`/api/notas-credito/${codNotaCredito}/pdf?idUsuario=${userId}`);
+export function emitirNotaCreditoAutomatica(userId: number, codfactura: number) {
+  return apiRequest<{
+    success?: boolean;
+    autorizada?: boolean;
+    sec?: number | null;
+    numeroNotaCredito?: string;
+    numeroCompleto?: string;
+    numeroAutorizacion?: string;
+    estadoSri?: string;
+    message?: string;
+  }>(`/api/notas-credito/automatica/${codfactura}?idUsuario=${userId}`, { method: 'POST', timeoutMs: 180000 });
+}
+
+export function getNotaCreditoPdf(userId: number, codNotaCredito: number, formato: DocumentPdfFormat = 'A4') {
+  return apiRequest<{ url: string }>(`/api/notas-credito/${codNotaCredito}/pdf?idUsuario=${userId}&formato=${formato}`);
 }
 
 export function getNotaCreditoXml(userId: number, codNotaCredito: number) {
@@ -246,16 +265,17 @@ function normalizeFacturaRows(response: ApiRow[] | Record<string, unknown>): Fac
 
 function toNotaCreditoDetalleDisponible(row: ApiRow): NotaCreditoDetalleDisponible {
   const cantidad = numberValue(pickValue(row, ['cantidad', 'Cantidad', 'cantProducto', 'CantProducto'])) ?? 0;
-  const precio = numberValue(pickValue(row, ['preciounitario', 'Preciounitario', 'precioUnitario', 'PrecioUnitario', 'precio', 'Precio'])) ?? 0;
+  const precio = numberValue(pickValue(row, ['preciounitario', 'Preciounitario', 'precioUnitario', 'PrecioUnitario', 'precioVenta', 'PrecioVenta', 'precioproducto', 'PrecioProducto', 'valorUnitario', 'ValorUnitario', 'precio', 'Precio'])) ?? 0;
   const descuento = numberValue(pickValue(row, ['descuento', 'Descuento'])) ?? 0;
-  const tarifa = numberValue(pickValue(row, ['iva', 'Iva', 'tarifa', 'Tarifa', 'tarifaIva', 'TarifaIva'])) ?? 0;
+  const tarifaRaw = numberValue(pickValue(row, ['iva', 'Iva', 'tarifa', 'Tarifa', 'tarifaIva', 'TarifaIva'])) ?? 0;
+  const tarifa = tarifaRaw > 0 && tarifaRaw <= 1 ? tarifaRaw * 100 : tarifaRaw;
 
   return {
     producto: {
       codproducto: numberValue(pickValue(row, ['codproducto', 'Codproducto', 'codProducto', 'CodProducto'])) ?? 0,
       codprincipal: text(pickValue(row, ['codprincipal', 'Codprincipal', 'codPrincipal', 'CodPrincipal', 'codigoInterno', 'CodigoInterno'])) || null,
       codauxiliar: text(pickValue(row, ['codauxiliar', 'Codauxiliar', 'codAuxiliar', 'CodAuxiliar'])) || null,
-      descripcion: text(pickValue(row, ['descripcion', 'Descripcion', 'detalle', 'Detalle'])) || null,
+      descripcion: text(pickValue(row, ['descripcion', 'Descripcion', 'descripproducto', 'Descripproducto', 'detalle', 'Detalle', 'nombre', 'Nombre'])) || null,
       precioUnitario: precio,
       tarifaIva: tarifa,
     },
@@ -270,17 +290,44 @@ function toNotaCreditoListItem(row: ApiRow): NotaCreditoListItem {
   const serie = text(pickValue(row, ['serie', 'Serie']));
   const numero = text(pickValue(row, ['numeroNota', 'NumeroNota', 'numNotaCredito', 'NumNotaCredito', 'numero', 'Numero', 'secuencial', 'Secuencial']));
   const numeroCompleto = text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento']));
+  const autorizadoRaw = pickValue(row, ['autorizado', 'Autorizado', 'estaAutorizado', 'EstaAutorizado']);
+  const autorizado = booleanValue(autorizadoRaw);
+  const estadoGenerico = pickValue(row, ['estado', 'Estado']);
+  const estadoSri = text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estadoAutorizacion', 'EstadoAutorizacion']))
+    || (typeof estadoGenerico === 'string' && !['true', 'false', '1', '0'].includes(estadoGenerico.trim().toLowerCase()) ? estadoGenerico : '')
+    || (autorizado === true ? 'AUTORIZADO' : 'PENDIENTE');
 
   return {
     codNotaCredito: numberValue(pickValue(row, ['codNotaCredito', 'CodNotaCredito', 'codnotacredito', 'codNota', 'CodNota', 'secNotaCredito', 'SecNotaCredito', 'sec', 'Sec', 'idNotaCredito', 'IdNotaCredito', 'id', 'Id'])) ?? 0,
+    documentoModificadoId: numberValue(pickValue(row, ['documentoModificadoId', 'DocumentoModificadoId', 'idDocModificado', 'IdDocModificado'])),
+    serie: serie || null,
     numeroNota: numeroCompleto || [serie, numero].filter(Boolean).join('-') || numero || null,
-    facturaModificada: text(pickValue(row, ['facturaModificada', 'FacturaModificada', 'numeroFactura', 'NumeroFactura', 'factura', 'Factura'])) || null,
-    fechaSustento: text(pickValue(row, ['fechaSustento', 'FechaSustento', 'fechaEmision', 'FechaEmision', 'fechaemision', 'Fechaemision', 'fechaDocumento', 'FechaDocumento', 'fechaFactura', 'FechaFactura', 'fecha', 'Fecha', 'fechaCreacion', 'FechaCreacion', 'fechaAutorizacion', 'FechaAutorizacion'])) || null,
+    numeroCompleto: numeroCompleto || [serie, numero].filter(Boolean).join('-') || numero || null,
+    facturaModificada: text(pickValue(row, ['facturaModificada', 'FacturaModificada', 'numeroDocModificado', 'NumeroDocModificado', 'numeroFactura', 'NumeroFactura', 'factura', 'Factura'])) || null,
+    numeroDocModificado: text(pickValue(row, ['numeroDocModificado', 'NumeroDocModificado', 'facturaModificada', 'FacturaModificada', 'numeroFactura', 'NumeroFactura', 'factura', 'Factura'])) || null,
+    fechaSustento: text(pickValue(row, ['fechaSustento', 'FechaSustento', 'fechaDocumentoModificado', 'FechaDocumentoModificado', 'fechaEmision', 'FechaEmision', 'fechaemision', 'Fechaemision', 'fechaDocumento', 'FechaDocumento', 'fechaFactura', 'FechaFactura', 'fecha', 'Fecha', 'fechaCreacion', 'FechaCreacion'])) || null,
+    fechaDocumentoModificado: text(pickValue(row, ['fechaDocumentoModificado', 'FechaDocumentoModificado', 'fechaSustento', 'FechaSustento', 'fechaFactura', 'FechaFactura'])) || null,
     cliente: text(pickValue(row, ['cliente', 'Cliente', 'nombreCliente', 'NombreCliente', 'razonSocial', 'RazonSocial'])) || null,
     identificacionCliente: text(pickValue(row, ['identificacionCliente', 'IdentificacionCliente', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc'])) || null,
-    estadoSri: text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estado', 'Estado'])) || null,
-    autorizado: booleanValue(pickValue(row, ['autorizado', 'Autorizado', 'estaAutorizado', 'EstaAutorizado'])),
+    tipoIdentificacionCliente: text(pickValue(row, ['tipoIdentificacionCliente', 'TipoIdentificacionCliente'])) || null,
+    estadoSri,
+    autorizado,
+    numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'numAutorizacion', 'NumAutorizacion'])) || null,
+    fechaAutorizacion: text(pickValue(row, ['fechaAutorizacion', 'FechaAutorizacion'])) || null,
+    claveAcceso: text(pickValue(row, ['claveAcceso', 'ClaveAcceso', 'codClave', 'CodClave'])) || null,
+    mensajeSri: text(pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje', 'errorSri', 'ErrorSri', 'observacion', 'Observacion'])) || null,
+    subtotal: numberValue(pickValue(row, ['subtotal', 'Subtotal'])),
+    subtotalIva: numberValue(pickValue(row, ['subtotalIva', 'SubtotalIva'])),
+    subtotalCero: numberValue(pickValue(row, ['subtotalCero', 'SubtotalCero'])),
+    descuentos: numberValue(pickValue(row, ['descuentos', 'Descuentos', 'descuento', 'Descuento'])),
+    iva: numberValue(pickValue(row, ['iva', 'Iva', 'valorIva', 'ValorIva'])),
+    ice: numberValue(pickValue(row, ['ice', 'Ice', 'valorIce', 'ValorIce'])),
+    motivo: text(pickValue(row, ['motivo', 'Motivo'])) || null,
     total: numberValue(pickValue(row, ['total', 'Total', 'valortotal', 'ValorTotal', 'valorTotal', 'totalNotaCredito', 'TotalNotaCredito', 'totalComprobante', 'TotalComprobante', 'totalDocumento', 'TotalDocumento', 'montoTotal', 'MontoTotal', 'importeTotal', 'ImporteTotal', 'valorDocumento', 'ValorDocumento', 'totalGeneral', 'TotalGeneral', 'monto', 'Monto', 'importe', 'Importe', 'valor', 'Valor'])),
+    fechaVencimientoDocumento: text(pickValue(row, ['fechaVencimientoDocumento', 'FechaVencimientoDocumento'])) || null,
+    saldoPendienteDocumento: numberValue(pickValue(row, ['saldoPendienteDocumento', 'SaldoPendienteDocumento'])),
+    xmlUrl: text(pickValue(row, ['xmlUrl', 'XmlUrl'])) || null,
+    estado: booleanValue(pickValue(row, ['estado', 'Estado', 'activo', 'Activo'])),
   };
 }
 

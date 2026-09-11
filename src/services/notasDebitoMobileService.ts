@@ -1,6 +1,7 @@
 import { ApiError, apiRequest } from './apiClient';
 import { Cliente } from '../types/business';
-import { FacturaListItem, FacturaPreparacion, getFacturas } from './facturasMobileService';
+import { FacturaListItem, FacturaPreparacion, getFacturas, normalizeFacturaPreparacion } from './facturasMobileService';
+import type { DocumentPdfFormat } from '../utils/documentFormatting';
 
 type ApiRow = Record<string, unknown>;
 
@@ -13,6 +14,8 @@ export type NotaDebitoListItem = {
   identificacionCliente?: string | null;
   estadoSri?: string | null;
   autorizado?: boolean | null;
+  numeroAutorizacion?: string | null;
+  mensajeSri?: string | null;
   total?: number | null;
 };
 
@@ -42,11 +45,11 @@ export type NotaDebitoGuardarInput = {
 };
 
 export function getNotaDebitoPreparacion(userId: number) {
-  return requestWithFallback<FacturaPreparacion>([
+  return requestWithFallback<FacturaPreparacion & Record<string, unknown>>([
     `/api/notas-debito/preparacion?idUsuario=${userId}`,
     `/api/nota-debito/preparacion?idUsuario=${userId}`,
     `/api/facturas/preparacion?idUsuario=${userId}`,
-  ]);
+  ]).then(normalizeFacturaPreparacion);
 }
 
 export async function getNotasDebito(userId: number, top = 0) {
@@ -85,8 +88,8 @@ export async function getNotaDebitoDetallesFactura(userId: number, codfactura: n
   const response = await apiRequest<ApiRow[] | Record<string, unknown>>(`/api/notas-debito/facturas/${codfactura}/detalles?idUsuario=${userId}`);
   return normalizeRows(response).map((row) => ({
     descripcion: text(pickValue(row, ['descripcion', 'Descripcion', 'detalle', 'Detalle'])) || 'Detalle nota de debito',
-    precio: numberValue(pickValue(row, ['preciounitario', 'Preciounitario', 'precioUnitario', 'PrecioUnitario', 'subtotal', 'Subtotal', 'precio', 'Precio'])) ?? 0,
-    tarifa: numberValue(pickValue(row, ['iva', 'Iva', 'tarifaIva', 'TarifaIva', 'tarifa', 'Tarifa'])) ?? 0,
+    precio: numberValue(pickValue(row, ['preciounitario', 'Preciounitario', 'precioUnitario', 'PrecioUnitario', 'precioVenta', 'PrecioVenta', 'precioproducto', 'PrecioProducto', 'valorUnitario', 'ValorUnitario', 'subtotal', 'Subtotal', 'precio', 'Precio'])) ?? 0,
+    tarifa: percentageValue(pickValue(row, ['iva', 'Iva', 'tarifaIva', 'TarifaIva', 'tarifa', 'Tarifa'])) ?? 0,
     valorIce: numberValue(pickValue(row, ['valorIce', 'ValorIce'])) ?? 0,
   })).filter((item) => item.precio > 0);
 }
@@ -146,8 +149,8 @@ export function emitirNotaDebito(userId: number, sec: number) {
   return apiRequest<{ estado?: string; mensaje?: string; autorizacion?: string }>(`/api/notas-debito/${sec}/emitir?idUsuario=${userId}`, { method: 'POST' });
 }
 
-export function getNotaDebitoPdf(userId: number, codNotaDebito: number) {
-  return apiRequest<{ url: string }>(`/api/notas-debito/${codNotaDebito}/pdf?idUsuario=${userId}`);
+export function getNotaDebitoPdf(userId: number, codNotaDebito: number, formato: DocumentPdfFormat = 'A4') {
+  return apiRequest<{ url: string }>(`/api/notas-debito/${codNotaDebito}/pdf?idUsuario=${userId}&formato=${formato}`);
 }
 
 export function getNotaDebitoXml(userId: number, codNotaDebito: number) {
@@ -219,6 +222,8 @@ function toNotaDebitoListItem(row: ApiRow): NotaDebitoListItem {
     identificacionCliente: text(pickValue(row, ['identificacionCliente', 'IdentificacionCliente', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc'])) || null,
     estadoSri: text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estado', 'Estado'])) || null,
     autorizado: booleanValue(pickValue(row, ['autorizado', 'Autorizado', 'estaAutorizado', 'EstaAutorizado'])),
+    numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'numAutorizacion', 'NumAutorizacion', 'claveAcceso', 'ClaveAcceso'])) || null,
+    mensajeSri: text(pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje', 'errorSri', 'ErrorSri', 'observacion', 'Observacion'])) || null,
     total: numberValue(pickValue(row, ['total', 'Total', 'valortotal', 'ValorTotal', 'valorTotal', 'totalNotaDebito', 'TotalNotaDebito', 'totalComprobante', 'TotalComprobante', 'totalDocumento', 'TotalDocumento', 'montoTotal', 'MontoTotal', 'importeTotal', 'ImporteTotal', 'valorDocumento', 'ValorDocumento', 'totalGeneral', 'TotalGeneral', 'monto', 'Monto', 'importe', 'Importe', 'valor', 'Valor'])),
   };
 }
@@ -256,6 +261,11 @@ function numberValue(value: unknown) {
   }
   const number = Number(normalized);
   return Number.isFinite(number) ? number : null;
+}
+
+function percentageValue(value: unknown) {
+  const parsed = numberValue(value);
+  return parsed !== null && parsed > 0 && parsed <= 1 ? parsed * 100 : parsed;
 }
 
 function booleanValue(value: unknown) {

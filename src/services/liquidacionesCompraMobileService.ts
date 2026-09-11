@@ -1,6 +1,7 @@
 import { ApiError, apiRequest } from './apiClient';
 import { Cliente } from '../types/business';
-import { FacturaPreparacion, FacturaProducto, buscarFacturaClientes, buscarFacturaProductos } from './facturasMobileService';
+import { FacturaPreparacion, FacturaProducto, buscarFacturaClientes, buscarFacturaProductos, normalizeFacturaPreparacion } from './facturasMobileService';
+import type { DocumentPdfFormat } from '../utils/documentFormatting';
 
 type ApiRow = Record<string, unknown>;
 
@@ -12,6 +13,8 @@ export type LiquidacionCompraListItem = {
   identificacionProveedor?: string | null;
   estadoSri?: string | null;
   autorizado?: boolean | null;
+  numeroAutorizacion?: string | null;
+  mensajeSri?: string | null;
   retencionDisponible?: boolean | null;
   base?: number | null;
   iva?: number | null;
@@ -44,7 +47,7 @@ export function getLiquidacionCompraPreparacion(userId: number) {
     `/api/liquidacion-compra/preparacion?idUsuario=${userId}`,
     `/api/compras/liquidaciones/preparacion?idUsuario=${userId}`,
     `/api/facturas/preparacion?idUsuario=${userId}`,
-  ]).then(normalizeLiquidacionPreparacion);
+  ]).then(normalizeLiquidacionPreparacion).then((response) => normalizeFacturaPreparacion(response as FacturaPreparacion & Record<string, unknown>));
 }
 
 export async function getLiquidacionesCompra(userId: number, top = 0) {
@@ -144,8 +147,8 @@ export async function guardarLiquidacionCompra(input: LiquidacionCompraGuardarIn
   return { mensaje: response.mensaje ?? 'Liquidacion guardada correctamente.', codLiquidacion, numeroComprobante: null };
 }
 
-export function getLiquidacionCompraPdf(userId: number, codLiquidacion: number) {
-  return apiRequest<{ url: string }>(`/api/liquidaciones-compra/${codLiquidacion}/pdf?idUsuario=${userId}`);
+export function getLiquidacionCompraPdf(userId: number, codLiquidacion: number, formato: DocumentPdfFormat = 'A4') {
+  return apiRequest<{ url: string }>(`/api/liquidaciones-compra/${codLiquidacion}/pdf?idUsuario=${userId}&formato=${formato}`);
 }
 
 export function getLiquidacionCompraXml(userId: number, codLiquidacion: number) {
@@ -254,6 +257,8 @@ function toLiquidacionListItem(row: ApiRow): LiquidacionCompraListItem {
     identificacionProveedor: text(pickValue(row, ['identificacionProveedor', 'IdentificacionProveedor', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc'])) || null,
     estadoSri: text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estado', 'Estado'])) || null,
     autorizado: booleanValue(pickValue(row, ['autorizado', 'Autorizado'])),
+    numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'numAutorizacion', 'NumAutorizacion', 'claveAcceso', 'ClaveAcceso'])) || null,
+    mensajeSri: text(pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje', 'errorSri', 'ErrorSri', 'observacion', 'Observacion'])) || null,
     retencionDisponible: booleanValue(pickValue(row, ['retencionDisponible', 'RetencionDisponible', 'tieneRetencion', 'TieneRetencion'])),
     base: numberValue(pickValue(row, ['base', 'Base', 'baseImponible', 'BaseImponible', 'subtotal', 'Subtotal', 'subtotalBase', 'SubtotalBase', 'subtotalSinImpuestos', 'SubtotalSinImpuestos', 'totalSinImpuestos', 'TotalSinImpuestos', 'baseGravada', 'BaseGravada', 'valorBase', 'ValorBase', 'importeBase', 'ImporteBase'])),
     iva: numberValue(pickValue(row, ['iva', 'Iva', 'IVA', 'valorIva', 'ValorIva', 'valorIVA', 'ValorIVA', 'totalIva', 'TotalIva', 'totalIVA', 'TotalIVA', 'importeIva', 'ImporteIva'])),

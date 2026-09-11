@@ -14,10 +14,12 @@ export function PortalHeaderAvatar({ service = 'efact' }: { service?: 'efact' | 
   return <Image source={source} style={styles.portalHeaderLogo} />;
 }
 
-export function PortalBottomNav({ bottomInset, activeView, mode = 'efact', onServices, onHome, onNew, onFirma, onProfile, onMenu, onSolicitudes, onFirmar, onValidar }: {
+export function PortalBottomNav({ bottomInset, activeView, mode = 'efact', voiceMode = false, voiceAvailable = false, onServices, onHome, onNew, onFirma, onProfile, onMenu, onSolicitudes, onFirmar, onValidar, onVoicePressIn, onVoicePressOut }: {
   bottomInset: number;
   activeView: PortalView;
   mode?: 'efact' | 'erubrica';
+  voiceMode?: boolean;
+  voiceAvailable?: boolean;
   onServices: () => void;
   onHome: () => void;
   onNew: () => void;
@@ -27,16 +29,35 @@ export function PortalBottomNav({ bottomInset, activeView, mode = 'efact', onSer
   onSolicitudes?: () => void;
   onFirmar?: () => void;
   onValidar?: () => void;
+  onVoicePressIn?: () => void;
+  onVoicePressOut?: () => void;
 }) {
   const erubrica = mode === 'erubrica';
   const accentColor = erubrica ? ERUBRICA_COLORS.primary : EFACT_THEME.colors.primary;
   return <View style={[styles.portalBottomNav, erubrica && styles.portalBottomNavERubrica, { bottom: Math.max(8, bottomInset + 4) }]}>
     <PortalTabButton accentColor={accentColor} active={activeView === 'portal'} icon="grid" label="Portal" onPress={onServices} />
     {erubrica ? <PortalTabButton accentColor={accentColor} active={activeView === 'e-rubrica-inicio'} icon="home" label="Inicio" onPress={onHome} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'dashboard'} icon="home" label="Inicio" onPress={onHome} />}
-    {erubrica ? <PortalTabButton accentColor={accentColor} active={false} icon="menu" label="Menú" featured onPress={onMenu ?? onFirmar ?? onNew} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'nueva-factura'} icon="new" label="Nuevo" featured onPress={onNew} />}
+    {erubrica ? <PortalTabButton accentColor={accentColor} active={false} icon="menu" label="Menú" featured onPress={onMenu ?? onFirmar ?? onNew} /> : voiceMode ? <VoicePortalTabButton accentColor={accentColor} available={voiceAvailable} onPressIn={onVoicePressIn} onPressOut={onVoicePressOut} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'nueva-factura'} icon="new" label="Nuevo" featured onPress={onNew} />}
     {erubrica ? <PortalTabButton accentColor={accentColor} active={false} icon="settings" label="Config." onPress={onFirma} /> : <PortalTabButton accentColor={accentColor} active={activeView === 'firma'} icon="signature" label="Firma" onPress={onFirma} />}
     <PortalTabButton accentColor={accentColor} active={activeView === 'perfil' || activeView === 'perfil-e-rubrica'} icon="profile" label="Perfil" onPress={onProfile} />
   </View>;
+}
+
+function VoicePortalTabButton({ accentColor, available, onPressIn, onPressOut }: { accentColor: string; available: boolean; onPressIn?: () => void; onPressOut?: () => void }) {
+  return <Pressable
+    hitSlop={6}
+    accessibilityRole="button"
+    accessibilityLabel={available ? 'Mantén presionado para hablar con Númi' : 'Reconocimiento de voz no disponible'}
+    disabled={!available}
+    style={styles.portalTabButton}
+    onPressIn={onPressIn}
+    onPressOut={onPressOut}
+  >
+    <View style={[styles.portalTabIcon, styles.portalTabIconFeatured, !available && { opacity: 0.45 }]}>
+      <MaterialCommunityIcons name="microphone-outline" size={25} color="#FFFFFF" />
+    </View>
+    <Text style={[styles.portalTabText, styles.portalTabTextFeatured, { color: accentColor }]} numberOfLines={1}>Hablar</Text>
+  </Pressable>;
 }
 
 function PortalTabButton({ accentColor, active, featured, icon, label, onPress }: { accentColor: string; active: boolean; featured?: boolean; icon: PortalIcon | 'shield-check' | 'menu'; label: string; onPress: () => void }) {
