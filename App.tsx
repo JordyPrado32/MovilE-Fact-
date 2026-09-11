@@ -3026,7 +3026,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   }, [activeView, authorizedViews, canUseEfact, canUseERubrica, canUseFirma, canUsePortal, loadingMenus]);
 
   useEffect(() => {
-    if (!userId || !authorizedViews.has('clientes')) return;
+    if (!userId || !authorizedViews.has('clientes') || activeView !== 'clientes') return;
 
     let mounted = true;
     setLoadingClientes(true);
@@ -3047,7 +3047,27 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     return () => {
       mounted = false;
     };
-  }, [authorizedViews, reloadKey, userId]);
+  }, [activeView, authorizedViews, reloadKey, userId]);
+
+  useEffect(() => {
+    if (!userId || !authorizedViews.has('clientes') || activeView !== 'clientes') return;
+
+    let mounted = true;
+    const refreshClientes = async () => {
+      try {
+        const data = await getClientes(userId);
+        if (mounted) setClientes(data);
+      } catch {
+        // Preserve the last visible list when a background refresh fails.
+      }
+    };
+
+    const refreshInterval = setInterval(refreshClientes, 20_000);
+    return () => {
+      mounted = false;
+      clearInterval(refreshInterval);
+    };
+  }, [activeView, authorizedViews, userId]);
 
   useEffect(() => {
     if (!authorizedViews.has('clientes') || clienteLookups) return;
@@ -6183,17 +6203,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     };
   };
   const efactDrawerMenu: DrawerMenuNode[] = [
-    {
-      ...menuNode('clientes', 'Clientes / Proveedores'),
-      children: [
-        {
-          key: 'nuevo-cliente',
-          label: 'Nuevo cliente',
-          view: 'nuevo-cliente',
-          disabled: !authorizedViews.has('clientes'),
-        },
-      ],
-    },
+    menuNode('clientes', 'Clientes / Proveedores'),
     {
       key: 'facturas',
       label: 'Facturas',
