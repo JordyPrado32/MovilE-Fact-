@@ -345,7 +345,7 @@ function toFacturaListItem(row: ApiRow): FacturaListItem {
     total: numberValue(pickValue(row, ['total', 'Total', 'valortotal', 'ValorTotal', 'valorTotal', 'totalFactura', 'TotalFactura', 'totalComprobante', 'TotalComprobante', 'totalDocumento', 'TotalDocumento', 'montoTotal', 'MontoTotal', 'importeTotal', 'ImporteTotal', 'valorDocumento', 'ValorDocumento', 'totalGeneral', 'TotalGeneral', 'monto', 'Monto', 'importe', 'Importe'])),
     totalAbonado: numberValue(pickValue(row, ['totalAbonado', 'TotalAbonado', 'abonado', 'Abonado', 'valorAbonado', 'ValorAbonado', 'montoAbonado', 'MontoAbonado'])),
     saldoPendiente: numberValue(pickValue(row, ['saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo', 'valorPendiente', 'ValorPendiente', 'montoPendiente', 'MontoPendiente'])),
-    tipopago: text(pickValue(row, ['tipopago', 'TipoPago', 'tipoPago', 'formaPago', 'FormaPago'])) || null,
+    tipopago: text(pickValue(row, ['tipopago', 'TipoPago', 'tipoPago', 'formaPago', 'FormaPago', 'descripcionFormaPago', 'DescripcionFormaPago', 'nombreFormaPago', 'NombreFormaPago', 'tipoPagoDescripcion', 'TipoPagoDescripcion'])) || null,
     estadoPago: text(pickValue(row, ['estadoPago', 'EstadoPago'])) || null,
     cliente: text(pickValue(row, ['cliente', 'Cliente', 'nombreCliente', 'NombreCliente', 'razonSocial', 'RazonSocial', 'nombrerazonsocial', 'NombreRazonSocial'])) || null,
     identificacionCliente: text(pickValue(row, ['identificacionCliente', 'IdentificacionCliente', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc', 'cedula', 'Cedula'])) || null,

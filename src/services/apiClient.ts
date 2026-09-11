@@ -17,6 +17,10 @@ export function setSessionToken(token?: string | null) {
   if (!sessionToken) authSessionCookie = null;
 }
 
+export function getSessionToken() {
+  return sessionToken;
+}
+
 export class ApiError extends Error {
   status: number;
 

@@ -4927,6 +4927,12 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 17,
   },
+  invoiceSearchHint: {
+    color: '#6F7F90',
+    fontSize: 10,
+    fontWeight: '800',
+    lineHeight: 14,
+  },
   invoiceSteps: {
     backgroundColor: '#FFFFFF',
     borderColor: '#DCE8F1',

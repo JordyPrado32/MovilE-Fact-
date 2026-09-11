@@ -31,7 +31,7 @@ import {
 import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ApiError, setSessionToken } from './src/services/apiClient';
+import { ApiError, getSessionToken, setSessionToken } from './src/services/apiClient';
 import { sendBotMessage } from './src/services/botService';
 import { API_BASE_URL } from './src/config/api';
 import { AdminMobileItem, getAdminMobileModule } from './src/services/adminMobileService';
@@ -1494,7 +1494,7 @@ function GlobalWorkspaceHeader({
           <PortalHeaderAvatar service={erubricaMode ? 'erubrica' : 'efact'} />
           <View style={styles.unifiedTitleBlock}>
             <Text style={styles.unifiedTitle} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
-            <Text style={[styles.unifiedSubtitle, erubricaMode && styles.erubricaHeaderSubtitle]} numberOfLines={1}>{subtitle}</Text>
+            {subtitle ? <Text style={[styles.unifiedSubtitle, erubricaMode && styles.erubricaHeaderSubtitle]} numberOfLines={1}>{subtitle}</Text> : null}
           </View>
         </View>
         {!portalMode ? (
@@ -2418,7 +2418,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const canUseEfact = authorizedViews.has('dashboard');
   const services = useMemo(() => getServicesFromUser(currentUser, menus), [currentUser, menus]);
   const canUseERubrica = isSuperAdmin(currentUser) || authorizedViews.has('e-rubrica') || services.some(isERubricaService);
-  const canUsePortal = isSuperAdmin(currentUser) || services.length > 0;
+  const canUseFirma = userId > 0;
+  const canUsePortal = userId > 0;
   const portalFirstName = getDisplayFirstName(currentUser, perfilData?.perfil);
   const portalAvatarUrl = getProfileAvatarUrl(currentUser, perfilData?.perfil);
   const portalServiceCards = useMemo(() => [
@@ -2725,13 +2726,20 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           const formaPago = data.formasPago?.[0]?.codigo == null ? '' : String(data.formasPago[0].codigo);
           setFacturaForm((current) => ({ ...current, serie, formaPago }));
         })
-      : Promise.all([
+      : Promise.allSettled([
           getFacturas(catalogUserId, 0),
           getNotasCredito(catalogUserId, 0),
-        ]).then(([facturas, notasCredito]) => {
+        ]).then(([facturasResult, notasCreditoResult]) => {
           if (!mounted) return;
-          setFacturasList(facturas ?? []);
-          setNotasCreditoList(notasCredito ?? []);
+          if (facturasResult.status === 'rejected') throw facturasResult.reason;
+
+          setFacturasList(facturasResult.value ?? []);
+          if (notasCreditoResult.status === 'fulfilled') {
+            setNotasCreditoList(notasCreditoResult.value ?? []);
+          } else {
+            setNotasCreditoList([]);
+            setDirectoryMessage({ type: 'info', text: 'Las facturas se cargaron, pero no se pudieron consultar las notas de credito.' });
+          }
         });
 
     request
@@ -2983,11 +2991,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       activeView !== 'no-autorizado' &&
       activeView !== 'nuevo-cliente' &&
       activeView !== 'nuevo-producto' &&
-       !(['e-rubrica', 'perfil-e-rubrica'].includes(activeView) ? canUseERubrica : authorizedViews.has(activeView))
+       !(['e-rubrica', 'perfil-e-rubrica'].includes(activeView) ? canUseERubrica : activeView === 'firma' ? canUseFirma : authorizedViews.has(activeView))
     ) {
       setActiveView('no-autorizado');
     }
-  }, [activeView, authorizedViews, canUseEfact, canUseERubrica, canUsePortal, loadingMenus]);
+  }, [activeView, authorizedViews, canUseEfact, canUseERubrica, canUseFirma, canUsePortal, loadingMenus]);
 
   useEffect(() => {
     if (!userId || !authorizedViews.has('clientes')) return;
@@ -3280,7 +3288,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   useEffect(() => {
     const isInsideEfact = activeView !== 'portal' && activeView !== 'e-rubrica' && activeView !== 'perfil-e-rubrica' && activeView !== 'no-autorizado';
-    if ((!authorizedViews.has('firma') && !authorizedViews.has('emisor')) || !isInsideEfact) return;
+    if ((!canUseFirma && !authorizedViews.has('emisor')) || !isInsideEfact) return;
 
     let mounted = true;
     setLoadingFirma(true);
@@ -3330,7 +3338,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     return () => {
       mounted = false;
     };
-  }, [activeView, authorizedViews, emisores, reloadKey]);
+  }, [activeView, authorizedViews, canUseFirma, emisores, reloadKey]);
 
   useEffect(() => {
     if (!clienteForm.pais) {
@@ -5072,7 +5080,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setActiveView('cuentas-cobrar');
   };
 
-  const saveNuevaNotaCredito = async () => {
+  const saveNuevaNotaCredito = async (previewAfterSave = false) => {
     if (!catalogUserId) return;
     if (!notaCreditoFactura) {
       setDirectoryMessage({ type: 'error', text: 'Selecciona la factura que será modificada para generar la nota de crédito.' });
@@ -5119,6 +5127,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         text: `${result.mensaje ?? 'Nota de credito guardada.'} ${getSriEmissionMessage('Nota de crédito', sriResult.sri?.estado, sriResult.failed)}`.trim(),
       });
       setReloadKey((value) => value + 1);
+      if (previewAfterSave && secNotaCredito) {
+        await openOrDownloadPdf(() => getNotaCreditoPdf(catalogUserId, secNotaCredito, 'A4'), 'nota-credito.pdf');
+      }
       if (!sriResult.failed && sriResult.sri?.estado?.toUpperCase() === 'AUTORIZADO') {
         showAuthorizationAlert('Nota de credito', 'mis-notas-credito', 'Mis Notas de Credito');
       }
@@ -6012,6 +6023,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       return;
     }
 
+    if (view === 'firma' && canUseFirma) {
+      setActiveView(view);
+      return;
+    }
+
     if (view === 'nuevo-cliente' && authorizedViews.has('clientes')) {
       setActiveView(view);
       return;
@@ -6237,8 +6253,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       const response = await loader();
       const url = getDocumentAssetUrl(response);
       if (!url) throw new Error('empty-url');
-      const target = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}preview-${Date.now()}-${fileName.replace(/[^a-z0-9._-]/gi, '-')}`;
-      const download = await FileSystem.downloadAsync(url, target);
+      const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      if (!baseDirectory) throw new Error('missing-directory');
+      const target = `${baseDirectory}preview-${Date.now()}-${fileName.replace(/[^a-z0-9._-]/gi, '-')}`;
+      const token = getSessionToken();
+      const download = await FileSystem.downloadAsync(url, target, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
       setPdfPreview({ uri: download.uri, name: fileName });
     } catch (error) {
       setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo cargar la previsualización del PDF.' });
@@ -6252,7 +6271,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       const safeName = buildDeviceFileName(fileName, '.pdf');
       const cacheDirectory = FileSystem.cacheDirectory;
       if (!cacheDirectory) throw new Error('missing-directory');
-      const download = await FileSystem.downloadAsync(url, `${cacheDirectory}${safeName}`);
+      const token = getSessionToken();
+      const download = await FileSystem.downloadAsync(url, `${cacheDirectory}${safeName}`, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
       const savedUri = await saveFileToDevice(download.uri, safeName, 'application/pdf');
       setDirectoryMessage({
         type: savedUri ? 'success' : 'info',
@@ -6271,18 +6291,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     try {
       if (Platform.OS === 'android') {
         const contentUri = await FileSystem.getContentUriAsync(pdfPreview.uri);
-        try {
-          const IntentLauncher = require('expo-intent-launcher') as typeof import('expo-intent-launcher');
-          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-            data: contentUri,
-            flags: 1,
-            type: 'application/pdf',
-          });
-          return;
-        } catch {
-          await Linking.openURL(contentUri);
-          return;
-        }
+        await Linking.openURL(contentUri);
+        return;
       }
 
       await Linking.openURL(pdfPreview.uri);
@@ -6429,7 +6439,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       <View style={styles.workspaceChrome}>
         <GlobalWorkspaceHeader
           title={getWorkspaceTitle(activeView)}
-          subtitle={activeView === 'firma' ? 'Gestiona tu firma y certificados' : activeView === 'portal' ? 'Selecciona tu servicio' : activeView === 'e-rubrica' ? 'Firma y valida tus documentos' : activeView === 'perfil-e-rubrica' ? 'Mi cuenta de firma electronica' : 'Resumen y accesos de tu sistema'}
+          subtitle={activeView === 'firma' ? 'Gestiona tu firma y certificados' : activeView === 'portal' ? 'Selecciona tu servicio' : activeView === 'e-rubrica' ? 'Firma y valida tus documentos' : activeView === 'perfil-e-rubrica' ? 'Mi cuenta de firma electronica' : ''}
           unreadNotifications={unreadNotifications}
           documentPlan={documentPlan}
           firmaSummary={firmaSummary}
@@ -7258,6 +7268,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onClear={clearNotaCreditoForm}
                 onHistory={() => openView('mis-notas-credito')}
                 onSave={saveNuevaNotaCredito}
+                onPreview={() => saveNuevaNotaCredito(true)}
               />
             ) : null}
 
@@ -7996,19 +8007,40 @@ function pickRecordValue(row: Record<string, unknown> | null | undefined, keys: 
 
 function buildClienteFromFactura(factura: FacturaListItem, cliente?: Cliente | null, facturaRow?: Record<string, unknown> | null): Cliente {
   const clienteRow = isPlainRecord(cliente) ? cliente as Cliente & Record<string, unknown> : null;
+  const facturaClienteRow = isPlainRecord(pickRecordValue(facturaRow, ['cliente', 'Cliente']))
+    ? pickRecordValue(facturaRow, ['cliente', 'Cliente']) as Record<string, unknown>
+    : null;
+  const valueFromClienteOrFactura = (keys: string[]) => pickRecordValue(clienteRow, keys) ?? pickRecordValue(facturaClienteRow, keys) ?? pickRecordValue(facturaRow, keys);
   return {
     ...(cliente ?? {}),
-    codcliente: numberValue(cliente?.codcliente ?? pickRecordValue(clienteRow, ['codcliente', 'Codcliente', 'CodCliente']) ?? pickRecordValue(facturaRow, ['codclientes', 'Codclientes', 'codClientes', 'CodClientes'])),
-    nombrerazonsocial: (cliente?.nombrerazonsocial ?? textValue(pickRecordValue(clienteRow, ['nombrerazonsocial', 'NombreRazonSocial', 'razonSocial', 'RazonSocial']) ?? factura.cliente)) || null,
-    numeroidentificacion: (cliente?.numeroidentificacion ?? textValue(pickRecordValue(clienteRow, ['numeroidentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc']) ?? factura.identificacionCliente)) || null,
-    tipoidentificacion: getTipoIdentificacionLabel(cliente?.tipoidentificacion ?? textValue(pickRecordValue(clienteRow, ['tipoidentificacion', 'Tipoidentificacion', 'tipoIdentificacion', 'TipoIdentificacion']))) || null,
-    direccion: (cliente?.direccion ?? textValue(pickRecordValue(clienteRow, ['direccion', 'Direccion']))) || null,
-    celular: (cliente?.celular ?? textValue(pickRecordValue(clienteRow, ['celular', 'Celular', 'telefono', 'Telefono']))) || null,
-    telefonoconvencional: (cliente?.telefonoconvencional ?? textValue(pickRecordValue(clienteRow, ['telefonoconvencional', 'TelefonoConvencional']))) || null,
-    correo: (cliente?.correo ?? textValue(pickRecordValue(clienteRow, ['correo', 'Correo', 'email', 'Email']))) || null,
-    tipoCliente: numberValue(cliente?.tipoCliente ?? pickRecordValue(clienteRow, ['tipoCliente', 'TipoCliente', 'tclCodigo', 'TclCodigo']) ?? pickRecordValue(facturaRow, ['tipoCliente', 'TipoCliente', 'tclCodigo', 'TclCodigo'])),
-    oblgconta: (cliente?.oblgconta ?? textValue(pickRecordValue(clienteRow, ['oblgconta', 'Oblgconta', 'obligadoContabilidad', 'ObligadoContabilidad']))) || null,
+    codcliente: numberValue(cliente?.codcliente ?? valueFromClienteOrFactura(['codcliente', 'Codcliente', 'CodCliente', 'codclientes', 'Codclientes', 'codClientes', 'CodClientes'])),
+    nombrerazonsocial: (cliente?.nombrerazonsocial ?? textValue(valueFromClienteOrFactura(['nombrerazonsocial', 'NombreRazonSocial', 'razonSocial', 'RazonSocial', 'nombreCliente', 'NombreCliente']) ?? factura.cliente)) || null,
+    numeroidentificacion: (cliente?.numeroidentificacion ?? textValue(valueFromClienteOrFactura(['numeroidentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc', 'identificacionCliente', 'IdentificacionCliente']) ?? factura.identificacionCliente)) || null,
+    tipoidentificacion: getTipoIdentificacionLabel(cliente?.tipoidentificacion ?? textValue(valueFromClienteOrFactura(['tipoidentificacion', 'Tipoidentificacion', 'tipoIdentificacion', 'TipoIdentificacion']))) || null,
+    direccion: (cliente?.direccion ?? textValue(valueFromClienteOrFactura(['direccion', 'Direccion', 'direccionCliente', 'DireccionCliente']))) || null,
+    celular: (cliente?.celular ?? textValue(valueFromClienteOrFactura(['celular', 'Celular', 'telefono', 'Telefono']))) || null,
+    telefonoconvencional: (cliente?.telefonoconvencional ?? textValue(valueFromClienteOrFactura(['telefonoconvencional', 'TelefonoConvencional']))) || null,
+    correo: (cliente?.correo ?? textValue(valueFromClienteOrFactura(['correo', 'Correo', 'email', 'Email']))) || null,
+    tipoCliente: normalizeTipoCliente(cliente?.tipoCliente ?? valueFromClienteOrFactura(['tipoCliente', 'TipoCliente', 'tipoClienteCodigo', 'TipoClienteCodigo', 'tclCodigo', 'TclCodigo', 'tipoClienteDescripcion', 'TipoClienteDescripcion'])),
+    oblgconta: normalizeObligadoContabilidad(cliente?.oblgconta ?? valueFromClienteOrFactura(['oblgconta', 'Oblgconta', 'obligadoContabilidad', 'ObligadoContabilidad', 'obligado', 'Obligado'])),
   };
+}
+
+function normalizeObligadoContabilidad(value: unknown) {
+  if (typeof value === 'boolean') return value ? 'SI' : 'NO';
+  const normalized = normalizeText(textValue(value));
+  if (['si', 's', 'true', '1', 'obligado'].includes(normalized)) return 'SI';
+  if (['no', 'n', 'false', '0', 'no-obligado'].includes(normalized)) return 'NO';
+  return textValue(value);
+}
+
+function normalizeTipoCliente(value: unknown) {
+  const numeric = numberValue(value);
+  if (numeric > 0) return numeric;
+  const normalized = normalizeText(textValue(value));
+  if (normalized.includes('juridica') || normalized.includes('empresa')) return 2;
+  if (normalized.includes('natural') || normalized.includes('persona')) return 1;
+  return null;
 }
 
 function mergeFacturaDetalle(factura: FacturaListItem, facturaRow?: Record<string, unknown> | null): FacturaListItem {
@@ -8589,6 +8621,7 @@ function NuevaNotaCreditoMobileScreen({
   onClear,
   onHistory,
   onSave,
+  onPreview,
 }: {
   form: NotaCreditoFormState;
   preparacion: FacturaPreparacion | null;
@@ -8613,6 +8646,7 @@ function NuevaNotaCreditoMobileScreen({
   onClear: () => void;
   onHistory: () => void;
   onSave: () => void;
+  onPreview: () => void;
 }) {
   const toNumber = (value: string) => Number(value.replace(',', '.')) || 0;
   const totals = lineas.reduce(
@@ -8685,9 +8719,10 @@ function NuevaNotaCreditoMobileScreen({
       ) : null}
       {step === 1 ? <>
       <View style={styles.formSectionBox}>
-        <Text style={styles.clientFormSubtitle}>Buscador de factura</Text>
-        <Text style={styles.invoiceSectionHelp}>Selecciona la factura modificada. El cliente, los datos de sustento y los detalles se cargarán automáticamente.</Text>
-        <SearchField label="Encontrar factura" placeholder="Número completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} predictive suggestions={facturas.slice(0, 5).map((item, index) => ({ id: `nota-credito-factura-${item.codfactura}-${index}`, title: item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`, subtitle: `${item.cliente ?? 'Consumidor final'} · ${formatMoney(item.total)}` }))} onSelectSuggestion={(suggestion) => { const item = facturas.find((candidate, index) => `nota-credito-factura-${candidate.codfactura}-${index}` === suggestion.id); if (item) onSelectFactura(item); }} />
+         <Text style={styles.clientFormSubtitle}>Buscador de factura</Text>
+         <Text style={styles.invoiceSectionHelp}>Selecciona la factura modificada. El cliente, los datos de sustento y los detalles se cargarán automáticamente.</Text>
+         <SearchField label="Encontrar factura" placeholder="Número completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} predictive suggestions={facturas.slice(0, 5).map((item, index) => ({ id: `nota-credito-factura-${item.codfactura}-${index}`, title: item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`, subtitle: `${item.cliente ?? 'Consumidor final'} · ${formatMoney(item.total)}` }))} onSelectSuggestion={(suggestion) => { const item = facturas.find((candidate, index) => `nota-credito-factura-${candidate.codfactura}-${index}` === suggestion.id); if (item) onSelectFactura(item); }} />
+         <Text style={styles.invoiceSearchHint}>Si no aparece, ya fue anulada totalmente o no tiene saldo disponible.</Text>
         {factura ? <Text style={styles.profileValue}>Factura seleccionada: {factura.numeroCompleto ?? factura.numfactura ?? '-'} · {cliente ? getClienteDisplayName(cliente) : 'Cargando cliente'}</Text> : null}
       </View>
       {factura && cliente ? <View style={[styles.formSectionBox, styles.invoicePanel]}>
@@ -8784,7 +8819,7 @@ function NuevaNotaCreditoMobileScreen({
         </View>
       </View>
       <View style={styles.formActions}>
-        <SecondaryButton label="Previsualizar PDF" onPress={() => Alert.alert('Previsualizar PDF', 'Genera la nota de credito para consultar el PDF.')} />
+        <SecondaryButton label="Generar y previsualizar PDF" onPress={onPreview} />
         <SecondaryButton label="Volver al cliente" onPress={() => setStep(1)} />
         <SecondaryButton label="Cancelar / limpiar" onPress={handleClear} />
         <PrimaryButton label="Generar Nota de Credito" loading={saving} onPress={onSave} />
@@ -10285,7 +10320,8 @@ function MisFacturasMobileScreen({
   const [page, setPage] = useState(1);
   const [selectedFactura, setSelectedFactura] = useState<FacturaListItem | null>(null);
   const facturasCreditoPendientes = facturas.filter((factura) => {
-    const isCredit = String(factura.tipopago ?? '').trim() === '19';
+    const paymentType = normalizeText(String(factura.tipopago ?? ''));
+    const isCredit = paymentType === '19' || paymentType.includes('credito') || paymentType.includes('credit');
     const totalFactura = Number(factura.total ?? 0);
     const totalNotasCredito = notasCredito
       .filter((nota) => nota.documentoModificadoId === factura.codfactura && nota.estado !== false && (
