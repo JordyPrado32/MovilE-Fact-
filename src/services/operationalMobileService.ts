@@ -22,6 +22,22 @@ export type OperationalRequestContext = {
   userId?: number;
 };
 
+export type EstadoCuentaDetalle = {
+  idCliente: number;
+  nombreCliente?: string | null;
+  numeroIdentificacion?: string | null;
+  correo?: string | null;
+  saldoTotal?: number;
+  facturasPendientes?: number;
+  montoUltimoAbono?: number;
+  fechaUltimoAbono?: string | null;
+  diasVencidosMaximos?: number;
+  saldoAFavorDisponible?: number;
+  facturas?: Record<string, unknown>[];
+  abonos?: Record<string, unknown>[];
+  movimientos?: Record<string, unknown>[];
+};
+
 export type CompraDocumentosPagoInput = {
   documentos: number;
   montoTotal: number;
@@ -160,8 +176,23 @@ export function getEstadoCuentaPdf(userId: number, idCliente: number) {
   return apiRequestBinary(`/api/cuentas-cobrar/estado-cuenta/${idCliente}/pdf?idUsuario=${userId}`);
 }
 
+export function getEstadoCuentaDetalle(userId: number, idCliente: number) {
+  return apiRequest<EstadoCuentaDetalle>(`/api/cuentas-cobrar/estado-cuenta/${idCliente}?idUsuario=${userId}`);
+}
+
+export function getEstadoCuentaListadoExcel(userId: number) {
+  return apiRequestBinary(`/api/cuentas-cobrar/estado-cuenta/excel?idUsuario=${userId}`);
+}
+
 export function getEstadoCuentaExcel(userId: number, idCliente: number) {
   return apiRequestBinary(`/api/cuentas-cobrar/estado-cuenta/${idCliente}/excel?idUsuario=${userId}`);
+}
+
+export function enviarEstadoCuenta(userId: number, idCliente: number) {
+  return apiRequest<{ message?: string; correo?: string }>(`/api/cuentas-cobrar/estado-cuenta/${idCliente}/enviar?idUsuario=${userId}`, {
+    method: 'POST',
+    timeoutMs: 30000,
+  });
 }
 
 export function updateOperationalItem(module: OperationalModule, tab: string, id: string, payload: ApiRow, context: OperationalRequestContext = {}) {

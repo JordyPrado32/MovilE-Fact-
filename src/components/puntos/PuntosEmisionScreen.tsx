@@ -4,6 +4,7 @@ import { Field, MessageBox, MessageState, PrimaryButton, SearchField, SecondaryB
 import { PuntoEmision, PuntosEmisionData } from '../../types/business';
 import { getPuntoDocumentSequences, getPuntoSerie, normalizeSerieCode } from '../../utils/documentSeries';
 import { styles } from '../../styles/appStyles';
+import { FormTopBar } from '../ui/FormShared';
 
 type PuntoFormMode = 'create' | 'edit' | null;
 type PuntoFormState = { puntoEmision: string };
@@ -54,6 +55,21 @@ export function PuntosEmisionScreen({
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(term));
   });
+
+  if (formMode) {
+    return (
+      <PuntoEmisionForm
+        form={form}
+        mode={formMode}
+        saving={saving}
+        establecimiento={establecimiento}
+        onCancel={onCancelForm}
+        onChange={onChangeForm}
+        onReset={onResetForm}
+        onSave={onSaveForm}
+      />
+    );
+  }
 
   return (
     <>
@@ -108,19 +124,6 @@ export function PuntosEmisionScreen({
             <Text style={styles.puntoSummaryText}>Esta serie se aplicara primero en facturas, notas, retenciones, guias y liquidaciones.</Text>
           </View>
         </View>
-      ) : null}
-
-      {formMode ? (
-        <PuntoEmisionForm
-          form={form}
-          mode={formMode}
-          saving={saving}
-          establecimiento={establecimiento}
-          onCancel={onCancelForm}
-          onChange={onChangeForm}
-          onReset={onResetForm}
-          onSave={onSaveForm}
-        />
       ) : null}
 
       <View style={styles.puntoToolbar}>
@@ -210,11 +213,8 @@ function PuntoEmisionForm({
 
   return (
     <View style={styles.puntoFormCard}>
+      <FormTopBar onBack={onCancel} onDiscard={onCancel} />
       <View style={styles.puntoFormHeader}>
-        <Pressable style={styles.puntoBackButton} onPress={onCancel}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color="#00649D" />
-          <Text style={styles.puntoBackText}>Volver</Text>
-        </Pressable>
         <Text style={styles.puntoFormTitle}>{mode === 'edit' ? 'Editar punto' : 'Nuevo punto'}</Text>
       </View>
       <View style={styles.puntoSerieComposer}>
@@ -235,7 +235,6 @@ function PuntoEmisionForm({
         keyboardType="number-pad"
       />
       <View style={styles.formActions}>
-        <SecondaryButton label="Descartar" onPress={onCancel} />
         <SecondaryButton label="Limpiar" onPress={onReset} />
         <PrimaryButton label={mode === 'edit' ? 'Guardar' : 'Crear punto'} loading={saving} onPress={onSave} />
       </View>

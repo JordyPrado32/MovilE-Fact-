@@ -38,7 +38,7 @@ import { AdminMobileItem, getAdminMobileModule } from './src/services/adminMobil
 import { changePassword, checkAuth, login, recoverPassword, register } from './src/services/authService';
 import { createCategoria, createSubcategoria, deleteCategoria, deleteSubcategoria, getCategorias, getSubcategorias, updateCategoria, updateSubcategoria } from './src/services/categoriasService';
 import { createCliente, deleteCliente, getCiudades, getClienteLookups, getClientes, getProvincias, updateCliente } from './src/services/clientesService';
-import { createEmisor, deleteEmisor, getEmisor, getEmisores, updateEmisor, uploadFirmaArchivo } from './src/services/emisoresService';
+import { consultarEmisorSri, createEmisor, deleteEmisor, getEmisor, getEmisores, getFirmaEstado, updateEmisor, uploadFirmaArchivo } from './src/services/emisoresService';
 import { anularFactura, buscarFacturaClientes, buscarFacturaProductos, enviarFacturaCorreo, FacturaListItem, FacturaPreparacion, FacturaProducto, getFacturaDetalle, getFacturaPdf, getFacturas, getFacturaPreparacion, getFacturaXml, guardarFactura, reintentarFacturaSri } from './src/services/facturasMobileService';
 import { anularGuiaRemision, buscarGuiaClientes, buscarGuiaFacturas, buscarGuiaProductos, buscarGuiaTransportistas, emitirGuiaRemision, enviarGuiaRemisionCorreo, getGuiaRemisionPdf, getGuiaRemisionPreparacion, getGuiasRemision, getGuiaRemisionXml, guardarGuiaRemision, GuiaRemisionListItem } from './src/services/guiasRemisionMobileService';
 import { getMenusByRol, hasMenusByRolEndpoint } from './src/services/menuService';
@@ -47,12 +47,12 @@ import { anularNotaCredito, buscarNotaCreditoFacturas, emitirNotaCredito, emitir
 import { anularNotaDebito, buscarNotaDebitoFacturas, emitirNotaDebito, enviarNotaDebitoCorreo, getNotaDebitoDetallesFactura, getNotaDebitoPdf, getNotaDebitoPreparacion, getNotasDebito, getNotaDebitoXml, guardarNotaDebito, NotaDebitoListItem } from './src/services/notasDebitoMobileService';
 import { clearNotificaciones, dismissNotificacion, getNotificaciones, NotificacionItem } from './src/services/notificacionesService';
 import { syncDeviceNotifications } from './src/services/deviceNotificationsService';
-import { CompraDocumentosEstado, createOperationalItem, deleteOperationalItem, getCompraDocumentosEstado, getEstadoCuentaExcel, getEstadoCuentaPdf, getOperationalMobileModule, getOperationalModuleConfig, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, updateOperationalItem } from './src/services/operationalMobileService';
+import { CompraDocumentosEstado, createOperationalItem, deleteOperationalItem, enviarEstadoCuenta, getCompraDocumentosEstado, getEstadoCuentaDetalle, getEstadoCuentaExcel, getEstadoCuentaListadoExcel, getEstadoCuentaPdf, getOperationalMobileModule, getOperationalModuleConfig, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, updateOperationalItem } from './src/services/operationalMobileService';
 import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
 import { createPuntoEmision, deletePuntoEmision, getPuntoEmisionSiguienteSecuencial, getPuntosEmision, markPuntoPrincipal, PuntoDocumentoKey, savePuntoEmisionSecuenciaInicial, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
 import { emitirRetencionSri, enviarRetencionCorreo, getRetencionPdf, getRetenciones, getRetencionXml, RetencionListItem } from './src/services/retencionesMobileService';
-import { ERubricaDashboard, ERubricaEmisor, buscarERubricaSolicitudesProveedor, crearERubricaSolicitud, descargarERubricaFirmaP12, enviarTransferenciaERubricaSolicitud, firmarERubricaDocumento, getERubricaDashboard, getERubricaEmisores, getERubricaFirmaEstado, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, iniciarPagoERubricaSolicitud, sincronizarERubricaPendientes, validarERubricaFirmaPdf, validarERubricaQr } from './src/services/erubricaMobileService';
+import { ERubricaDashboard, buscarERubricaSolicitudesProveedor, crearERubricaSolicitud, descargarERubricaFirmaP12, enviarTransferenciaERubricaSolicitud, firmarERubricaDocumento, getERubricaDashboard, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, iniciarPagoERubricaSolicitud, sincronizarERubricaPendientes, validarERubricaFirmaPdf, validarERubricaQr } from './src/services/erubricaMobileService';
 import { ChangePasswordRequest, DynamicMenu, LoginResponse, RegisterRequest, ServiceAccess, TipoDocumento } from './src/types/auth';
 import { CategoriaCatalogo, CiudadLookup, Cliente, ClienteLookups, Emisor, FirmaEstado, PerfilLookup, PerfilUsuario, Producto, ProductoLookups, ProductoTipo, ProvinciaLookup, PuntoEmision, PuntosEmisionData, SubcategoriaCatalogo, SubcategoriaLookup } from './src/types/business';
 import {
@@ -142,6 +142,11 @@ type WorkspaceView =
   | 'clientes'
   | 'nuevo-cliente'
   | 'nuevo-producto'
+  | 'nueva-categoria'
+  | 'nueva-subcategoria'
+  | 'nuevo-emisor'
+  | 'nueva-firma'
+  | 'nuevo-punto-emision'
   | 'proveedores'
   | 'productos'
   | 'categorias'
@@ -819,7 +824,7 @@ const EFACT_MODULES: Omit<MobileModule, 'count' | 'enabled'>[] = [
   { view: 'admin-sql-auditoria', title: 'SQL Auditoria', description: 'Eventos de auditoria SQL y trazabilidad.' },
 ];
 
-const VIEW_ROUTE_ALIASES: Partial<Record<Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto'>, string[]>> = {
+const VIEW_ROUTE_ALIASES: Partial<Record<Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto' | 'nueva-categoria' | 'nueva-subcategoria' | 'nuevo-emisor' | 'nueva-firma' | 'nuevo-punto-emision'>, string[]>> = {
   perfil: ['perfil', 'profile'],
   emisor: ['emisor', 'empresa'],
   firma: ['firma', 'certificado'],
@@ -1077,7 +1082,7 @@ async function exportRowsToCsv(filename: string, rows: Record<string, unknown>[]
   }
 }
 
-function menuMatchesView(menu: DynamicMenu, view: Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto'>) {
+function menuMatchesView(menu: DynamicMenu, view: Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto' | 'nueva-categoria' | 'nueva-subcategoria' | 'nuevo-emisor' | 'nueva-firma' | 'nuevo-punto-emision'>) {
   const normalizedRoute = normalizeText(menu.ruta);
   if (ADMIN_ROUTE_VIEW_MAP[normalizedRoute] === view) return true;
 
@@ -1090,7 +1095,7 @@ function getAuthorizedViews(menus: DynamicMenu[]) {
   const views = new Set<WorkspaceView>();
 
   EFACT_MODULES.forEach((module) => {
-    if (activeMenus.some((menu) => menuMatchesView(menu, module.view as Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto'>))) {
+    if (activeMenus.some((menu) => menuMatchesView(menu, module.view as Exclude<WorkspaceView, 'portal' | 'dashboard' | 'no-autorizado' | 'nuevo-cliente' | 'nuevo-producto' | 'nueva-categoria' | 'nueva-subcategoria' | 'nuevo-emisor' | 'nueva-firma' | 'nuevo-punto-emision'>))) {
       views.add(module.view);
     }
   });
@@ -2286,7 +2291,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [subcategorias, setSubcategorias] = useState<SubcategoriaCatalogo[]>([]);
   const [emisores, setEmisores] = useState<Emisor[]>([]);
   const [firmaEstados, setFirmaEstados] = useState<Record<number, FirmaEstado>>({});
-  const [firmaMobileEmisores, setFirmaMobileEmisores] = useState<ERubricaEmisor[]>([]);
   const [loadingFirma, setLoadingFirma] = useState(false);
   const [erubricaData, setErubricaData] = useState<ERubricaDashboard | null>(null);
   const [loadingErubrica, setLoadingErubrica] = useState(false);
@@ -2419,6 +2423,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [selectedEmisor, setSelectedEmisor] = useState<Emisor | null>(null);
   const [emisorForm, setEmisorForm] = useState<EmisorFormState>(initialEmisorForm);
   const [savingEmisor, setSavingEmisor] = useState(false);
+  const [consultandoSriEmisor, setConsultandoSriEmisor] = useState(false);
   const [perfilForm, setPerfilForm] = useState<PerfilFormState>(initialPerfilForm);
   const [savingPerfil, setSavingPerfil] = useState(false);
   const [puntoFormMode, setPuntoFormMode] = useState<PuntoFormMode>(null);
@@ -3043,6 +3048,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       activeView !== 'no-autorizado' &&
       activeView !== 'nuevo-cliente' &&
       activeView !== 'nuevo-producto' &&
+      activeView !== 'nueva-categoria' &&
+      activeView !== 'nueva-subcategoria' &&
+      activeView !== 'nuevo-emisor' &&
+      activeView !== 'nueva-firma' &&
+      activeView !== 'nuevo-punto-emision' &&
        !(['e-rubrica', 'perfil-e-rubrica'].includes(activeView) ? canUseERubrica : activeView === 'firma' ? canUseFirma : authorizedViews.has(activeView))
     ) {
       setActiveView('no-autorizado');
@@ -3270,6 +3280,26 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   }, [authorizedViews, catalogUserId, reloadKey]);
 
   useEffect(() => {
+    if (!catalogUserId || !['emisor', 'firma'].includes(activeView)) return;
+
+    let mounted = true;
+    const refreshEmisores = async () => {
+      try {
+        const data = await getEmisores(catalogUserId);
+        if (mounted) setEmisores(data);
+      } catch {
+        // Conserva el listado visible cuando falle una actualización en segundo plano.
+      }
+    };
+
+    const refreshInterval = setInterval(refreshEmisores, 20_000);
+    return () => {
+      mounted = false;
+      clearInterval(refreshInterval);
+    };
+  }, [activeView, catalogUserId]);
+
+  useEffect(() => {
     if (!userId || (!authorizedViews.has('perfil') && !canUseERubrica)) return;
 
     let mounted = true;
@@ -3322,45 +3352,30 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   useEffect(() => {
     const isInsideEfact = activeView !== 'portal' && activeView !== 'e-rubrica' && activeView !== 'perfil-e-rubrica' && activeView !== 'no-autorizado';
-    if ((!canUseFirma && !authorizedViews.has('emisor')) || !isInsideEfact) return;
+    if (!catalogUserId || (!canUseFirma && !authorizedViews.has('emisor')) || !isInsideEfact) return;
 
     let mounted = true;
     setLoadingFirma(true);
     setDirectoryMessage(null);
 
-    getERubricaEmisores()
-      .then(async (mobileEmisores) => {
+    Promise.allSettled(
+      emisores
+        .filter(hasFirmaConfigured)
+        .map(async (emisor) => [emisor.codigo, await getFirmaEstado(catalogUserId, emisor.codigo)] as const),
+    )
+      .then((results) => {
         if (!mounted) return;
-        setFirmaMobileEmisores(mobileEmisores);
         const estados: Record<number, FirmaEstado> = {};
-        mobileEmisores.forEach((emisor) => {
-          const localEmisor = emisores.find((item) => item.codigo === emisor.id || item.id === emisor.id || item.ruc === emisor.ruc);
-          const statusKey = localEmisor?.codigo ?? emisor.id;
-          estados[statusKey] = {
-            tieneCertificado: emisor.tieneCertificado,
-            tieneClave: emisor.tieneClave,
-            esValida: emisor.esValida ?? false,
-            estadoVigencia: emisor.estadoVigencia,
-            fechaExpiracion: emisor.fechaExpiracion,
-            diasRestantes: emisor.diasRestantes,
-            mensaje: emisor.mensaje,
-          };
-        });
-        setFirmaEstados(estados);
-        const results = await Promise.allSettled(mobileEmisores.map((emisor) => getERubricaFirmaEstado(emisor.id)));
-        if (!mounted) return;
-        results.forEach((result, index) => {
+        results.forEach((result) => {
           if (result.status === 'fulfilled') {
-            const mobileEmisor = mobileEmisores[index];
-            const localEmisor = emisores.find((item) => item.codigo === mobileEmisor.id || item.id === mobileEmisor.id || item.ruc === mobileEmisor.ruc);
-            estados[localEmisor?.codigo ?? mobileEmisor.id] = result.value;
+            const [codigo, estado] = result.value;
+            estados[codigo] = estado;
           }
         });
-        setFirmaEstados({ ...estados });
+        setFirmaEstados(estados);
       })
       .catch((error) => {
         if (mounted) {
-          setFirmaMobileEmisores([]);
           setFirmaEstados({});
           setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo cargar el estado de las firmas.' });
         }
@@ -3372,7 +3387,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     return () => {
       mounted = false;
     };
-  }, [activeView, authorizedViews, canUseFirma, emisores, reloadKey]);
+  }, [activeView, authorizedViews, canUseFirma, catalogUserId, emisores, reloadKey]);
 
   useEffect(() => {
     if (!clienteForm.pais) {
@@ -3526,17 +3541,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     );
   }, [subcategoriaCategoriaFiltro, subcategorias, search]);
 
-  const filteredEmisores = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return emisores;
-
-    return emisores.filter((emisor) =>
-      [emisor.razonSocial, emisor.nomComercial, emisor.ruc, emisor.email, emisor.telefono]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(term)),
-    );
-  }, [emisores, search]);
-
   const updateClienteForm = <K extends keyof ClienteFormState>(key: K, value: ClienteFormState[K]) => {
     setClienteForm((current) => ({
       ...current,
@@ -3570,6 +3574,42 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   const updateEmisorForm = <K extends keyof EmisorFormState>(key: K, value: EmisorFormState[K]) => {
     setEmisorForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const consultarSriEmisor = async () => {
+    const ruc = emisorForm.ruc.replace(/\D/g, '');
+    if (ruc.length !== 13) {
+      setDirectoryMessage({ type: 'error', text: 'El RUC debe tener 13 digitos para consultar al SRI.' });
+      return;
+    }
+
+    setConsultandoSriEmisor(true);
+    setDirectoryMessage(null);
+    try {
+      const resultado = await consultarEmisorSri(ruc);
+      if (!resultado.found) {
+        setDirectoryMessage({ type: 'info', text: resultado.mensaje || 'El SRI no devolvio informacion para este RUC.' });
+        return;
+      }
+
+      setEmisorForm((current) => ({
+        ...current,
+        ruc: resultado.ruc ?? ruc,
+        razonSocial: resultado.razonSocial ?? current.razonSocial,
+        nomComercial: resultado.nomComercial ?? current.nomComercial,
+        dirEstablecimiento: resultado.dirEstablecimiento ?? current.dirEstablecimiento,
+        direccionMatriz: resultado.direccionMatriz ?? current.direccionMatriz,
+        codEstablecimiento: resultado.codEstablecimiento ?? current.codEstablecimiento,
+        llevaContabilidad: resultado.llevaContabilidad === 'SI' ? 'SI' : 'NO',
+        retenciones: resultado.retenciones ?? 'NO',
+      }));
+      setDirectoryMessage({ type: 'success', text: resultado.mensaje || 'Datos del SRI cargados correctamente.' });
+    } catch (error) {
+      const text = error instanceof ApiError ? error.message : 'No se pudo consultar el RUC en el SRI.';
+      setDirectoryMessage({ type: 'error', text });
+    } finally {
+      setConsultandoSriEmisor(false);
+    }
   };
 
   const updatePerfilForm = <K extends keyof PerfilFormState>(key: K, value: PerfilFormState[K]) => {
@@ -3892,6 +3932,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setCategoriaForm(initialCategoriaForm);
     setCategoriaFormMode('create');
     setDirectoryMessage(null);
+    openView('nueva-categoria');
   };
 
   const openEditCategoria = (categoria: CategoriaCatalogo) => {
@@ -3899,12 +3940,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setCategoriaForm(categoriaToForm(categoria));
     setCategoriaFormMode('edit');
     setDirectoryMessage(null);
+    openView('nueva-categoria');
   };
 
   const closeCategoriaForm = () => {
     setSelectedCategoria(null);
     setCategoriaForm(initialCategoriaForm);
     setCategoriaFormMode(null);
+    openView('categorias');
   };
 
   const saveCategoria = async () => {
@@ -3964,6 +4007,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setSubcategoriaForm(initialSubcategoriaForm);
     setSubcategoriaFormMode('create');
     setDirectoryMessage(null);
+    openView('nueva-subcategoria');
   };
 
   const openEditSubcategoria = (subcategoria: SubcategoriaCatalogo) => {
@@ -3971,12 +4015,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setSubcategoriaForm(subcategoriaToForm(subcategoria));
     setSubcategoriaFormMode('edit');
     setDirectoryMessage(null);
+    openView('nueva-subcategoria');
   };
 
   const closeSubcategoriaForm = () => {
     setSelectedSubcategoria(null);
     setSubcategoriaForm(initialSubcategoriaForm);
     setSubcategoriaFormMode(null);
+    openView('categorias');
   };
 
   const saveSubcategoria = async () => {
@@ -4124,6 +4170,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setPuntoForm({ puntoEmision: getNextPuntoCode(puntosData.cajas) });
     setPuntoFormMode('create');
     setDirectoryMessage(null);
+    openView('nuevo-punto-emision');
   };
 
   const openEditPunto = (punto: PuntoEmision) => {
@@ -4131,12 +4178,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setPuntoForm(puntoToForm(punto));
     setPuntoFormMode('edit');
     setDirectoryMessage(null);
+    openView('nuevo-punto-emision');
   };
 
   const closePuntoForm = () => {
     setSelectedPunto(null);
     setPuntoForm(initialPuntoForm);
     setPuntoFormMode(null);
+    openView('punto-emision');
   };
 
   const savePunto = async () => {
@@ -4213,6 +4262,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setEmisorForm(initialEmisorForm);
     setEmisorFormMode('create');
     setDirectoryMessage(null);
+    openView('nuevo-emisor');
   };
 
   const openEditEmisor = async (emisor: Emisor) => {
@@ -4220,6 +4270,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setEmisorForm(emisorToForm(emisor));
     setEmisorFormMode('edit');
     setDirectoryMessage(null);
+    openView('nuevo-emisor');
 
     try {
       const detalle = await getEmisor(catalogUserId, emisor.codigo);
@@ -4234,6 +4285,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setSelectedEmisor(null);
     setEmisorForm(initialEmisorForm);
     setEmisorFormMode(null);
+    openView(activeView === 'nueva-firma' ? 'firma' : 'emisor');
   };
 
   const saveEmisor = async () => {
@@ -4260,7 +4312,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       return;
     }
 
-    if (activeView === 'firma') {
+    if (activeView === 'firma' || activeView === 'nueva-firma') {
       const firmaPath = emisorForm.pathCertificado.trim();
       const tieneArchivoNuevo = Boolean(emisorForm.firmaArchivoUri);
       const tieneClave = Boolean(emisorForm.claveCertificado.trim() || selectedEmisor?.tieneClaveCertificadoConfigurada);
@@ -4283,7 +4335,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     try {
       let formToSave = emisorForm;
 
-      if (activeView === 'firma' && selectedEmisor && emisorForm.firmaArchivoUri) {
+      if ((activeView === 'firma' || activeView === 'nueva-firma') && selectedEmisor && emisorForm.firmaArchivoUri) {
         const uploaded = await uploadFirmaArchivo(catalogUserId, selectedEmisor.codigo, {
           uri: emisorForm.firmaArchivoUri,
           name: emisorForm.firmaArchivoNombre,
@@ -4304,7 +4356,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
       if (emisorFormMode === 'edit' && selectedEmisor) {
         await updateEmisor(catalogUserId, selectedEmisor.codigo, payload);
-        setDirectoryMessage({ type: 'success', text: activeView === 'firma' ? 'Firma guardada correctamente.' : 'Emisor actualizado correctamente.' });
+        setDirectoryMessage({ type: 'success', text: activeView === 'firma' || activeView === 'nueva-firma' ? 'Firma guardada correctamente.' : 'Emisor actualizado correctamente.' });
       } else {
         await createEmisor(catalogUserId, payload);
         setDirectoryMessage({ type: 'success', text: 'Emisor registrado correctamente.' });
@@ -4325,6 +4377,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setEmisorForm(emisorToForm(emisor));
     setEmisorFormMode('edit');
     setDirectoryMessage(null);
+    openView('nueva-firma');
   };
 
   const openAddFirma = () => {
@@ -6078,6 +6131,26 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       return;
     }
 
+    if (['nueva-categoria', 'nueva-subcategoria'].includes(view) && authorizedViews.has('categorias')) {
+      setActiveView(view);
+      return;
+    }
+
+    if (view === 'nuevo-emisor' && authorizedViews.has('emisor')) {
+      setActiveView(view);
+      return;
+    }
+
+    if (view === 'nueva-firma' && canUseFirma) {
+      setActiveView(view);
+      return;
+    }
+
+    if (view === 'nuevo-punto-emision' && authorizedViews.has('punto-emision')) {
+      setActiveView(view);
+      return;
+    }
+
     if (view === 'bot' && canUseEfact) {
       setActiveView(view);
       return;
@@ -6229,12 +6302,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       count: productos.length,
       disabled: !authorizedViews.has('productos'),
       children: [
-        {
-          key: 'nuevo-producto',
-          label: 'Nuevo producto',
-          view: 'nuevo-producto',
-          disabled: !authorizedViews.has('productos'),
-        },
         menuNode('categorias', 'Categorias'),
       ],
     },
@@ -6358,6 +6425,53 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       });
     } catch (error) {
       setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo guardar el archivo del estado de cuenta.' });
+    }
+  };
+  const loadEstadoCuentaDetail = async (item: OperationalMobileItem) => {
+    if (!catalogUserId) return item;
+    const idCliente = Number(item.id);
+    if (!Number.isInteger(idCliente) || idCliente <= 0) {
+      throw new Error('No se pudo identificar el cliente del estado de cuenta.');
+    }
+
+    const detalle = await getEstadoCuentaDetalle(catalogUserId, idCliente);
+    return {
+      ...item,
+      title: detalle.nombreCliente || item.title,
+      subtitle: detalle.numeroIdentificacion || item.subtitle,
+      raw: { ...(item.raw ?? {}), ...detalle },
+    };
+  };
+  const sendEstadoCuentaEmail = async (item: OperationalMobileItem) => {
+    if (!catalogUserId) return;
+    const idCliente = Number(item.id);
+    if (!Number.isInteger(idCliente) || idCliente <= 0) {
+      setDirectoryMessage({ type: 'error', text: 'No se pudo identificar el cliente del estado de cuenta.' });
+      return;
+    }
+
+    try {
+      const response = await enviarEstadoCuenta(catalogUserId, idCliente);
+      setDirectoryMessage({ type: 'success', text: response.correo ? `Estado de cuenta enviado a ${response.correo}.` : response.message || 'Estado de cuenta enviado correctamente.' });
+    } catch (error) {
+      setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo enviar el estado de cuenta.' });
+    }
+  };
+  const downloadEstadoCuentaListExcel = async () => {
+    if (!catalogUserId) return;
+    try {
+      const response = await getEstadoCuentaListadoExcel(catalogUserId);
+      const saved = await saveBinaryFileToDevice(
+        response.bytes,
+        'estado-cuenta-clientes.xlsx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      setDirectoryMessage({
+        type: saved ? 'success' : 'info',
+        text: saved ? `Archivo guardado en el dispositivo: ${saved.name}` : 'Selecciona una carpeta para guardar el archivo.',
+      });
+    } catch (error) {
+      setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo descargar el listado de estado de cuenta.' });
     }
   };
   const sendRetencionCorreo = async (retencion: RetencionListItem) => {
@@ -6916,6 +7030,31 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   />
                 </View>
               </>
+             ) : null}
+
+            {activeView === 'nueva-categoria' ? (
+              <CategoriaForm
+                form={categoriaForm}
+                mode={categoriaFormMode ?? 'create'}
+                saving={savingCategoria}
+                onCancel={closeCategoriaForm}
+                onChange={updateCategoriaForm}
+                onReset={() => setCategoriaForm(initialCategoriaForm)}
+                onSave={saveCategoria}
+              />
+            ) : null}
+
+            {activeView === 'nueva-subcategoria' ? (
+              <SubcategoriaForm
+                form={subcategoriaForm}
+                mode={subcategoriaFormMode ?? 'create'}
+                saving={savingCategoria}
+                categorias={categorias}
+                onCancel={closeSubcategoriaForm}
+                onChange={updateSubcategoriaForm}
+                onReset={() => setSubcategoriaForm(initialSubcategoriaForm)}
+                onSave={saveSubcategoria}
+              />
             ) : null}
 
             {activeView === 'categorias' ? (
@@ -6971,29 +7110,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     totalCount={categoriaTab === 'categorias' ? categorias.length : subcategorias.length}
                   />
                 </View>
-                {categoriaTab === 'categorias' && categoriaFormMode ? (
-                  <CategoriaForm
-                    form={categoriaForm}
-                    mode={categoriaFormMode}
-                    saving={savingCategoria}
-                    onCancel={closeCategoriaForm}
-                    onChange={updateCategoriaForm}
-                    onReset={() => setCategoriaForm(initialCategoriaForm)}
-                    onSave={saveCategoria}
-                  />
-                ) : null}
-                {categoriaTab === 'subcategorias' && subcategoriaFormMode ? (
-                  <SubcategoriaForm
-                    form={subcategoriaForm}
-                    mode={subcategoriaFormMode}
-                    saving={savingCategoria}
-                    categorias={categorias}
-                    onCancel={closeSubcategoriaForm}
-                    onChange={updateSubcategoriaForm}
-                    onReset={() => setSubcategoriaForm(initialSubcategoriaForm)}
-                    onSave={saveSubcategoria}
-                  />
-                ) : null}
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
                 {loadingCategorias ? (
                   <View style={styles.directoryLoading}>
@@ -7063,6 +7179,21 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </>
             ) : null}
 
+            {activeView === 'nuevo-emisor' ? (
+              <EmisorForm
+                form={emisorForm}
+                mode={emisorFormMode ?? 'create'}
+                saving={savingEmisor}
+                onCancel={closeEmisorForm}
+                onChange={updateEmisorForm}
+                onReset={() => setEmisorForm(selectedEmisor ? emisorToForm(selectedEmisor) : initialEmisorForm)}
+                onSelectLogo={selectEmisorLogo}
+                onConsultarSri={consultarSriEmisor}
+                consultandoSri={consultandoSriEmisor}
+                onSave={saveEmisor}
+              />
+            ) : null}
+
             {activeView === 'emisor' ? (
               <>
                 <DirectoryHero
@@ -7078,15 +7209,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   onCreate={!hasActiveEmisor ? openNewEmisor : undefined}
                   createLabel="Nuevo emisor"
                 />
-                <View style={styles.clientToolsPanel}>
-                  <View style={styles.clientToolsHeader}>
-                    <View>
-                      <Text style={styles.clientToolsEyebrow}>Configuracion</Text>
-                      <Text style={styles.clientToolsTitle}>Emisores registrados</Text>
-                    </View>
-                  </View>
-                  <SearchField label="Buscar emisores" placeholder="Razon social, RUC, nombre comercial o correo" value={search} onChangeText={setSearch} resultCount={filteredEmisores.length} totalCount={emisores.length} />
-                </View>
                 {emisorFormMode ? (
                   <EmisorForm
                     form={emisorForm}
@@ -7096,6 +7218,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     onChange={updateEmisorForm}
                     onReset={() => setEmisorForm(selectedEmisor ? emisorToForm(selectedEmisor) : initialEmisorForm)}
                     onSelectLogo={selectEmisorLogo}
+                    onConsultarSri={consultarSriEmisor}
+                    consultandoSri={consultandoSriEmisor}
                     onSave={saveEmisor}
                   />
                 ) : null}
@@ -7106,7 +7230,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     <Text style={styles.mutedText}>Cargando emisores...</Text>
                   </View>
                 ) : null}
-                {!loadingEmisores && filteredEmisores.length === 0 ? (
+                {!loadingEmisores && emisores.length === 0 ? (
                   <EmptyState title="Sin emisores para mostrar" text="Cuando existan registros, apareceran aqui." />
                 ) : null}
                 <View style={styles.clientListPanel}>
@@ -7115,12 +7239,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                       <Text style={styles.clientListEyebrow}>Listado</Text>
                       <Text style={styles.clientListTitle}>Emisores</Text>
                     </View>
-                    <Text style={styles.clientListCount}>{filteredEmisores.length}</Text>
+                    <Text style={styles.clientListCount}>{emisores.length}</Text>
                   </View>
                   <ResultCollection
-                    items={filteredEmisores}
+                    items={emisores}
                     variant="plain"
-                    resetKey={search}
+                    resetKey={`emisor-${reloadKey}`}
                     keyExtractor={(emisor, index) => `emisor-${emisor.codigo}-${emisor.ruc ?? index}`}
                     renderItem={(emisor) => (
                       <EmisorCard
@@ -7135,6 +7259,20 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </>
             ) : null}
 
+            {activeView === 'nueva-firma' && selectedEmisor ? (
+              <FirmaForm
+                emisor={selectedEmisor}
+                form={emisorForm}
+                saving={savingEmisor}
+                estado={firmaEstados[selectedEmisor.codigo]}
+                onCancel={closeEmisorForm}
+                onChange={updateEmisorForm}
+                onClear={clearFirmaFields}
+                onSelectArchivo={selectFirmaArchivo}
+                onSave={saveEmisor}
+              />
+            ) : null}
+
             {activeView === 'firma' ? (
               <>
                 <DirectoryHero
@@ -7143,22 +7281,13 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   subtitle="Certificados, vigencia y clave para comprobantes"
                   icon="file-certificate-outline"
                   metrics={[
-                    { value: filteredEmisores.length, label: 'Emisores' },
+                    { value: emisores.length, label: 'Emisores' },
                     { value: emisores.filter(hasFirmaConfigured).length, label: 'Firmas' },
                     { value: Object.values(firmaEstados).filter((estado) => estado.esValida).length, label: 'Vigentes' },
                   ]}
                   onCreate={!hasConfiguredFirma ? openAddFirma : undefined}
                   createLabel="Agregar firma"
                 />
-                <View style={styles.clientToolsPanel}>
-                  <View style={styles.clientToolsHeader}>
-                    <View>
-                      <Text style={styles.clientToolsEyebrow}>Firmas</Text>
-                      <Text style={styles.clientToolsTitle}>Certificados registrados</Text>
-                    </View>
-                  </View>
-                  <SearchField label="Buscar firmas" placeholder="Razon social o RUC del emisor" value={search} onChangeText={setSearch} resultCount={filteredEmisores.length} totalCount={emisores.length} />
-                </View>
                 {emisorFormMode && selectedEmisor ? (
                   <FirmaForm
                     emisor={selectedEmisor}
@@ -7179,7 +7308,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     <Text style={styles.mutedText}>Consultando vigencia de la firma...</Text>
                   </View>
                 ) : null}
-                {!loadingEmisores && filteredEmisores.length === 0 ? (
+                {!loadingEmisores && emisores.length === 0 ? (
                   <EmptyState title="Sin emisores para firma" text="Primero registra los datos del emisor." />
                 ) : null}
                 <View style={styles.clientListPanel}>
@@ -7188,12 +7317,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                       <Text style={styles.clientListEyebrow}>Listado</Text>
                       <Text style={styles.clientListTitle}>Firmas</Text>
                     </View>
-                    <Text style={styles.clientListCount}>{filteredEmisores.length}</Text>
+                    <Text style={styles.clientListCount}>{emisores.length}</Text>
                   </View>
                   <ResultCollection
-                    items={filteredEmisores}
+                    items={emisores}
                     variant="plain"
-                    resetKey={search}
+                    resetKey={`firma-${reloadKey}`}
                     keyExtractor={(emisor, index) => `firma-${emisor.codigo}-${emisor.ruc ?? index}`}
                     renderItem={(emisor) => (
                       <FirmaCard
@@ -7235,7 +7364,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               </>
             ) : null}
 
-            {activeView === 'punto-emision' ? (
+            {(activeView === 'punto-emision' || activeView === 'nuevo-punto-emision') ? (
               <PuntosEmisionScreen
                 data={puntosData}
                 loading={loadingPuntos}
@@ -7552,6 +7681,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onDelete={confirmDeleteOperational}
                 onRegisterPayment={openAccountPaymentFromStatement}
                 onDownloadStatementFile={downloadEstadoCuentaFile}
+                onLoadStatementDetail={loadEstadoCuentaDetail}
+                onSendStatementEmail={sendEstadoCuentaEmail}
+                onDownloadStatementListExcel={downloadEstadoCuentaListExcel}
                 />
               )
             ) : null}
@@ -7817,6 +7949,11 @@ function getWorkspaceTitle(view: WorkspaceView) {
     clientes: 'Clientes',
     'nuevo-cliente': 'Clientes',
     'nuevo-producto': 'Productos',
+    'nueva-categoria': 'Categorias',
+    'nueva-subcategoria': 'Categorias',
+    'nuevo-emisor': 'Emisor',
+    'nueva-firma': 'Firma electronica',
+    'nuevo-punto-emision': 'Punto de emision',
     proveedores: 'Proveedores',
     productos: 'Productos',
     categorias: 'Categorias',
@@ -10771,6 +10908,9 @@ function OperationalModuleScreen({
   onDelete,
   onRegisterPayment,
   onDownloadStatementFile,
+  onLoadStatementDetail,
+  onSendStatementEmail,
+  onDownloadStatementListExcel,
 }: {
   view: WorkspaceView;
   search: string;
@@ -10793,6 +10933,9 @@ function OperationalModuleScreen({
   onDelete: (item: OperationalMobileItem) => void;
   onRegisterPayment?: (item: OperationalMobileItem) => void;
   onDownloadStatementFile?: (item: OperationalMobileItem, format: 'pdf' | 'excel') => void;
+  onLoadStatementDetail?: (item: OperationalMobileItem) => Promise<OperationalMobileItem>;
+  onSendStatementEmail?: (item: OperationalMobileItem) => void;
+  onDownloadStatementListExcel?: () => void;
 }) {
   const module = getOperationalModuleSlug(view);
   const config = module ? getOperationalScreenConfig(view, module) : null;
@@ -10801,6 +10944,19 @@ function OperationalModuleScreen({
   const [detailItem, setDetailItem] = useState<OperationalMobileItem | null>(null);
 
   if (!config) return null;
+
+  if (formMode && view !== 'cuentas-cobrar') {
+    return (
+      <OperationalForm
+        title={formMode === 'edit' ? `Editar ${selectedTab}` : `Registrar ${selectedTab}`}
+        form={form}
+        saving={saving}
+        onCancel={onCancel}
+        onChange={onChange}
+        onSave={onSave}
+      />
+    );
+  }
 
   if (view === 'cuentas-cobrar') {
     return (
@@ -10841,6 +10997,9 @@ function OperationalModuleScreen({
         onSearch={onSearch}
         onRegisterPayment={onRegisterPayment}
         onDownloadFile={onDownloadStatementFile}
+        onLoadDetail={onLoadStatementDetail}
+        onSendEmail={onSendStatementEmail}
+        onDownloadListExcel={onDownloadStatementListExcel}
       />
     );
   }
@@ -10990,6 +11149,22 @@ function AccountsReceivableScreen({
   const averageDays = Math.round(items.reduce((total, item) => total + getAccountStatementNumber(item, ['diasCobro', 'DiasCobro', 'diasPromedio', 'DiasPromedio', 'diasMora', 'DiasMora'], 0), 0) / Math.max(items.length, 1));
   const selectedTab = activeTab || 'Cuentas por cobrar';
   const activeStepIndex = formMode ? 1 : 0;
+
+  if (formMode) {
+    return (
+      <>
+        <OperationalForm
+          title={formMode === 'edit' ? `Editar ${selectedTab}` : `Registrar ${selectedTab}`}
+          form={form}
+          saving={saving}
+          onCancel={onCancel}
+          onChange={onChange}
+          onSave={onSave}
+        />
+        <AccountsReceivableSteps activeIndex={activeStepIndex} compact />
+      </>
+    );
+  }
 
   return (
     <>
@@ -11172,6 +11347,9 @@ function AccountStatementScreen({
   onSearch,
   onRegisterPayment,
   onDownloadFile,
+  onLoadDetail,
+  onSendEmail,
+  onDownloadListExcel,
 }: {
   search: string;
   items: OperationalMobileItem[];
@@ -11182,11 +11360,32 @@ function AccountStatementScreen({
   onSearch: (value: string) => void;
   onRegisterPayment?: (item: OperationalMobileItem) => void;
   onDownloadFile?: (item: OperationalMobileItem, format: 'pdf' | 'excel') => void;
+  onLoadDetail?: (item: OperationalMobileItem) => Promise<OperationalMobileItem>;
+  onSendEmail?: (item: OperationalMobileItem) => void;
+  onDownloadListExcel?: () => void;
 }) {
   const [detailItem, setDetailItem] = useState<OperationalMobileItem | null>(null);
-  const visibleBalance = items.reduce((total, item) => total + getAccountStatementAmount(item, ['saldoTotalCliente', 'SaldoTotalCliente', 'saldoActual', 'SaldoActual', 'saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta), 0);
-  const visibleInvoices = items.reduce((total, item) => total + getAccountStatementNumber(item, ['facturas', 'Facturas', 'facturasPendientes', 'FacturasPendientes', 'cantidadFacturas', 'CantidadFacturas'], 0), 0);
-  const visiblePayments = items.reduce((total, item) => total + getAccountStatementNumber(item, ['abonos', 'Abonos', 'cantidadAbonos', 'CantidadAbonos'], 0), 0);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const visibleItems = useMemo(() => {
+    const term = normalizeText(search);
+    if (!term) return items;
+    return items.filter((item) => normalizeText([item.title, item.subtitle, item.detail, ...Object.values(item.raw ?? {})].join(' ')).includes(term));
+  }, [items, search]);
+  const visibleBalance = visibleItems.reduce((total, item) => total + getAccountStatementAmount(item, ['saldoTotalCliente', 'SaldoTotalCliente', 'saldoActual', 'SaldoActual', 'saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta), 0);
+  const visibleInvoices = visibleItems.reduce((total, item) => total + getAccountStatementNumber(item, ['facturas', 'Facturas', 'facturasPendientes', 'FacturasPendientes', 'cantidadFacturas', 'CantidadFacturas'], 0), 0);
+  const visiblePayments = visibleItems.reduce((total, item) => total + getAccountStatementNumber(item, ['abonos', 'Abonos', 'cantidadAbonos', 'CantidadAbonos'], 0), 0);
+  const openDetail = async (item: OperationalMobileItem) => {
+    setDetailItem(item);
+    if (!onLoadDetail) return;
+    setLoadingDetail(true);
+    try {
+      setDetailItem(await onLoadDetail(item));
+    } catch (error) {
+      Alert.alert('Estado de cuenta', error instanceof ApiError ? error.message : 'No se pudo cargar el detalle del cliente.');
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
 
   return (
     <>
@@ -11198,8 +11397,8 @@ function AccountStatementScreen({
         </View>
         <View style={styles.accountMetricGrid}>
           <AccountMetricCard icon="wallet-outline" label="Saldo visible" value={formatMoney(visibleBalance)} tone="blue" />
-          <AccountMetricCard icon="account-group-outline" label="Clientes visibles" value={items.length} tone="green" />
-          <AccountMetricCard icon="file-document-outline" label="Facturas visibles" value={visibleInvoices || items.length} tone="purple" />
+          <AccountMetricCard icon="account-group-outline" label="Clientes visibles" value={visibleItems.length} tone="green" />
+          <AccountMetricCard icon="file-document-outline" label="Facturas visibles" value={visibleInvoices || visibleItems.length} tone="purple" />
           <AccountMetricCard icon="cash-check" label="Abonos visibles" value={visiblePayments} tone="orange" />
         </View>
       </View>
@@ -11214,7 +11413,8 @@ function AccountStatementScreen({
             <Text style={styles.adminActionText}>Refrescar</Text>
           </Pressable>
         </View>
-        <SearchField label="Buscar por cliente, RUC o factura" placeholder={placeholder} value={search} onChangeText={onSearch} resultCount={items.length} loading={loading} />
+        <SearchField label="Buscar por cliente, RUC o factura" placeholder={placeholder} value={search} onChangeText={onSearch} resultCount={visibleItems.length} loading={loading} />
+        {onDownloadListExcel ? <SecondaryButton label="Descargar Excel" accentColor={EXPORT_GREEN} onPress={onDownloadListExcel} /> : null}
         {message ? <MessageBox message={message} /> : null}
       </View>
 
@@ -11224,20 +11424,20 @@ function AccountStatementScreen({
             <Text style={styles.clientListEyebrow}>Listado por cliente</Text>
             <Text style={styles.clientListTitle}>Estado de cuenta</Text>
           </View>
-          <Text style={styles.clientListCount}>{items.length}</Text>
+          <Text style={styles.clientListCount}>{visibleItems.length}</Text>
         </View>
         {loading ? <EmptyState title="Cargando estados" text="Consultando saldos y movimientos..." /> : null}
-        {!loading && !message && items.length === 0 ? <EmptyState title="Sin clientes para mostrar" text="Cuando existan saldos, apareceran aqui." /> : null}
-        {!loading && items.length > 0 ? (
+        {!loading && !message && visibleItems.length === 0 ? <EmptyState title="Sin clientes para mostrar" text="Cuando existan saldos, apareceran aqui." /> : null}
+        {!loading && visibleItems.length > 0 ? (
           <ResultCollection
-            items={items}
+            items={visibleItems}
             resetKey={`estado-cuenta-${search}`}
             keyExtractor={(item, index) => `estado-cuenta-${item.id || 'cliente'}-${index}`}
             variant="plain"
             renderItem={(item) => (
               <AccountStatementClientCard
                 item={item}
-                onView={() => setDetailItem(item)}
+                onView={() => void openDetail(item)}
                 onRegister={() => onRegisterPayment?.(item)}
               />
             )}
@@ -11247,6 +11447,7 @@ function AccountStatementScreen({
 
       <AccountStatementDetailModal
         item={detailItem}
+        loading={loadingDetail}
         onClose={() => setDetailItem(null)}
         onRegister={() => {
           if (detailItem) onRegisterPayment?.(detailItem);
@@ -11254,6 +11455,9 @@ function AccountStatementScreen({
         }}
         onDownloadFile={(format) => {
           if (detailItem) onDownloadFile?.(detailItem, format);
+        }}
+        onSend={() => {
+          if (detailItem) onSendEmail?.(detailItem);
         }}
       />
     </>
@@ -11326,7 +11530,7 @@ function AccountClientStat({ label, value, danger }: { label: string; value: str
   );
 }
 
-function AccountStatementDetailModal({ item, onClose, onRegister, onDownloadFile }: { item: OperationalMobileItem | null; onClose: () => void; onRegister: () => void; onDownloadFile: (format: 'pdf' | 'excel') => void }) {
+function AccountStatementDetailModal({ item, loading, onClose, onRegister, onDownloadFile, onSend }: { item: OperationalMobileItem | null; loading: boolean; onClose: () => void; onRegister: () => void; onDownloadFile: (format: 'pdf' | 'excel') => void; onSend: () => void }) {
   const [activeTab, setActiveTab] = useState<AccountStatementTab>('Historial');
   useEffect(() => {
     if (item) setActiveTab('Historial');
@@ -11360,6 +11564,7 @@ function AccountStatementDetailModal({ item, onClose, onRegister, onDownloadFile
               <Text style={styles.detailModalCloseText}>×</Text>
             </Pressable>
           </View>
+          {loading ? <ActivityIndicator color="#0870BE" /> : null}
           <View style={styles.accountModalChips}>
             {email ? <AccountInfoChip icon="email-outline" label={email} /> : null}
             <AccountInfoChip icon="file-document-outline" label={`${invoiceCount} factura(s)`} />
@@ -11394,7 +11599,7 @@ function AccountStatementDetailModal({ item, onClose, onRegister, onDownloadFile
               <MaterialCommunityIcons name="cash-plus" size={17} color="#128A46" />
               <Text style={styles.accountModalRegisterText}>Registrar abono</Text>
             </Pressable>
-            <Pressable style={styles.accountModalActionButton} onPress={() => Alert.alert('Estado de cuenta', 'Envio de estado de cuenta pendiente de conectar en movil.')}>
+            <Pressable style={styles.accountModalActionButton} onPress={onSend}>
               <MaterialCommunityIcons name="email-outline" size={17} color="#315A7A" />
               <Text style={styles.accountModalActionText}>Enviar estado</Text>
             </Pressable>
@@ -11595,7 +11800,7 @@ function getAccountStatementMovements(item: OperationalMobileItem) {
 
   if (!rows.length) return [fallbackRow];
 
-  return rows.slice(0, 4).map((row) => {
+  return rows.map((row) => {
     const movementItem: OperationalMobileItem = { id: '', title: '', raw: row };
     return {
       date: getAccountStatementText(movementItem, ['fecha', 'Fecha', 'fechaEmision', 'FechaEmision']) || '-',
@@ -11615,7 +11820,7 @@ function getAccountStatementInvoices(item: OperationalMobileItem): AccountStatem
     return getAccountStatementMovements(item).map((movement) => ({ ...movement, status: item.status || 'Pendiente' }));
   }
 
-  return rows.slice(0, 4).map((row) => {
+  return rows.map((row) => {
     const invoiceItem: OperationalMobileItem = { id: '', title: '', raw: row };
     return {
       date: getAccountStatementText(invoiceItem, ['fecha', 'Fecha', 'fechaEmision', 'FechaEmision']) || '-',
@@ -11631,7 +11836,7 @@ function getAccountStatementPayments(item: OperationalMobileItem): AccountStatem
   const rawPayments = getAccountStatementRawValue(item, ['abonosDetalle', 'AbonosDetalle', 'pagos', 'Pagos', 'abonos', 'Abonos']);
   const rows = Array.isArray(rawPayments) ? rawPayments.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)) : [];
 
-  return rows.slice(0, 4).map((row) => {
+  return rows.map((row) => {
     const paymentItem: OperationalMobileItem = { id: '', title: '', raw: row };
     return {
       date: getAccountStatementText(paymentItem, ['fecha', 'Fecha', 'fechaAbono', 'FechaAbono', 'fechaPago', 'FechaPago']) || '-',
@@ -12022,7 +12227,8 @@ function OperationalForm({
   onSave: () => void;
 }) {
   return (
-    <View style={styles.formSectionBox}>
+    <View style={styles.clientFormCard}>
+      <FormTopBar onBack={onCancel} onDiscard={onCancel} />
       <Text style={styles.clientFormSubtitle}>Operacion</Text>
       <Text style={styles.clientFormTitle}>{title}</Text>
       <Field label="Codigo (opcional)" value={form.codigo} onChangeText={(value) => onChange('codigo', value)} autoCapitalize="characters" />
@@ -12031,7 +12237,6 @@ function OperationalForm({
       <Field label="Observacion (opcional)" value={form.observacion} onChangeText={(value) => onChange('observacion', value)} />
       <View style={styles.formActions}>
         <PrimaryButton label="Guardar" loading={saving} onPress={onSave} />
-        <SecondaryButton label="Cancelar" onPress={onCancel} />
       </View>
     </View>
   );
@@ -14103,7 +14308,7 @@ function ClienteForm({
 
   return (
     <View style={styles.clientFormCard}>
-      <FormTopBar onBack={onCancel} onDiscard={onReset} />
+      <FormTopBar onBack={onCancel} onDiscard={() => { onReset(); onCancel(); }} />
       <Text style={styles.clientFormTitle}>{mode === 'edit' ? 'Editar cliente / proveedor' : 'Nuevo cliente / proveedor'}</Text>
       {loadingLookups ? <Text style={styles.mutedText}>Cargando catalogos...</Text> : null}
 
@@ -14446,7 +14651,7 @@ function ProductoForm({
 
   return (
     <View style={styles.clientFormCard}>
-      <FormTopBar onBack={onCancel} onDiscard={onReset} />
+      <FormTopBar onBack={onCancel} onDiscard={() => { onReset(); onCancel(); }} />
       <Text style={styles.clientFormTitle}>{mode === 'edit' ? 'Editar producto o servicio' : 'Registrar producto o servicio'}</Text>
       {loadingLookups ? <Text style={styles.mutedText}>Cargando catalogos...</Text> : null}
 
@@ -14629,7 +14834,7 @@ function CategoriaForm({
 }) {
   return (
     <View style={styles.clientFormCard}>
-      <FormTopBar onBack={onCancel} onDiscard={onReset} />
+      <FormTopBar onBack={onCancel} onDiscard={() => { onReset(); onCancel(); }} />
       <Text style={styles.clientFormTitle}>{mode === 'edit' ? 'Editar categoria' : 'Nueva categoria'}</Text>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Operacion</Text>
@@ -14664,7 +14869,7 @@ function SubcategoriaForm({
 }) {
   return (
     <View style={styles.clientFormCard}>
-      <FormTopBar onBack={onCancel} onDiscard={onReset} />
+      <FormTopBar onBack={onCancel} onDiscard={() => { onReset(); onCancel(); }} />
       <Text style={styles.clientFormTitle}>{mode === 'edit' ? 'Editar subcategoria' : 'Nueva subcategoria'}</Text>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Operacion</Text>
@@ -14706,6 +14911,8 @@ function EmisorForm({
   onChange,
   onReset,
   onSelectLogo,
+  onConsultarSri,
+  consultandoSri,
   onSave,
 }: {
   form: EmisorFormState;
@@ -14715,17 +14922,20 @@ function EmisorForm({
   onChange: <K extends keyof EmisorFormState>(key: K, value: EmisorFormState[K]) => void;
   onReset: () => void;
   onSelectLogo: () => void;
+  onConsultarSri: () => void;
+  consultandoSri: boolean;
   onSave: () => void;
 }) {
   return (
     <View style={styles.clientFormCard}>
-      <FormTopBar onBack={onCancel} onDiscard={onReset} />
+      <FormTopBar onBack={onCancel} onDiscard={() => { onReset(); onCancel(); }} />
       <Text style={styles.clientFormTitle}>{mode === 'edit' ? 'Editar emisor' : 'Registrar emisor'}</Text>
 
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Informacion fiscal</Text>
         <Field label="Razon Social *" value={form.razonSocial} onChangeText={(value) => onChange('razonSocial', value)} />
         <Field label="RUC *" value={form.ruc} onChangeText={(value) => onChange('ruc', value.replace(/\D/g, ''))} keyboardType="number-pad" />
+        <PrimaryButton label="Consultar en SRI" loading={consultandoSri} onPress={onConsultarSri} />
         <Field label="Nombre Comercial *" value={form.nomComercial} onChangeText={(value) => onChange('nomComercial', value)} />
         <Field label="Direccion Establecimiento *" value={form.dirEstablecimiento} onChangeText={(value) => onChange('dirEstablecimiento', value)} />
         <Field label="Direccion Matriz *" value={form.direccionMatriz} onChangeText={(value) => onChange('direccionMatriz', value)} />
@@ -14835,7 +15045,7 @@ function FirmaForm({
 
   return (
     <View style={styles.clientFormCard}>
-      <FormTopBar onBack={onCancel} onDiscard={onClear} />
+      <FormTopBar onBack={onCancel} onDiscard={() => { onClear(); onCancel(); }} />
       <Text style={styles.clientFormTitle}>{emisor.nomComercial || emisor.razonSocial || 'Firma electronica'}</Text>
       <Text style={styles.clientMeta}>{emisor.ruc ? `RUC ${emisor.ruc}` : 'RUC no disponible'}</Text>
 
