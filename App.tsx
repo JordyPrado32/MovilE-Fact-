@@ -11190,7 +11190,8 @@ function AccountsReceivableScreen({
   const overdueItems = items.filter((item) => getReceivableStatus(item) === 'Vencida');
   const dueSoonItems = items.filter((item) => getReceivableStatus(item) === 'Por vencer');
   const activeClients = new Set(items.map((item) => getAccountStatementClientId(item) || item.title).filter(Boolean)).size;
-  const averageDays = Math.round(items.reduce((total, item) => total + getAccountStatementNumber(item, ['diasCobro', 'DiasCobro', 'diasPromedio', 'DiasPromedio', 'diasMora', 'DiasMora'], 0), 0) / Math.max(items.length, 1));
+  const collectionDays = items.map(getReceivableAgeDays).filter((days): days is number => days !== null);
+  const averageDays = collectionDays.length ? Math.round(collectionDays.reduce((total, days) => total + days, 0) / collectionDays.length) : 0;
   const selectedTab = activeTab || 'Cuentas por cobrar';
   const activeStepIndex = formMode ? 1 : 0;
   const [carteraFilter, setCarteraFilter] = useState<'Todas' | 'Vencidas' | 'Por vencer' | 'Vigentes'>('Todas');
@@ -11358,6 +11359,17 @@ function getReceivableStatus(item: OperationalMobileItem) {
   if (dueDate < today) return 'Vencida';
   if (dueDate <= new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)) return 'Por vencer';
   return 'Vigente';
+}
+
+function getReceivableAgeDays(item: OperationalMobileItem) {
+  const rawIssueDate = getAccountStatementText(item, ['fechaEmision', 'FechaEmision', 'fecha', 'Fecha']);
+  const issueDate = rawIssueDate ? new Date(rawIssueDate) : null;
+  if (!issueDate || Number.isNaN(issueDate.getTime())) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  issueDate.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.floor((today.getTime() - issueDate.getTime()) / (24 * 60 * 60 * 1000)));
 }
 
 function ReceivableInvoiceCard({ item, onRegister }: { item: OperationalMobileItem; onRegister: () => void }) {
@@ -11605,13 +11617,14 @@ function AccountStatementDetailModal({ item, loading, onClose, onRegister, onDow
   const payments = item ? getAccountStatementPayments(item) : [];
   const balance = item ? getAccountStatementDisplayMoney(item, ['saldoTotalCliente', 'SaldoTotalCliente', 'saldoActual', 'SaldoActual', 'saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta) : '$ 0,00';
   const invoiceCount = item ? getAccountStatementNumber(item, ['facturas', 'Facturas', 'facturasPendientes', 'FacturasPendientes', 'cantidadFacturas', 'CantidadFacturas'], movements.length || 1) : 0;
-  const lastPayment = item ? getAccountStatementDisplayMoney(item, ['ultimoAbono', 'UltimoAbono', 'ultimoPago', 'UltimoPago', 'valorUltimoAbono', 'ValorUltimoAbono'], '$ 0,00') : '$ 0,00';
-  const daysOverdue = item ? getAccountStatementText(item, ['diasVencidos', 'DiasVencidos', 'diasMora', 'DiasMora']) || '0 dias' : '0 dias';
+  const lastPayment = item ? getAccountStatementDisplayMoney(item, ['montoUltimoAbono', 'MontoUltimoAbono', 'ultimoAbono', 'UltimoAbono', 'ultimoPago', 'UltimoPago', 'valorUltimoAbono', 'ValorUltimoAbono'], '$ 0,00') : '$ 0,00';
+  const daysOverdueValue = item ? getAccountStatementText(item, ['diasVencidosMaximos', 'DiasVencidosMaximos', 'diasVencidos', 'DiasVencidos', 'diasMora', 'DiasMora']) || '0' : '0';
+  const daysOverdue = `${daysOverdueValue} dias`;
   const email = item ? getAccountStatementText(item, ['email', 'Email', 'correo', 'Correo']) : '';
   const identification = item ? getAccountStatementText(item, ['numeroIdentificacion', 'NumeroIdentificacion', 'identificacion', 'Identificacion', 'ruc', 'Ruc']) || item.subtitle : '';
   const totalBilled = item ? getAccountStatementDisplayMoney(item, ['totalFacturado', 'TotalFacturado', 'valorFacturado', 'ValorFacturado', 'total', 'Total'], balance) : '$ 0,00';
   const totalPaid = item ? getAccountStatementDisplayMoney(item, ['totalAbonos', 'TotalAbonos', 'totalAbonado', 'TotalAbonado', 'abonos', 'Abonos'], '$ 0,00') : '$ 0,00';
-  const creditBalance = item ? getAccountStatementDisplayMoney(item, ['saldoFavor', 'SaldoFavor', 'saldoAFavor', 'SaldoAFavor'], '$ 0,00') : '$ 0,00';
+  const creditBalance = item ? getAccountStatementDisplayMoney(item, ['saldoAFavorDisponible', 'SaldoAFavorDisponible', 'saldoFavor', 'SaldoFavor', 'saldoAFavor', 'SaldoAFavor'], '$ 0,00') : '$ 0,00';
   const settledDocuments = item ? getAccountStatementNumber(item, ['documentosSaldados', 'DocumentosSaldados', 'facturasSaldadas', 'FacturasSaldadas'], 0) : 0;
 
   return (
