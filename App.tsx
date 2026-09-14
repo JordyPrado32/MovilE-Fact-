@@ -11187,11 +11187,16 @@ function AccountsReceivableScreen({
   onRegisterPayment?: (item: OperationalMobileItem) => void;
 }) {
   const totalBalance = items.reduce((total, item) => total + getAccountStatementAmount(item, ['saldoPendiente', 'SaldoPendiente', 'saldoActual', 'SaldoActual', 'saldo', 'Saldo'], item.meta), 0);
-  const overdueItems = items.filter((item) => normalizeText(item.status || '').includes('venc'));
+  const overdueItems = items.filter((item) => getReceivableStatus(item) === 'Vencida');
+  const dueSoonItems = items.filter((item) => getReceivableStatus(item) === 'Por vencer');
   const activeClients = new Set(items.map((item) => getAccountStatementClientId(item) || item.title).filter(Boolean)).size;
   const averageDays = Math.round(items.reduce((total, item) => total + getAccountStatementNumber(item, ['diasCobro', 'DiasCobro', 'diasPromedio', 'DiasPromedio', 'diasMora', 'DiasMora'], 0), 0) / Math.max(items.length, 1));
   const selectedTab = activeTab || 'Cuentas por cobrar';
   const activeStepIndex = formMode ? 1 : 0;
+  const [carteraFilter, setCarteraFilter] = useState<'Todas' | 'Vencidas' | 'Por vencer' | 'Vigentes'>('Todas');
+  const visibleItems = carteraFilter === 'Todas'
+    ? items
+    : items.filter((item) => getReceivableStatus(item) === (carteraFilter === 'Vencidas' ? 'Vencida' : carteraFilter));
 
   if (formMode) {
     return (
@@ -11221,7 +11226,7 @@ function AccountsReceivableScreen({
       <View style={styles.receivableMetricGrid}>
         <ReceivableMetricCard icon="wallet-outline" label="Saldo total por cobrar" value={formatMoney(totalBalance)} tone="blue" helper={`${items.length} factura(s) pendientes`} />
         <ReceivableMetricCard icon="calendar-alert" label="Facturas vencidas" value={formatMoney(overdueItems.reduce((total, item) => total + getAccountStatementAmount(item, ['saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta), 0))} tone="red" helper={`${overdueItems.length} requieren atencion`} />
-        <ReceivableMetricCard icon="timer-sand" label="Facturas por vencer" value={formatMoney(Math.max(totalBalance - overdueItems.reduce((total, item) => total + getAccountStatementAmount(item, ['saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta), 0), 0))} tone="orange" helper="Dentro de 30 dias" />
+        <ReceivableMetricCard icon="timer-sand" label="Facturas por vencer" value={formatMoney(dueSoonItems.reduce((total, item) => total + getAccountStatementAmount(item, ['saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta), 0))} tone="orange" helper={`${dueSoonItems.length} dentro de 30 dias`} />
         <ReceivableMetricCard icon="account-cash-outline" label="Clientes con saldo" value={activeClients || items.length} tone="green" helper="Cartera activa visible" />
         <ReceivableMetricCard icon="chart-line" label="Dias promedio de cobro" value={`${averageDays || 0} dias`} tone="purple" helper="Promedio general" />
       </View>
@@ -11262,10 +11267,10 @@ function AccountsReceivableScreen({
         </View>
         <SearchField label="Buscar por cedula, RUC, nombre o factura" placeholder={placeholder} value={search} onChangeText={onSearch} resultCount={items.length} loading={loading} />
         <View style={styles.receivableFilterChips}>
-          {['Todas', 'Vencidas', 'Por vencer', 'Vigentes'].map((filter) => (
-            <View key={filter} style={[styles.clientFilterChip, filter === 'Todas' && styles.clientFilterChipActive]}>
-              <Text style={[styles.clientFilterChipText, filter === 'Todas' && styles.clientFilterChipTextActive]}>{filter}</Text>
-            </View>
+          {(['Todas', 'Vencidas', 'Por vencer', 'Vigentes'] as const).map((filter) => (
+            <Pressable key={filter} onPress={() => setCarteraFilter(filter)} style={[styles.clientFilterChip, carteraFilter === filter && styles.clientFilterChipActive]}>
+              <Text style={[styles.clientFilterChipText, carteraFilter === filter && styles.clientFilterChipTextActive]}>{filter}</Text>
+            </Pressable>
           ))}
         </View>
         {message ? <MessageBox message={message} /> : null}
@@ -11277,14 +11282,14 @@ function AccountsReceivableScreen({
             <Text style={styles.clientListEyebrow}>Cartera pendiente</Text>
             <Text style={styles.clientListTitle}>{selectedTab === 'Abonos' ? 'Registro de abonos' : 'Facturas por cobrar'}</Text>
           </View>
-          <Text style={styles.clientListCount}>{items.length}</Text>
+          <Text style={styles.clientListCount}>{visibleItems.length}</Text>
         </View>
         {loading ? <EmptyState title="Cargando cartera" text="Consultando facturas pendientes..." /> : null}
-        {!loading && !message && items.length === 0 ? <EmptyState title="Sin cartera para mostrar" text="Cuando existan facturas pendientes, apareceran aqui." /> : null}
-        {!loading && items.length > 0 ? (
+        {!loading && !message && visibleItems.length === 0 ? <EmptyState title="Sin cartera para mostrar" text="No hay facturas con el filtro seleccionado." /> : null}
+        {!loading && visibleItems.length > 0 ? (
           <ResultCollection
-            items={items}
-            resetKey={`cuentas-cobrar-${selectedTab}-${search}`}
+            items={visibleItems}
+            resetKey={`cuentas-cobrar-${selectedTab}-${search}-${carteraFilter}`}
             keyExtractor={(item, index) => `cuenta-cobrar-${item.id || 'item'}-${index}`}
             variant="plain"
             renderItem={(item) => (
@@ -11339,6 +11344,22 @@ function ReceivableMetricCard({ icon, label, value, tone, helper }: { icon: Reac
   );
 }
 
+function getReceivableStatus(item: OperationalMobileItem) {
+  const saldo = getAccountStatementAmount(item, ['saldoPendiente', 'SaldoPendiente', 'saldoActual', 'SaldoActual', 'saldo', 'Saldo'], item.meta);
+  if (saldo <= 0) return 'Pagada';
+
+  const rawDueDate = getAccountStatementText(item, ['fechaVencimiento', 'FechaVencimiento', 'vencimiento', 'Vencimiento']);
+  const dueDate = rawDueDate ? new Date(rawDueDate) : null;
+  if (!dueDate || Number.isNaN(dueDate.getTime())) return 'Vigente';
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  dueDate.setHours(0, 0, 0, 0);
+  if (dueDate < today) return 'Vencida';
+  if (dueDate <= new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)) return 'Por vencer';
+  return 'Vigente';
+}
+
 function ReceivableInvoiceCard({ item, onRegister }: { item: OperationalMobileItem; onRegister: () => void }) {
   const invoiceNumber = getAccountStatementText(item, ['numeroFactura', 'NumeroFactura', 'numeroDocumento', 'NumeroDocumento', 'factura', 'Factura']) || item.id || 'Factura';
   const client = getAccountStatementText(item, ['cliente', 'Cliente', 'nombreCliente', 'NombreCliente']) || item.title || 'Cliente';
@@ -11347,8 +11368,8 @@ function ReceivableInvoiceCard({ item, onRegister }: { item: OperationalMobileIt
   const dueDate = getAccountStatementText(item, ['fechaVencimiento', 'FechaVencimiento', 'vencimiento', 'Vencimiento']) || '-';
   const total = getAccountStatementDisplayMoney(item, ['total', 'Total', 'valorFacturado', 'ValorFacturado'], item.meta);
   const balance = getAccountStatementDisplayMoney(item, ['saldoPendiente', 'SaldoPendiente', 'saldoActual', 'SaldoActual', 'saldo', 'Saldo'], item.meta);
-  const status = item.status || (normalizeText(dueDate).includes('-') ? 'Vigente' : 'Pendiente');
-  const isOverdue = normalizeText(status).includes('venc');
+  const status = getReceivableStatus(item);
+  const isOverdue = status === 'Vencida';
 
   return (
     <View style={styles.receivableInvoiceCard}>
@@ -11417,7 +11438,7 @@ function AccountStatementScreen({
   }, [items, search]);
   const visibleBalance = visibleItems.reduce((total, item) => total + getAccountStatementAmount(item, ['saldoTotalCliente', 'SaldoTotalCliente', 'saldoActual', 'SaldoActual', 'saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo'], item.meta), 0);
   const visibleInvoices = visibleItems.reduce((total, item) => total + getAccountStatementNumber(item, ['facturas', 'Facturas', 'facturasPendientes', 'FacturasPendientes', 'cantidadFacturas', 'CantidadFacturas'], 0), 0);
-  const visiblePayments = visibleItems.reduce((total, item) => total + getAccountStatementNumber(item, ['abonos', 'Abonos', 'cantidadAbonos', 'CantidadAbonos'], 0), 0);
+  const visiblePayments = visibleItems.filter((item) => getAccountStatementAmount(item, ['totalAbonos', 'TotalAbonos', 'abonos', 'Abonos'], 0) > 0).length;
   const openDetail = async (item: OperationalMobileItem) => {
     setDetailItem(item);
     if (!onLoadDetail) return;

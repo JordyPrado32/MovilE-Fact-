@@ -162,7 +162,7 @@ export async function getOperationalMobileModule(module: OperationalModule, sear
   if (context.userId) params.set('idUsuario', String(context.userId));
   const query = params.toString();
   const response = await requestWithFallback<ApiRow[] | ApiRow>(endpoints, (endpoint) => `${endpoint}${query ? `?${query}` : ''}`);
-  const rows = normalizeRows(response, module, tab);
+  const rows = groupEstadoCuentaRows(normalizeRows(response, module, tab), module, tab);
 
   return { items: rows.map((row) => toOperationalItem(row)) };
 }
@@ -188,6 +188,38 @@ export function getCompraDocumentosEstado(userId: number) {
 
 export function getEstadoCuentaPdf(userId: number, idCliente: number) {
   return apiRequestBinary(`/api/cuentas-cobrar/estado-cuenta/${idCliente}/pdf?idUsuario=${userId}`);
+}
+
+function groupEstadoCuentaRows(rows: ApiRow[], module: OperationalModule, tab: string) {
+  if (module !== 'cuentas-cobrar' || tab !== 'Estado de cuenta') return rows;
+
+  const groups = new Map<string, ApiRow[]>();
+  for (const row of rows) {
+    const idCliente = text(pickValue(row, ['idCliente', 'IdCliente']));
+    if (!idCliente) continue;
+    const group = groups.get(idCliente) ?? [];
+    group.push(row);
+    groups.set(idCliente, group);
+  }
+
+  return Array.from(groups.values()).map((items) => {
+    const first = items[0];
+    const total = (keys: string[]) => items.reduce((sum, item) => sum + numberValue(pickValue(item, keys)), 0);
+    const maximum = (keys: string[]) => items.reduce((max, item) => Math.max(max, numberValue(pickValue(item, keys))), 0);
+    const diasVencidos = maximum(['diasVencidosMaximos', 'DiasVencidosMaximos']);
+
+    return {
+      ...first,
+      valorFacturado: total(['valorFacturado', 'ValorFacturado']),
+      totalAbonos: total(['totalAbonos', 'TotalAbonos']),
+      saldoActual: total(['saldoActual', 'SaldoActual']),
+      facturasPendientes: maximum(['facturasPendientes', 'FacturasPendientes']),
+      saldoTotalCliente: maximum(['saldoTotalCliente', 'SaldoTotalCliente']),
+      diasVencidosMaximos: diasVencidos,
+      estado: maximum(['saldoTotalCliente', 'SaldoTotalCliente']) <= 0 ? 'PAGADO' : diasVencidos > 0 ? 'VENCIDO' : 'PENDIENTE',
+      facturasRelacionadas: items.map((item) => text(pickValue(item, ['numeroFactura', 'NumeroFactura']))).filter(Boolean),
+    };
+  });
 }
 
 export function registrarTransferenciaCompraDocumentos(userId: number, payload: CompraDocumentosTransferenciaInput) {
@@ -324,4 +356,10 @@ function isRecord(value: unknown): value is ApiRow {
 function text(value: unknown) {
   if (value === null || value === undefined) return '';
   return String(value);
+}
+
+function numberValue(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const parsed = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
