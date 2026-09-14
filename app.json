@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "e-fact movil",
-    "slug": "efact-mobile",
+    "name": "Numérica Software",
+    "slug": "Numérica Software",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo-numerica.png",
     "userInterfaceStyle": "light",
     "ios": {
       "infoPlist": {
@@ -63,7 +63,7 @@
       ]
     ],
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/logo-numerica.png"
     },
     "extra": {
       "eas": {
