@@ -10191,7 +10191,6 @@ function DocumentHistoryHero({
   text: string;
   metrics: Array<{ value: string | number; label: string }>;
 }) {
-  const primaryMetric = metrics[0];
   return (
     <View style={styles.invoiceHistoryHeader}>
       <View style={styles.invoiceHistoryHeaderTop}>
@@ -10203,16 +10202,6 @@ function DocumentHistoryHero({
           <Text style={styles.invoiceHistoryTitle}>{title}</Text>
           <Text style={styles.invoiceHistoryText}>{description}</Text>
         </View>
-        {primaryMetric ? (
-          <View style={styles.invoiceHistoryRecordsControl}>
-            <Text style={styles.invoiceHistoryRecordsLabel}>Ver</Text>
-            <Text style={styles.invoiceHistoryRecordsValue}>{primaryMetric.value}</Text>
-            <Text style={styles.invoiceHistoryRecordsLabel}>registros</Text>
-          </View>
-        ) : null}
-      </View>
-      <View style={styles.invoiceHistoryStats}>
-        {metrics.map((metric) => <InvoiceHistoryMetric key={metric.label} value={metric.value} label={metric.label} />)}
       </View>
     </View>
   );
@@ -10415,8 +10404,6 @@ function MisFacturasMobileScreen({
   const pageSize = 8;
   const totalPages = Math.max(1, Math.ceil(filteredFacturas.length / pageSize));
   const visibleFacturas = filteredFacturas.slice((page - 1) * pageSize, page * pageSize);
-  const autorizadas = filteredFacturas.filter((factura) => factura.autorizado || String(factura.estadoSri ?? '').toUpperCase().includes('AUTORIZ')).length;
-  const total = filteredFacturas.reduce((sum, factura) => sum + Number(factura.total ?? 0), 0);
 
   useEffect(() => {
     setPage(1);
@@ -10438,11 +10425,6 @@ function MisFacturasMobileScreen({
             <Text style={styles.invoiceHistoryTitle}>Mis facturas</Text>
             <Text style={styles.invoiceHistoryText}>Consulta tus comprobantes emitidos y ejecuta acciones del documento.</Text>
           </View>
-        </View>
-        <View style={styles.invoiceHistoryStats}>
-          <InvoiceHistoryMetric value={filteredFacturas.length} label="Filtradas" />
-          <InvoiceHistoryMetric value={formatMoney(total)} label="Monto" />
-          <InvoiceHistoryMetric value={autorizadas} label="Autorizadas" />
         </View>
       </View>
       <View style={styles.invoiceHistoryFilterPanel}>
@@ -12441,17 +12423,6 @@ function DirectoryHero({
             <Text style={styles.clientHeroAddGlyph}>+</Text>
           </Pressable>
         ) : null}
-      </View>
-      <View style={styles.clientBankMetrics}>
-        {metrics.map((metric, index) => (
-          <View key={`${metric.label}-${index}`} style={styles.clientBankMetricSlot}>
-            {index > 0 ? <View style={styles.clientBankMetricDivider} /> : null}
-            <View style={styles.clientBankMetric}>
-              <Text style={styles.clientBankMetricValue}>{metric.value}</Text>
-              <Text style={styles.clientBankMetricLabel}>{metric.label}</Text>
-            </View>
-          </View>
-        ))}
       </View>
     </View>
   );
