@@ -13189,7 +13189,13 @@ function ERubricaMobileScreen({
   };
   const pickTransferReceipt = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.82 });
-    if (!result.canceled) setTransferReceipt(result.assets[0]);
+    const asset = !result.canceled ? result.assets[0] : null;
+    if (!asset) return;
+    if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+      Alert.alert('Comprobante no valido', 'Selecciona una imagen JPG o PNG de maximo 5MB.');
+      return;
+    }
+    setTransferReceipt(asset);
   };
   const payERubricaRequest = async () => {
     setPaymentLoading(true);
@@ -14206,10 +14212,16 @@ function ERubricaMobileScreen({
               <View style={styles.erubricaPaymentTransferGrid}>
                 <View style={styles.erubricaRequestPanel}>
                   <Text style={styles.erubricaPaymentTitle}>Información de pago</Text>
+                  <Text style={styles.clientFilterLabel}>Banco *</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientFilterRow}>
+                    {['Banco Pichincha', 'Banco Guayaquil', 'Banco Internacional', 'Banco Pacifico', 'Banco Produbanco', 'Banco Bolivariano', 'Cooperativa JEP', 'Otra institucion'].map((banco) => (
+                      <Pressable key={banco} style={[styles.clientFilterChip, transferForm.banco === banco && styles.clientFilterChipActive]} onPress={() => setTransferForm((current) => ({ ...current, banco }))}><Text style={[styles.clientFilterChipText, transferForm.banco === banco && styles.clientFilterChipTextActive]}>{banco}</Text></Pressable>
+                    ))}
+                  </ScrollView>
                   <Field label="Banco *" value={transferForm.banco} onChangeText={(value) => setTransferForm((current) => ({ ...current, banco: value }))} />
                   <Field label="Titular de la cuenta *" value={transferForm.titular} onChangeText={(value) => setTransferForm((current) => ({ ...current, titular: value }))} />
-                  <Field label="N. cuenta de origen *" value={transferForm.cuenta} onChangeText={(value) => setTransferForm((current) => ({ ...current, cuenta: value }))} />
-                  <Field label="N. comprobante *" value={transferForm.comprobante} onChangeText={(value) => setTransferForm((current) => ({ ...current, comprobante: value }))} />
+                  <Field label="N. cuenta de origen *" value={transferForm.cuenta} onChangeText={(value) => setTransferForm((current) => ({ ...current, cuenta: value.replace(/\D/g, '') }))} keyboardType="number-pad" />
+                  <Field label="N. comprobante *" value={transferForm.comprobante} onChangeText={(value) => setTransferForm((current) => ({ ...current, comprobante: value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50) }))} autoCapitalize="characters" />
                   <Pressable style={styles.erubricaDropzone} onPress={pickTransferReceipt}>
                     <MaterialCommunityIcons name="image-plus" size={24} color="#1787D5" />
                     <Text style={styles.erubricaDropTitle}>{transferReceipt?.fileName ?? 'Arrastra o selecciona el comprobante'}</Text>
