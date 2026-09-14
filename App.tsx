@@ -291,6 +291,7 @@ type MessageState = {
 } | null;
 type OperationalFormState = {
   codigo: string;
+  facturaId: string;
   descripcion: string;
   valor: string;
   observacion: string;
@@ -684,6 +685,7 @@ const initialEmisorForm: EmisorFormState = {
 };
 const initialOperationalForm: OperationalFormState = {
   codigo: '',
+  facturaId: '',
   descripcion: '',
   valor: '',
   observacion: '',
@@ -1576,6 +1578,7 @@ function GlobalWorkspaceHeader({
 function operationalItemToForm(item: OperationalMobileItem): OperationalFormState {
   return {
     codigo: item.id ?? '',
+    facturaId: '',
     descripcion: item.title ?? '',
     valor: item.meta ?? '',
     observacion: item.detail ?? '',
@@ -1596,8 +1599,10 @@ function operationalFormToPayloadForContext(module: OperationalModule, tab: stri
   const valor = Number(form.valor.replace(',', '.'));
 
   if (module === 'cuentas-cobrar' && tab === 'Abonos') {
+    const facturaId = Number(form.facturaId.trim());
     return {
       idCliente: Number.isFinite(codigo) ? codigo : 0,
+      idFactura: Number.isFinite(facturaId) ? facturaId : 0,
       montoRecibido: Number.isFinite(valor) ? valor : 0,
       observacion: form.observacion.trim() || form.descripcion.trim(),
     };
@@ -4566,6 +4571,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setOperationalForm({
       ...initialOperationalForm,
       codigo: getAccountStatementClientId(item),
+      facturaId: String(getAccountStatementNumber(item, ['idFactura', 'IdFactura', 'codFactura', 'CodFactura'], 0) || ''),
       descripcion: item.title ? `Abono de ${item.title}` : 'Abono de cliente',
       observacion: item.title ? `Cliente: ${item.title}` : '',
     });
@@ -4642,6 +4648,17 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     if (!operationalForm.descripcion.trim() && !(context.module === 'recargas' && context.tab === 'Comprar documentos')) {
       setDirectoryMessage({ type: 'error', text: 'Completa la descripcion del registro.' });
       return;
+    }
+
+    if (context.module === 'cuentas-cobrar' && context.tab === 'Abonos') {
+      if (!(Number(operationalForm.codigo) > 0) || !(Number(operationalForm.facturaId) > 0)) {
+        setDirectoryMessage({ type: 'error', text: 'Selecciona un cliente y una factura para registrar el abono.' });
+        return;
+      }
+      if (!(Number(operationalForm.valor.replace(',', '.')) > 0)) {
+        setDirectoryMessage({ type: 'error', text: 'Ingresa un monto de abono mayor a cero.' });
+        return;
+      }
     }
 
     setSavingOperational(true);
@@ -11183,6 +11200,7 @@ function AccountsReceivableScreen({
           title={formMode === 'edit' ? `Editar ${selectedTab}` : `Registrar ${selectedTab}`}
           form={form}
           saving={saving}
+          isAccountPayment={selectedTab === 'Abonos'}
           onCancel={onCancel}
           onChange={onChange}
           onSave={onSave}
@@ -12326,6 +12344,7 @@ function OperationalForm({
   title,
   form,
   saving,
+  isAccountPayment = false,
   onCancel,
   onChange,
   onSave,
@@ -12333,6 +12352,7 @@ function OperationalForm({
   title: string;
   form: OperationalFormState;
   saving: boolean;
+  isAccountPayment?: boolean;
   onCancel: () => void;
   onChange: (field: keyof OperationalFormState, value: string) => void;
   onSave: () => void;
@@ -12342,7 +12362,8 @@ function OperationalForm({
       <FormTopBar onBack={onCancel} onDiscard={onCancel} />
       <Text style={styles.clientFormSubtitle}>Operacion</Text>
       <Text style={styles.clientFormTitle}>{title}</Text>
-      <Field label="Codigo (opcional)" value={form.codigo} onChangeText={(value) => onChange('codigo', value)} autoCapitalize="characters" />
+      <Field label={isAccountPayment ? "Codigo de cliente" : "Codigo (opcional)"} value={form.codigo} onChangeText={(value) => onChange('codigo', value.replace(/[^\d]/g, ''))} keyboardType={isAccountPayment ? "number-pad" : undefined} autoCapitalize="characters" />
+      {isAccountPayment ? <Field label="Codigo de factura *" value={form.facturaId} onChangeText={(value) => onChange('facturaId', value.replace(/[^\d]/g, ''))} keyboardType="number-pad" /> : null}
       <Field label="Descripcion *" value={form.descripcion} onChangeText={(value) => onChange('descripcion', value)} />
       <Field label="Valor / cantidad (opcional)" value={form.valor} onChangeText={(value) => onChange('valor', value)} keyboardType="decimal-pad" />
       <Field label="Observacion (opcional)" value={form.observacion} onChangeText={(value) => onChange('observacion', value)} />
