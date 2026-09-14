@@ -47,7 +47,7 @@ import { anularNotaCredito, buscarNotaCreditoFacturas, emitirNotaCredito, emitir
 import { anularNotaDebito, buscarNotaDebitoFacturas, emitirNotaDebito, enviarNotaDebitoCorreo, getNotaDebitoDetallesFactura, getNotaDebitoPdf, getNotaDebitoPreparacion, getNotasDebito, getNotaDebitoXml, guardarNotaDebito, NotaDebitoListItem } from './src/services/notasDebitoMobileService';
 import { clearNotificaciones, dismissNotificacion, getNotificaciones, NotificacionItem } from './src/services/notificacionesService';
 import { syncDeviceNotifications } from './src/services/deviceNotificationsService';
-import { CompraDocumentosEstado, createOperationalItem, deleteOperationalItem, enviarEstadoCuenta, getCompraDocumentosEstado, getEstadoCuentaDetalle, getEstadoCuentaExcel, getEstadoCuentaListadoExcel, getEstadoCuentaPdf, getOperationalMobileModule, getOperationalModuleConfig, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, updateOperationalItem } from './src/services/operationalMobileService';
+import { CompraDocumentosEstado, CompraDocumentosTransferenciaInput, createOperationalItem, deleteOperationalItem, enviarEstadoCuenta, getCompraDocumentosEstado, getEstadoCuentaDetalle, getEstadoCuentaExcel, getEstadoCuentaListadoExcel, getEstadoCuentaPdf, getOperationalMobileModule, getOperationalModuleConfig, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, registrarTransferenciaCompraDocumentos, updateOperationalItem } from './src/services/operationalMobileService';
 import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
 import { createPuntoEmision, deletePuntoEmision, getPuntoEmisionSiguienteSecuencial, getPuntosEmision, markPuntoPrincipal, PuntoDocumentoKey, savePuntoEmisionSecuenciaInicial, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
@@ -6427,6 +6427,31 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo guardar el archivo del estado de cuenta.' });
     }
   };
+
+  const saveRechargeTransfer = async (transfer: Omit<CompraDocumentosTransferenciaInput, 'documentos' | 'montoTotal' | 'descripcion' | 'esIlimitado'>) => {
+    if (!catalogUserId) return;
+    const documents = Number(operationalForm.codigo.trim()) || 0;
+    const amount = Number(operationalForm.valor.replace(',', '.')) || 0;
+    const unlimited = operationalForm.descripcion.toLowerCase().includes('ilimit');
+    setSavingOperational(true);
+    setDirectoryMessage(null);
+    try {
+      const response = await registrarTransferenciaCompraDocumentos(catalogUserId, {
+        ...transfer,
+        documentos: documents,
+        montoTotal: amount,
+        descripcion: operationalForm.descripcion.trim() || 'Recarga personalizada',
+        esIlimitado: unlimited,
+      });
+      setDirectoryMessage({ type: 'success', text: response.message });
+      setReloadKey((value) => value + 1);
+    } catch (error) {
+      setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo registrar la transferencia.' });
+      throw error;
+    } finally {
+      setSavingOperational(false);
+    }
+  };
   const loadEstadoCuentaDetail = async (item: OperationalMobileItem) => {
     if (!catalogUserId) return item;
     const idCliente = Number(item.id);
@@ -7651,10 +7676,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   form={operationalForm}
                   saving={savingOperational}
                   message={directoryMessage}
-                  onChange={updateRechargeForm}
-                  onSelectPlan={selectRechargePlan}
-                  onSave={saveOperational}
-                />
+                onChange={updateRechargeForm}
+                onSelectPlan={selectRechargePlan}
+                onSave={saveOperational}
+                onTransfer={saveRechargeTransfer}
+              />
               ) : (
                 <OperationalModuleScreen
                 view={activeView}
@@ -12055,6 +12081,7 @@ function PurchaseDocumentsScreen({
   onChange,
   onSelectPlan,
   onSave,
+  onTransfer,
 }: {
   form: OperationalFormState;
   saving: boolean;
@@ -12062,10 +12089,14 @@ function PurchaseDocumentsScreen({
   onChange: (field: 'codigo' | 'valor', value: string) => void;
   onSelectPlan: (documents: number, amount: number, unlimited: boolean) => void;
   onSave: () => void;
+  onTransfer: (transfer: Omit<CompraDocumentosTransferenciaInput, 'documentos' | 'montoTotal' | 'descripcion' | 'esIlimitado'>) => Promise<void>;
 }) {
   const documents = Number(form.codigo) || 0;
   const amount = Number(form.valor.replace(',', '.')) || 0;
   const [localMessage, setLocalMessage] = useState<MessageState>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'deuna' | 'transferencia'>('deuna');
+  const [transfer, setTransfer] = useState({ banco: '', titular: '', cuentaOrigen: '', numeroComprobante: '', comprobanteBase64: '', comprobanteUri: '' });
   const plans = [
     { documents: 25, amount: 11.5, caption: 'Una recarga simple para comenzar.', color: '#EAF5FC' },
     { documents: 120, amount: 31.74, caption: 'Equilibrio ideal para tu operación diaria.', color: '#FFF6E5', recommended: true },
@@ -12091,7 +12122,41 @@ function PurchaseDocumentsScreen({
       return;
     }
     setLocalMessage(null);
-    onSave();
+    setPaymentOpen(true);
+  };
+  const pickReceipt = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8, base64: true });
+    const asset = !result.canceled ? result.assets[0] : null;
+    if (!asset?.base64) return;
+    if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+      setLocalMessage({ type: 'error', text: 'El comprobante no debe superar 5MB.' });
+      return;
+    }
+    setTransfer((current) => ({ ...current, comprobanteBase64: `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`, comprobanteUri: asset.uri }));
+  };
+  const confirmPayment = async () => {
+    if (paymentMethod === 'deuna') {
+      setPaymentOpen(false);
+      onSave();
+      return;
+    }
+    if (!transfer.banco || !transfer.titular || !transfer.cuentaOrigen || !transfer.numeroComprobante || !transfer.comprobanteBase64) {
+      setLocalMessage({ type: 'error', text: 'Completa los datos y adjunta el comprobante de la transferencia.' });
+      return;
+    }
+    try {
+      await onTransfer({
+        banco: transfer.banco,
+        titular: transfer.titular,
+        cuentaOrigen: transfer.cuentaOrigen,
+        numeroComprobante: transfer.numeroComprobante.toUpperCase(),
+        comprobanteBase64: transfer.comprobanteBase64,
+      });
+      setPaymentOpen(false);
+      setTransfer({ banco: '', titular: '', cuentaOrigen: '', numeroComprobante: '', comprobanteBase64: '', comprobanteUri: '' });
+    } catch {
+      // El mensaje de error se muestra en la pantalla principal.
+    }
   };
   const total = amount;
   const unlimited = form.descripcion.toLowerCase().includes('ilimit');
@@ -12190,8 +12255,54 @@ function PurchaseDocumentsScreen({
         ))}
       </ScrollView>
 
+      <Modal visible={paymentOpen} transparent animationType="slide" onRequestClose={() => setPaymentOpen(false)}>
+        <View style={styles.erubricaPaymentOverlay}>
+          <View style={styles.erubricaPaymentModal}>
+            <View style={styles.erubricaPaymentHeader}>
+              <View><Text style={styles.erubricaHistoryEyebrow}>RESUMEN DE PAGO</Text><Text style={styles.erubricaPaymentTitle}>Compra de documentos</Text><Text style={styles.erubricaHistorySubtitle}>Elige pagar en linea o registrar una transferencia para validacion.</Text></View>
+              <Pressable style={styles.erubricaPaymentClose} onPress={() => setPaymentOpen(false)}><MaterialCommunityIcons name="close" size={20} color="#1787D5" /></Pressable>
+            </View>
+            <View style={styles.erubricaPaymentSummaryGrid}>
+              <PaymentSummary label="Documentos" value={unlimited ? 'Ilimitados' : String(documents)} />
+              <PaymentSummary label="Subtotal" value={`$${(total / 1.15).toFixed(2)}`} />
+              <PaymentSummary label="IVA 15%" value={`$${(total - total / 1.15).toFixed(2)}`} />
+              <PaymentSummary label="Total" value={`USD $${total.toFixed(2)}`} />
+            </View>
+            <View style={styles.erubricaPaymentMethodGrid}>
+              <Pressable style={[styles.erubricaPaymentMethod, paymentMethod === 'deuna' && styles.erubricaPaymentMethodActive]} onPress={() => setPaymentMethod('deuna')}><MaterialCommunityIcons name="cellphone-check" size={22} color="#1787D5" /><View style={styles.erubricaPendingDocCopy}><Text style={styles.erubricaRequestOptionTitle}>DeUna / Pago en linea</Text><Text style={styles.erubricaRequestOptionText}>Abre el checkout seguro y se acredita al aprobarse.</Text></View></Pressable>
+              <Pressable style={[styles.erubricaPaymentMethod, paymentMethod === 'transferencia' && styles.erubricaPaymentMethodActive]} onPress={() => setPaymentMethod('transferencia')}><MaterialCommunityIcons name="bank-outline" size={22} color="#1787D5" /><View style={styles.erubricaPendingDocCopy}><Text style={styles.erubricaRequestOptionTitle}>Transferencia bancaria</Text><Text style={styles.erubricaRequestOptionText}>Se valida manualmente en un plazo maximo de 24 horas.</Text></View></Pressable>
+            </View>
+            {paymentMethod === 'transferencia' ? (
+              <ScrollView style={styles.erubricaPaymentTransferGrid} contentContainerStyle={styles.erubricaPaymentTransferGrid}>
+                <View style={styles.erubricaRequestPanel}>
+                  <Text style={styles.erubricaPaymentTitle}>Informacion de pago</Text>
+                  <Text style={styles.clientFilterLabel}>Banco *</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientFilterRow}>
+                    {['Banco Pichincha', 'Banco Guayaquil', 'Banco Internacional', 'Banco Pacifico', 'Banco Produbanco', 'Banco Bolivariano', 'Cooperativa JEP', 'Otra institucion'].map((banco) => (
+                      <Pressable key={banco} style={[styles.clientFilterChip, transfer.banco === banco && styles.clientFilterChipActive]} onPress={() => setTransfer((current) => ({ ...current, banco }))}><Text style={[styles.clientFilterChipText, transfer.banco === banco && styles.clientFilterChipTextActive]}>{banco}</Text></Pressable>
+                    ))}
+                  </ScrollView>
+                  <Field label="Banco *" value={transfer.banco} onChangeText={(banco) => setTransfer((current) => ({ ...current, banco }))} />
+                  <Field label="Titular de la cuenta *" value={transfer.titular} onChangeText={(titular) => setTransfer((current) => ({ ...current, titular }))} />
+                  <Field label="N. cuenta de origen *" value={transfer.cuentaOrigen} onChangeText={(cuentaOrigen) => setTransfer((current) => ({ ...current, cuentaOrigen: cuentaOrigen.replace(/\D/g, '') }))} keyboardType="number-pad" />
+                  <Field label="N. comprobante *" value={transfer.numeroComprobante} onChangeText={(numeroComprobante) => setTransfer((current) => ({ ...current, numeroComprobante: numeroComprobante.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50) }))} autoCapitalize="characters" />
+                  <SecondaryButton label={transfer.comprobanteUri ? 'Cambiar comprobante' : 'Adjuntar comprobante JPG o PNG'} onPress={pickReceipt} />
+                  {transfer.comprobanteUri ? <Image source={{ uri: transfer.comprobanteUri }} style={{ width: '100%', height: 150, resizeMode: 'contain' }} /> : null}
+                </View>
+                <View style={styles.erubricaRequestPanel}><Text style={styles.erubricaPaymentTitle}>Pagar a</Text><Text style={styles.erubricaRequestOptionText}>Banco: Banco Pichincha{`\n`}Tipo de cuenta: Cuenta corriente{`\n`}Numero de cuenta: 2100346647{`\n`}RUC: 1793233799001{`\n`}Nombre: NUMERICASOFTWARE S.A.S.{`\n`}e-mail: contabilidad@numericasoftware.com</Text></View>
+              </ScrollView>
+            ) : <View style={styles.erubricaRequestHistoryNotice}><MaterialCommunityIcons name="shield-check-outline" size={20} color="#1787D5" /><Text style={styles.erubricaRequestOptionText}>Continuaras al checkout seguro. El saldo se acredita al aprobarse el pago.</Text></View>}
+            <View style={styles.erubricaPaymentActions}><SecondaryButton label="Cancelar" onPress={() => setPaymentOpen(false)} /><PrimaryButton label={paymentMethod === 'deuna' ? 'Pagar con DeUna' : 'Enviar transferencia'} loading={saving} onPress={() => void confirmPayment()} /></View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
+}
+
+function PaymentSummary({ label, value }: { label: string; value: string }) {
+  return <View style={styles.erubricaPaymentSummaryBox}><Text style={styles.erubricaHistoryEyebrow}>{label}</Text><Text style={styles.erubricaPaymentSummaryValue}>{value}</Text></View>;
 }
 
 function getOperationalCapabilities(view: WorkspaceView, tab: string) {

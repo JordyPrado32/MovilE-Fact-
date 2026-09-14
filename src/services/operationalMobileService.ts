@@ -53,6 +53,20 @@ export type CompraDocumentosPagoResponse = {
   status: string;
 };
 
+export type CompraDocumentosTransferenciaInput = CompraDocumentosPagoInput & {
+  banco: string;
+  titular: string;
+  cuentaOrigen: string;
+  numeroComprobante: string;
+  comprobanteBase64: string;
+};
+
+export type CompraDocumentosTransferenciaResponse = {
+  purchaseId: string;
+  status: string;
+  message: string;
+};
+
 export type CompraDocumentosEstado = {
   saldoDocumentos?: number | null;
   FechaUltimaRecargaDocumentos?: string | null;
@@ -174,6 +188,14 @@ export function getCompraDocumentosEstado(userId: number) {
 
 export function getEstadoCuentaPdf(userId: number, idCliente: number) {
   return apiRequestBinary(`/api/cuentas-cobrar/estado-cuenta/${idCliente}/pdf?idUsuario=${userId}`);
+}
+
+export function registrarTransferenciaCompraDocumentos(userId: number, payload: CompraDocumentosTransferenciaInput) {
+  return apiRequest<CompraDocumentosTransferenciaResponse>(`/api/documentos/compra/transferencia?idUsuario=${userId}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    timeoutMs: 30000,
+  });
 }
 
 export function getEstadoCuentaDetalle(userId: number, idCliente: number) {
