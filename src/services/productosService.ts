@@ -38,6 +38,10 @@ type ProductoApi = Producto & {
   PrecioUnitario?: number | string | null;
   ValorUnitario?: number | string | null;
   valorUnitario?: number | string | null;
+  Precio2?: number | string | null;
+  precio2?: number | string | null;
+  Precio3?: number | string | null;
+  precio3?: number | string | null;
   Pvp?: number | string | null;
   PVP?: number | string | null;
   ProPrecio?: number | string | null;
@@ -125,6 +129,8 @@ type ProductoApi = Producto & {
   subDescripcion?: string | null;
   subdescripcion?: string | null;
   Estado?: boolean | null;
+  Observacion?: string | null;
+  observacion?: string | null;
 };
 
 type TarifaApi = TarifaLookup & {
@@ -283,7 +289,7 @@ function normalizePrices(...sources: Array<Array<number | string> | null | undef
 
 function normalizeProducto(producto: ProductoApi): Producto {
   const precios = normalizePrices(producto.precios, producto.Precios, producto.preciosAdicionales, producto.PreciosAdicionales);
-  const preciosDirectos = [producto.precioBase, producto.PrecioBase, producto.Precio, producto.PrecioUnitario, producto.ValorUnitario, producto.valorUnitario, producto.Pvp, producto.PVP, producto.ProPrecio, producto.proPrecio, producto.proprecio]
+  const preciosDirectos = [producto.precioBase, producto.PrecioBase, producto.Precio, producto.PrecioUnitario, producto.ValorUnitario, producto.valorUnitario, producto.Precio2, producto.precio2, producto.Precio3, producto.precio3, producto.Pvp, producto.PVP, producto.ProPrecio, producto.proPrecio, producto.proprecio]
     .map((value) => normalizeOptionalNumber(value))
     .filter((value): value is number => value !== null);
   const precioBase = preciosDirectos.find((value) => value > 0) ?? precios.find((value) => value > 0) ?? preciosDirectos[0] ?? precios[0] ?? 0;
@@ -309,7 +315,7 @@ function normalizeProducto(producto: ProductoApi): Producto {
 
   return {
     codproducto: normalizeOptionalNumber(producto.codproducto ?? producto.Codproducto ?? producto.CodProducto ?? producto.IdProducto ?? producto.Codigo ?? producto.ProCodigo ?? producto.procodigo ?? producto.codigoInterno) ?? 0,
-    tipo: normalizeTipo(producto.tipo ?? producto.Tipo),
+    tipo: normalizeTipo(producto.tipo ?? producto.Tipo ?? producto.TipoCompravena ?? producto.tipoCompravena),
     nombre: producto.nombre ?? producto.Nombre ?? producto.ProNombre ?? producto.proNombre ?? producto.pronombre ?? producto.Descripcion ?? '',
     codigo:
       producto.codigo ??
@@ -337,6 +343,7 @@ function normalizeProducto(producto: ProductoApi): Producto {
     subcategoria: subcategoria ?? normalizeOptionalNumber(producto.Idsubtipo ?? producto.idsubtipo),
     subcategoriaDescripcion: producto.subcategoriaDescripcion ?? producto.SubcategoriaDescripcion ?? producto.DescripcionSubcategoria ?? producto.SubDescripcion ?? producto.subDescripcion ?? producto.subdescripcion ?? (String(pickByPattern(producto, ['sub', 'descripcion']) ?? '') || null),
     estado: producto.estado ?? producto.Estado,
+    observacion: producto.observacion ?? producto.Observacion,
   };
 }
 
@@ -422,11 +429,25 @@ export async function getProductoLookups(userId: number) {
   return normalizeLookups(lookups);
 }
 
-export async function getProductoSubcategorias(categoriaId: number) {
-  const response = await apiRequest<ApiList<SubcategoriaApi>>(`${PRODUCTOS_PATH}/subcategorias?categoriaId=${categoriaId}`);
-  return unwrapList(response).map((subcategoria) => ({
-    idSubcategoria: normalizeOptionalNumber(pickValue(subcategoria, ['idSubcategoria', 'IdSubcategoria', 'codigo', 'Codigo', 'SubCodigo', 'subCodigo', 'subcodigo'])) ?? 0,
-    idCategoria: normalizeOptionalNumber(pickValue(subcategoria, ['idCategoria', 'IdCategoria', 'categoria', 'Categoria', 'categoriaId', 'CategoriaId'])),
-    descripcion: String(pickValue(subcategoria, ['descripcion', 'Descripcion', 'nombre', 'Nombre']) ?? ''),
-  }));
+export async function getProductoSubcategorias(userId: number, categoriaId: number) {
+  const paths = [
+    `${PRODUCTOS_PATH}/subcategorias?userId=${userId}&categoriaId=${categoriaId}`,
+    `/api/subcategorias?userId=${userId}&categoriaId=${categoriaId}`,
+  ];
+  let lastError: unknown;
+
+  for (const path of paths) {
+    try {
+      const response = await apiRequest<ApiList<SubcategoriaApi>>(path, { timeoutMs: 8000, suppressErrorLog: true });
+      return unwrapList(response).map((subcategoria) => ({
+        idSubcategoria: normalizeOptionalNumber(pickValue(subcategoria, ['idSubcategoria', 'IdSubcategoria', 'codigo', 'Codigo', 'SubCodigo', 'subCodigo', 'subcodigo'])) ?? 0,
+        idCategoria: normalizeOptionalNumber(pickValue(subcategoria, ['idCategoria', 'IdCategoria', 'categoria', 'Categoria', 'categoriaId', 'CategoriaId'])),
+        descripcion: String(pickValue(subcategoria, ['descripcion', 'Descripcion', 'nombre', 'Nombre']) ?? ''),
+      }));
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
 }

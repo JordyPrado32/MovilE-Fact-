@@ -131,9 +131,9 @@ async function requestFirstList<T>(paths: string[]) {
 export async function getCategorias(userId: number, incluirInactivos = false) {
   const params = `userId=${userId}&incluirInactivos=${incluirInactivos}`;
   const categorias = await requestFirstList<CategoriaApi>([
+    `${CATEGORIAS_PATH}?${params}`,
     `${PRODUCTOS_PATH}/categorias?${params}`,
     `${PRODUCTOS_PATH}/categorias?${params.replace('userId=', 'idUsuario=')}`,
-    `${CATEGORIAS_PATH}?${params}`,
   ]);
 
   return categorias.map(normalizeCategoria);
@@ -162,9 +162,9 @@ export async function deleteCategoria(userId: number, idCategoria: number) {
 export async function getSubcategorias(userId: number, incluirInactivos = false) {
   const params = `userId=${userId}&incluirInactivos=${incluirInactivos}`;
   const subcategorias = await requestFirstList<SubcategoriaApi>([
+    `${SUBCATEGORIAS_PATH}?${params}`,
     `${PRODUCTOS_PATH}/subcategorias?${params}`,
     `${PRODUCTOS_PATH}/subcategorias?${params.replace('userId=', 'idUsuario=')}`,
-    `${SUBCATEGORIAS_PATH}?${params}`,
   ]);
 
   return subcategorias.map(normalizeSubcategoria);

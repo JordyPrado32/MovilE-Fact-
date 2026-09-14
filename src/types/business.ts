@@ -24,6 +24,10 @@ export type Cliente = {
   creditoTributarioProveedor?: string | null;
   codigoProveedor?: string | null;
   esSujetoRetencionProveedor?: boolean;
+  registraInformacionBancariaProveedor?: boolean;
+  bancoProveedor?: string | null;
+  tipoCuentaProveedor?: string | null;
+  numeroCuentaProveedor?: string | null;
 };
 
 export type ClienteUpsert = Omit<Cliente, 'codcliente'>;
@@ -77,6 +81,7 @@ export type Producto = {
   subcategoria?: number | null;
   subcategoriaDescripcion?: string | null;
   estado?: boolean | null;
+  observacion?: string | null;
 };
 
 export type ProductoUpsert = Omit<Producto, 'codproducto' | 'tarifaDescripcion' | 'categoriaDescripcion' | 'subcategoriaDescripcion'>;

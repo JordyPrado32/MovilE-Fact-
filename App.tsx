@@ -275,6 +275,10 @@ type ClienteFormState = {
   creditoTributarioProveedor: string;
   codigoProveedor: string;
   esSujetoRetencionProveedor: boolean;
+  registraInformacionBancariaProveedor: boolean;
+  bancoProveedor: string;
+  tipoCuentaProveedor: string;
+  numeroCuentaProveedor: string;
 };
 type MessageState = {
   type: 'success' | 'error' | 'info';
@@ -340,6 +344,7 @@ type ProductoFormState = {
   categoria: number | null;
   subcategoria: number | null;
   estado: boolean;
+  observacion: string;
 };
 
 type CategoriaFormState = {
@@ -611,6 +616,10 @@ const initialClienteForm: ClienteFormState = {
   creditoTributarioProveedor: '01',
   codigoProveedor: '',
   esSujetoRetencionProveedor: false,
+  registraInformacionBancariaProveedor: false,
+  bancoProveedor: '',
+  tipoCuentaProveedor: '',
+  numeroCuentaProveedor: '',
 };
 
 const initialProductoForm: ProductoFormState = {
@@ -624,6 +633,7 @@ const initialProductoForm: ProductoFormState = {
   categoria: null,
   subcategoria: null,
   estado: true,
+  observacion: '',
 };
 
 const FALLBACK_TARIFAS_IVA = [
@@ -1251,6 +1261,10 @@ function clienteToForm(cliente: Cliente): ClienteFormState {
     creditoTributarioProveedor: cliente.creditoTributarioProveedor ?? '01',
     codigoProveedor: cliente.codigoProveedor ?? '',
     esSujetoRetencionProveedor: cliente.esSujetoRetencionProveedor ?? false,
+    registraInformacionBancariaProveedor: cliente.registraInformacionBancariaProveedor ?? false,
+    bancoProveedor: cliente.bancoProveedor ?? '',
+    tipoCuentaProveedor: cliente.tipoCuentaProveedor ?? '',
+    numeroCuentaProveedor: cliente.numeroCuentaProveedor ?? '',
   };
 }
 
@@ -1284,6 +1298,10 @@ function clienteFormToPayload(form: ClienteFormState) {
     creditoTributarioProveedor: form.esProveedor ? form.creditoTributarioProveedor.trim() || '01' : null,
     codigoProveedor: form.esProveedor ? form.codigoProveedor.trim() : null,
     esSujetoRetencionProveedor: form.esProveedor ? form.esSujetoRetencionProveedor : false,
+    registraInformacionBancariaProveedor: form.esProveedor && form.registraInformacionBancariaProveedor,
+    bancoProveedor: form.esProveedor && form.registraInformacionBancariaProveedor ? form.bancoProveedor.trim() : null,
+    tipoCuentaProveedor: form.esProveedor && form.registraInformacionBancariaProveedor ? form.tipoCuentaProveedor.trim() : null,
+    numeroCuentaProveedor: form.esProveedor && form.registraInformacionBancariaProveedor ? form.numeroCuentaProveedor.trim() : null,
   };
 }
 
@@ -1301,6 +1319,7 @@ function productoToForm(producto: Producto): ProductoFormState {
     categoria: producto.categoria ?? null,
     subcategoria: producto.subcategoria ?? null,
     estado: producto.estado !== false,
+    observacion: producto.observacion ?? '',
   };
 }
 
@@ -1322,6 +1341,7 @@ function productoFormToPayload(form: ProductoFormState) {
     categoria: form.categoria,
     subcategoria: form.subcategoria,
     estado: form.estado,
+    observacion: form.observacion.trim() || null,
     Codigo: 0,
     Nombre: form.nombre.trim(),
     CodigoPrincipal: form.codigo.trim() || null,
@@ -1334,6 +1354,7 @@ function productoFormToPayload(form: ProductoFormState) {
     Codigoimpuesto: form.iva ? '2' : null,
     Porcentajeimpuesto: form.iva && form.tarifa !== null ? String(form.tarifa) : null,
     Estado: form.estado,
+    Observacion: form.observacion.trim() || null,
   };
 }
 
@@ -2293,9 +2314,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [search, setSearch] = useState('');
   const [clienteTipoFiltro, setClienteTipoFiltro] = useState<'todos' | 'personas' | 'empresas'>('todos');
   const [clienteProveedorFiltro, setClienteProveedorFiltro] = useState<'todos' | 'proveedores'>('todos');
+  const [clienteEstadoFiltro, setClienteEstadoFiltro] = useState<'activos' | 'inactivos' | 'todos'>('activos');
   const [productoTipoFiltro, setProductoTipoFiltro] = useState<'todos' | ProductoTipo>('todos');
   const [productoCategoriaFiltro, setProductoCategoriaFiltro] = useState<number | null>(null);
   const [productoSubcategoriaFiltro, setProductoSubcategoriaFiltro] = useState<number | null>(null);
+  const [productoEstadoFiltro, setProductoEstadoFiltro] = useState<'activos' | 'inactivos' | 'todos'>('activos');
   const debouncedSearch = useDebouncedValue(search, 350);
   const [reloadKey, setReloadKey] = useState(0);
   const [adminItems, setAdminItems] = useState<AdminMobileItem[]>([]);
@@ -2384,6 +2407,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [loadingProductoDetail, setLoadingProductoDetail] = useState(false);
   const [savingProducto, setSavingProducto] = useState(false);
   const [categoriaTab, setCategoriaTab] = useState<CategoriaCatalogTab>('categorias');
+  const [subcategoriaCategoriaFiltro, setSubcategoriaCategoriaFiltro] = useState<number | null>(null);
   const [categoriaFormMode, setCategoriaFormMode] = useState<CategoriaFormMode>(null);
   const [selectedCategoria, setSelectedCategoria] = useState<CategoriaCatalogo | null>(null);
   const [categoriaForm, setCategoriaForm] = useState<CategoriaFormState>(initialCategoriaForm);
@@ -3032,7 +3056,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setLoadingClientes(true);
     setDirectoryMessage(null);
 
-    getClientes(userId)
+    getClientes(userId, true)
       .then((data) => {
         if (mounted) setClientes(data);
       })
@@ -3055,7 +3079,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     let mounted = true;
     const refreshClientes = async () => {
       try {
-        const data = await getClientes(userId);
+        const data = await getClientes(userId, true);
         if (mounted) setClientes(data);
       } catch {
         // Preserve the last visible list when a background refresh fails.
@@ -3099,7 +3123,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setLoadingProductos(true);
     setDirectoryMessage(null);
 
-    getProductos(catalogUserId)
+    getProductos(catalogUserId, true)
       .then((data) => {
         if (mounted) setProductos(data);
       })
@@ -3115,6 +3139,26 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       mounted = false;
     };
   }, [authorizedViews, catalogUserId, reloadKey]);
+
+  useEffect(() => {
+    if (!catalogUserId || !authorizedViews.has('productos') || activeView !== 'productos') return;
+
+    let mounted = true;
+    const refreshProductos = async () => {
+      try {
+        const data = await getProductos(catalogUserId, true);
+        if (mounted) setProductos(data);
+      } catch {
+        // Preserve the last visible catalog when a background refresh fails.
+      }
+    };
+
+    const refreshInterval = setInterval(refreshProductos, 20_000);
+    return () => {
+      mounted = false;
+      clearInterval(refreshInterval);
+    };
+  }, [activeView, authorizedViews, catalogUserId]);
 
   useEffect(() => {
     if ((!authorizedViews.has('productos') && !authorizedViews.has('categorias')) || productoLookups) return;
@@ -3142,27 +3186,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   useEffect(() => {
     if (!catalogUserId || !authorizedViews.has('categorias')) return;
-
-    if (productoLookups && (productoLookups.categorias.length > 0 || productoLookups.subcategorias.length > 0)) {
-      setCategorias(
-        productoLookups.categorias.map((categoria) => ({
-          idCategoria: categoria.idCategoria,
-          descripcion: categoria.descripcion,
-          estado: true,
-        })),
-      );
-      setSubcategorias(
-        productoLookups.subcategorias.map((subcategoria) => ({
-          idSubcategoria: subcategoria.idSubcategoria,
-          idCategoria: subcategoria.idCategoria ?? null,
-          descripcion: subcategoria.descripcion,
-          estado: true,
-        })),
-      );
-      setDirectoryMessage(null);
-      setLoadingCategorias(false);
-      return;
-    }
 
     let mounted = true;
     setLoadingCategorias(true);
@@ -3198,66 +3221,29 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   }, [authorizedViews, catalogUserId, productoLookups, reloadKey]);
 
   useEffect(() => {
-    if (!authorizedViews.has('categorias') || !productoLookups) return;
+    if (!catalogUserId || !authorizedViews.has('categorias') || activeView !== 'categorias') return;
 
-    if (categorias.length === 0 && productoLookups.categorias.length > 0) {
-      setCategorias(
-        productoLookups.categorias.map((categoria) => ({
-          idCategoria: categoria.idCategoria,
-          descripcion: categoria.descripcion,
-          estado: true,
-        })),
-      );
-    }
-
-    if (subcategorias.length === 0 && productoLookups.subcategorias.length > 0) {
-      setSubcategorias(
-        productoLookups.subcategorias.map((subcategoria) => ({
-          idSubcategoria: subcategoria.idSubcategoria,
-          idCategoria: subcategoria.idCategoria ?? null,
-          descripcion: subcategoria.descripcion,
-          estado: true,
-        })),
-      );
-    }
-  }, [authorizedViews, categorias.length, productoLookups, subcategorias.length]);
-
-  useEffect(() => {
-    if (!authorizedViews.has('categorias') || productos.length === 0) return;
-
-    if (categorias.length === 0) {
-      const categoriasDesdeProductos = new Map<number, CategoriaCatalogo>();
-      productos.forEach((producto) => {
-        if (producto.categoria === null || producto.categoria === undefined) return;
-        categoriasDesdeProductos.set(producto.categoria, {
-          idCategoria: producto.categoria,
-          descripcion: producto.categoriaDescripcion || `Categoria ${producto.categoria}`,
-          estado: true,
-        });
-      });
-
-      if (categoriasDesdeProductos.size > 0) {
-        setCategorias(Array.from(categoriasDesdeProductos.values()));
+    let mounted = true;
+    const refreshCategorias = async () => {
+      try {
+        const [categoriasData, subcategoriasData] = await Promise.all([
+          getCategorias(catalogUserId),
+          getSubcategorias(catalogUserId),
+        ]);
+        if (!mounted) return;
+        setCategorias(categoriasData);
+        setSubcategorias(subcategoriasData);
+      } catch {
+        // Preserve the last visible catalog when a background refresh fails.
       }
-    }
+    };
 
-    if (subcategorias.length === 0) {
-      const subcategoriasDesdeProductos = new Map<number, SubcategoriaCatalogo>();
-      productos.forEach((producto) => {
-        if (producto.subcategoria === null || producto.subcategoria === undefined) return;
-        subcategoriasDesdeProductos.set(producto.subcategoria, {
-          idSubcategoria: producto.subcategoria,
-          idCategoria: producto.categoria ?? null,
-          descripcion: producto.subcategoriaDescripcion || `Subcategoria ${producto.subcategoria}`,
-          estado: true,
-        });
-      });
-
-      if (subcategoriasDesdeProductos.size > 0) {
-        setSubcategorias(Array.from(subcategoriasDesdeProductos.values()));
-      }
-    }
-  }, [authorizedViews, categorias.length, productos, subcategorias.length]);
+    const refreshInterval = setInterval(refreshCategorias, 20_000);
+    return () => {
+      mounted = false;
+      clearInterval(refreshInterval);
+    };
+  }, [activeView, authorizedViews, catalogUserId]);
 
   useEffect(() => {
     if (!catalogUserId || (!authorizedViews.has('emisor') && !authorizedViews.has('firma'))) return;
@@ -3442,7 +3428,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
 
     let mounted = true;
-    getProductoSubcategorias(productoForm.categoria)
+    getProductoSubcategorias(catalogUserId, productoForm.categoria)
       .then((data) => {
         if (mounted) setSubcategoriasProducto(data);
       })
@@ -3470,9 +3456,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(term))) &&
       (clienteTipoFiltro === 'todos' || (clienteTipoFiltro === 'personas' ? cliente.tipoCliente === 1 : cliente.tipoCliente === 2)) &&
-      (clienteProveedorFiltro === 'todos' || cliente.esProveedor === true),
+      (clienteProveedorFiltro === 'todos' || cliente.esProveedor === true) &&
+      (clienteEstadoFiltro === 'todos' || (clienteEstadoFiltro === 'activos' ? cliente.estado !== false : cliente.estado === false)),
     );
-  }, [clientes, search, clienteTipoFiltro, clienteProveedorFiltro]);
+  }, [clientes, search, clienteTipoFiltro, clienteProveedorFiltro, clienteEstadoFiltro]);
 
   const clientesActivos = useMemo(() => clientes.filter((cliente) => cliente.estado !== false).length, [clientes]);
   const clientesProveedores = useMemo(() => clientes.filter((cliente) => cliente.esProveedor === true).length, [clientes]);
@@ -3517,9 +3504,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     return productosConCatalogos.filter((producto) =>
       (productoTipoFiltro === 'todos' || producto.tipo === productoTipoFiltro) &&
       (productoCategoriaFiltro === null || producto.categoria === productoCategoriaFiltro) &&
-      (productoSubcategoriaFiltro === null || producto.subcategoria === productoSubcategoriaFiltro),
+      (productoSubcategoriaFiltro === null || producto.subcategoria === productoSubcategoriaFiltro) &&
+      (productoEstadoFiltro === 'todos' || (productoEstadoFiltro === 'activos' ? producto.estado !== false : producto.estado === false)),
     );
-  }, [productoCategoriaFiltro, productoSubcategoriaFiltro, productoTipoFiltro, productosConCatalogos]);
+  }, [productoCategoriaFiltro, productoEstadoFiltro, productoSubcategoriaFiltro, productoTipoFiltro, productosConCatalogos]);
 
   const filteredCategorias = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -3530,14 +3518,13 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   const filteredSubcategorias = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return subcategorias;
-
     return subcategorias.filter((subcategoria) =>
-      [subcategoria.descripcion, subcategoria.categoriaDescripcion]
+      (subcategoriaCategoriaFiltro === null || subcategoria.idCategoria === subcategoriaCategoriaFiltro) &&
+      (!term || [subcategoria.descripcion, subcategoria.categoriaDescripcion]
         .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(term)),
+        .some((value) => String(value).toLowerCase().includes(term))),
     );
-  }, [subcategorias, search]);
+  }, [subcategoriaCategoriaFiltro, subcategorias, search]);
 
   const filteredEmisores = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -3997,6 +3984,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
     if (!subcategoriaForm.descripcion.trim()) {
       setDirectoryMessage({ type: 'error', text: 'Completa la descripcion de la subcategoria.' });
+      return;
+    }
+
+    if (!subcategoriaForm.idCategoria) {
+      setDirectoryMessage({ type: 'error', text: 'Selecciona la categoria de la subcategoria.' });
       return;
     }
 
@@ -6660,7 +6652,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                        <Text style={styles.clientToolsEyebrow}>Filtros</Text>
                        <Text style={styles.clientToolsTitle}>Clientes registrados</Text>
                      </View>
-                     <Pressable style={styles.clientFilterResetButton} onPress={() => { setClienteTipoFiltro('todos'); setClienteProveedorFiltro('todos'); setSearch(''); }}>
+                     <Pressable style={styles.clientFilterResetButton} onPress={() => { setClienteTipoFiltro('todos'); setClienteProveedorFiltro('todos'); setClienteEstadoFiltro('activos'); setSearch(''); }}>
                        <MaterialCommunityIcons name="filter-remove-outline" size={17} color="#00649D" />
                        <Text style={styles.clientFilterClear}>Limpiar</Text>
                      </Pressable>
@@ -6699,6 +6691,16 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                         );
                        })}
                      </ScrollView>
+                     </View>
+                     <View style={styles.clientFilterLine}>
+                       <Text style={styles.clientFilterLabel}>Estado</Text>
+                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientFilterRow}>
+                        {([['activos', 'Activos'], ['inactivos', 'Inactivos'], ['todos', 'Todos']] as const).map(([value, label]) => (
+                          <Pressable key={value} style={[styles.clientFilterChip, clienteEstadoFiltro === value && styles.clientFilterChipActive]} onPress={() => setClienteEstadoFiltro(value)}>
+                            <Text style={[styles.clientFilterChipText, clienteEstadoFiltro === value && styles.clientFilterChipTextActive]}>{label}</Text>
+                          </Pressable>
+                        ))}
+                       </ScrollView>
                      </View>
                    </View>
                  </View>
@@ -6740,7 +6742,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   <ResultCollection
                     items={filteredClientes}
                     variant="plain"
-                    resetKey={`${search}-${clienteTipoFiltro}-${clienteProveedorFiltro}`}
+                    resetKey={`${search}-${clienteTipoFiltro}-${clienteProveedorFiltro}-${clienteEstadoFiltro}`}
                     pageSize={8}
                     keyExtractor={(cliente, index) => `cliente-${cliente.codcliente}-${cliente.numeroidentificacion ?? index}`}
                     renderItem={(cliente) => (
@@ -6798,6 +6800,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                         setProductoTipoFiltro('todos');
                         setProductoCategoriaFiltro(null);
                         setProductoSubcategoriaFiltro(null);
+                        setProductoEstadoFiltro('activos');
                       }}
                     >
                       <MaterialCommunityIcons name="filter-remove-outline" size={17} color="#00649D" />
@@ -6850,6 +6853,16 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                         })}
                       </ScrollView>
                     </View>
+                    <View style={styles.clientFilterLine}>
+                      <Text style={styles.clientFilterLabel}>Estado</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientFilterRow}>
+                        {([['activos', 'Activos'], ['inactivos', 'Inactivos'], ['todos', 'Todos']] as const).map(([value, label]) => (
+                          <Pressable key={value} style={[styles.clientFilterChip, productoEstadoFiltro === value && styles.clientFilterChipActive]} onPress={() => setProductoEstadoFiltro(value)}>
+                            <Text style={[styles.clientFilterChipText, productoEstadoFiltro === value && styles.clientFilterChipTextActive]}>{label}</Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                    </View>
                   </View>
                 </View>
                 {directoryMessage ? <MessageBox message={directoryMessage} /> : null}
@@ -6890,7 +6903,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                   <ResultCollection
                     items={filteredProductos}
                     variant="plain"
-                    resetKey={`${productoTipoFiltro}-${productoCategoriaFiltro ?? 'todas'}-${productoSubcategoriaFiltro ?? 'todas'}`}
+                    resetKey={`${productoTipoFiltro}-${productoCategoriaFiltro ?? 'todas'}-${productoSubcategoriaFiltro ?? 'todas'}-${productoEstadoFiltro}`}
                     keyExtractor={(producto, index) => `producto-${producto.codproducto}-${producto.codigo ?? producto.nombre}-${index}`}
                     renderItem={(producto) => (
                       <ProductoCard
@@ -6931,6 +6944,24 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                     <DirectoryTabButton active={categoriaTab === 'categorias'} label="Categorias" onPress={() => setCategoriaTab('categorias')} />
                     <DirectoryTabButton active={categoriaTab === 'subcategorias'} label="Subcategorias" onPress={() => setCategoriaTab('subcategorias')} />
                   </View>
+                  {categoriaTab === 'subcategorias' ? (
+                    <View style={styles.clientFilterLine}>
+                      <Text style={styles.clientFilterLabel}>Categoria</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientFilterRow}>
+                        <Pressable style={[styles.clientFilterChip, subcategoriaCategoriaFiltro === null && styles.clientFilterChipActive]} onPress={() => setSubcategoriaCategoriaFiltro(null)}>
+                          <Text style={[styles.clientFilterChipText, subcategoriaCategoriaFiltro === null && styles.clientFilterChipTextActive]}>Todas</Text>
+                        </Pressable>
+                        {categorias.map((categoria) => {
+                          const active = subcategoriaCategoriaFiltro === categoria.idCategoria;
+                          return (
+                            <Pressable key={`subcategoria-filtro-${categoria.idCategoria}`} style={[styles.clientFilterChip, active && styles.clientFilterChipActive]} onPress={() => setSubcategoriaCategoriaFiltro(categoria.idCategoria)}>
+                              <Text style={[styles.clientFilterChipText, active && styles.clientFilterChipTextActive]} numberOfLines={1}>{categoria.descripcion}</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  ) : null}
                   <SearchField
                     label={categoriaTab === 'categorias' ? 'Buscar categorias' : 'Buscar subcategorias'}
                     placeholder="Escribe una descripcion"
@@ -8309,7 +8340,8 @@ function getProductoDetailValues(producto: Producto) {
     `Categoria: ${producto.categoriaDescripcion || 'Sin categoria'}`,
     `Subcategoria: ${producto.subcategoriaDescripcion || 'Sin subcategoria'}`,
     `Estado: ${producto.estado === false ? 'Inactivo' : 'Activo'}`,
-  ];
+    producto.observacion ? `Observacion: ${producto.observacion}` : '',
+  ].filter(Boolean);
 }
 
 function getEmisorDetailValues(emisor: Emisor) {
@@ -14172,6 +14204,46 @@ function ClienteForm({
         />
       </View>
 
+      {form.esProveedor ? (
+        <View style={styles.formSectionBox}>
+          <Text style={styles.clientFormSubtitle}>Datos de proveedor</Text>
+          <Field label="Cuenta contable" value={form.cuentaContableProveedor} onChangeText={(value) => onChange('cuentaContableProveedor', value)} />
+          <View style={styles.compactFieldRow}>
+            <View style={styles.compactFieldGrow}>
+              <Field label="Credito tributario" value={form.creditoTributarioProveedor} onChangeText={(value) => onChange('creditoTributarioProveedor', value)} />
+            </View>
+            <View style={styles.compactFieldGrow}>
+              <Field label="Codigo de proveedor" value={form.codigoProveedor} onChangeText={(value) => onChange('codigoProveedor', value)} />
+            </View>
+          </View>
+          <ToggleRow
+            label="Sujeto a retencion"
+            text="Aplica retenciones al proveedor."
+            value={form.esSujetoRetencionProveedor}
+            onChange={(value) => onChange('esSujetoRetencionProveedor', value)}
+          />
+          <ToggleRow
+            label="Registrar informacion bancaria"
+            text="Guarda los datos de cuenta para pagos."
+            value={form.registraInformacionBancariaProveedor}
+            onChange={(value) => onChange('registraInformacionBancariaProveedor', value)}
+          />
+          {form.registraInformacionBancariaProveedor ? (
+            <>
+              <View style={styles.compactFieldRow}>
+                <View style={styles.compactFieldGrow}>
+                  <Field label="Codigo de banco" value={form.bancoProveedor} onChangeText={(value) => onChange('bancoProveedor', value.replace(/[^\d]/g, ''))} keyboardType="number-pad" />
+                </View>
+                <View style={styles.compactFieldGrow}>
+                  <Field label="Tipo de cuenta" value={form.tipoCuentaProveedor} onChangeText={(value) => onChange('tipoCuentaProveedor', value)} />
+                </View>
+              </View>
+              <Field label="Numero de cuenta" value={form.numeroCuentaProveedor} onChangeText={(value) => onChange('numeroCuentaProveedor', value)} keyboardType="number-pad" />
+            </>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Contacto</Text>
         <Field label="Correo principal *" value={form.correo} onChangeText={(value) => onChange('correo', value)} autoCapitalize="none" keyboardType="email-address" />
@@ -14264,6 +14336,12 @@ function ClienteForm({
         {diasCreditoPersonalizado || form.diasCredito.trim() === '' ? (
           <Field label="Dias de credito" value={form.diasCredito} onChangeText={(value) => onChange('diasCredito', value.replace(/[^\d]/g, ''))} keyboardType="number-pad" />
         ) : null}
+        <ToggleRow
+          label="Cliente activo"
+          text={form.estado ? 'Disponible para facturacion y operaciones.' : 'No disponible para nuevas operaciones.'}
+          value={form.estado}
+          onChange={(value) => onChange('estado', value)}
+        />
         <Field label="Observaciones" value={form.observaciones} onChangeText={(value) => onChange('observaciones', value)} />
       </View>
 
@@ -14442,7 +14520,9 @@ function ProductoForm({
             ) : null}
           </View>
         ))}
-        <SecondaryButton label="Agregar precio" onPress={() => onChange('precios', [...form.precios, ''])} />
+        {form.precios.length < 3 ? (
+          <SecondaryButton label="Agregar precio" onPress={() => onChange('precios', [...form.precios, ''])} />
+        ) : null}
         <ToggleRow
           label="IVA (opcional)"
           text={form.iva ? 'Aplicar IVA al producto o servicio.' : 'Sin IVA configurado.'}
@@ -14465,7 +14545,7 @@ function ProductoForm({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Clasificacion y configuracion</Text>
         <DropdownField
-          label="Categoria (opcional)"
+          label="Categoria *"
           options={categorias.map((categoria) => ({ label: categoria.descripcion, value: categoria.idCategoria }))}
           value={form.categoria}
           placeholder="-- Sin categoria --"
@@ -14480,6 +14560,13 @@ function ProductoForm({
           allowClear
           onChange={(value) => onChange('subcategoria', value)}
         />
+        <ToggleRow
+          label="Producto activo"
+          text={form.estado ? 'Disponible para facturacion y operaciones.' : 'No disponible para nuevas operaciones.'}
+          value={form.estado}
+          onChange={(value) => onChange('estado', value)}
+        />
+        <Field label="Observacion (opcional)" value={form.observacion} onChangeText={(value) => onChange('observacion', value.slice(0, 250))} />
       </View>
 
       <View style={styles.formActions}>
@@ -14616,7 +14703,6 @@ function SubcategoriaForm({
           options={categorias.map((categoria) => ({ label: categoria.descripcion, value: categoria.idCategoria }))}
           value={form.idCategoria}
           placeholder="-- Seleccione --"
-          allowClear
           onChange={(value) => onChange('idCategoria', value)}
         />
       </View>

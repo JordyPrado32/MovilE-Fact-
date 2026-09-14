@@ -28,6 +28,10 @@ type ClienteApi = Cliente & {
   CreditoTributarioProveedor?: string | null;
   CodigoProveedor?: string | null;
   EsSujetoRetencionProveedor?: boolean;
+  RegistraInformacionBancariaProveedor?: boolean;
+  BancoProveedor?: string | null;
+  TipoCuentaProveedor?: string | null;
+  NumeroCuentaProveedor?: string | null;
 };
 
 export function normalizeCliente(cliente: ClienteApi): Cliente {
@@ -59,6 +63,10 @@ export function normalizeCliente(cliente: ClienteApi): Cliente {
     creditoTributarioProveedor: cliente.creditoTributarioProveedor ?? cliente.CreditoTributarioProveedor,
     codigoProveedor: cliente.codigoProveedor ?? cliente.CodigoProveedor,
     esSujetoRetencionProveedor: cliente.esSujetoRetencionProveedor ?? cliente.EsSujetoRetencionProveedor,
+    registraInformacionBancariaProveedor: cliente.registraInformacionBancariaProveedor ?? cliente.RegistraInformacionBancariaProveedor,
+    bancoProveedor: cliente.bancoProveedor ?? cliente.BancoProveedor,
+    tipoCuentaProveedor: cliente.tipoCuentaProveedor ?? cliente.TipoCuentaProveedor,
+    numeroCuentaProveedor: cliente.numeroCuentaProveedor ?? cliente.NumeroCuentaProveedor,
   };
 }
 
