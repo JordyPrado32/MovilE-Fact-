@@ -13067,19 +13067,31 @@ function ERubricaMobileScreen({
   const pickPdfToSign = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true });
     if (!result.canceled) {
-      setPdfFile(result.assets[0]);
+      const file = result.assets[0];
+      if (!file.name.toLowerCase().endsWith('.pdf') || (file.size ?? 0) > 15 * 1024 * 1024) {
+        Alert.alert('Archivo no válido', 'Selecciona un PDF de máximo 15 MB.');
+        return;
+      }
+      setPdfFile(file);
       setSignedFileUri(null);
       setSignaturePage(1);
       setSignaturePosition({ x: 0.68, y: 0.82 });
     }
   };
   const pickCertificate = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ type: 'application/x-pkcs12', copyToCacheDirectory: true });
-    if (!result.canceled) setCertificateFile(result.assets[0]);
+    const result = await DocumentPicker.getDocumentAsync({ type: ['application/x-pkcs12', 'application/pkcs12', 'application/octet-stream'], copyToCacheDirectory: true });
+    if (!result.canceled) {
+      const file = result.assets[0];
+      if (!file.name.toLowerCase().endsWith('.p12') || (file.size ?? 0) > 5 * 1024 * 1024) {
+        Alert.alert('Certificado no válido', 'Selecciona un archivo .p12 de máximo 5 MB.');
+        return;
+      }
+      setCertificateFile(file);
+    }
   };
-  const signPdfDocument = async () => {
-    if (!pdfFile || (certificateFile && !certificatePassword.trim())) {
-      Alert.alert('Datos incompletos', certificateFile ? 'Ingresa la clave del certificado seleccionado.' : 'Selecciona un PDF válido.');
+  const signPdfDocument = async (preview = false) => {
+    if (!pdfFile) {
+      Alert.alert('Datos incompletos', 'Selecciona un PDF válido.');
       return;
     }
     setSigning(true);
@@ -13087,10 +13099,6 @@ function ERubricaMobileScreen({
     try {
       const form = new FormData();
       form.append('pdf', { uri: pdfFile.uri, name: pdfFile.name || 'documento.pdf', type: pdfFile.mimeType || 'application/pdf' } as unknown as Blob);
-      if (certificateFile) {
-        form.append('certificado', { uri: certificateFile.uri, name: certificateFile.name || 'certificado.p12', type: certificateFile.mimeType || 'application/x-pkcs12' } as unknown as Blob);
-        form.append('clave', certificatePassword.trim());
-      }
       form.append('pagina', String(signaturePage));
       const signatureWidthMm = 60;
       const signatureHeightMm = 35;
@@ -13103,8 +13111,12 @@ function ERubricaMobileScreen({
       const base64 = arrayBufferToBase64(result.bytes);
       const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}documento-firmado-${Date.now()}.pdf`;
       await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
-      setSignedFileUri(uri);
-      Alert.alert('Documento firmado', 'El PDF se firmó correctamente. Ya puedes compartirlo.');
+      if (preview) {
+        onPreviewPdf({ uri, name: `${pdfFile.name.replace(/\.pdf$/i, '')}-vista-previa-firmada.pdf`, mimeType: 'application/pdf' });
+      } else {
+        setSignedFileUri(uri);
+        Alert.alert('Documento firmado', 'El PDF se firmó correctamente. Ya puedes compartirlo.');
+      }
     } catch (error) {
       Alert.alert('No se pudo firmar', error instanceof ApiError ? error.message : 'Verifica los archivos y la clave del certificado.');
     } finally { setSigning(false); }
@@ -13374,13 +13386,6 @@ function ERubricaMobileScreen({
             ))}
           </View>
 
-          <View style={styles.erubricaSignCard}>
-            <Text style={styles.erubricaSignStep}>3. Certificado y estampado</Text>
-            <Text style={styles.erubricaSignHint}>Puedes usar la firma configurada o cargar un certificado .p12 temporal.</Text>
-            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label={certificateFile ? `Certificado: ${certificateFile.name}` : 'Usar firma configurada / cargar .p12'} onPress={pickCertificate} />
-            <Field label="Clave del certificado" value={certificatePassword} onChangeText={setCertificatePassword} secureTextEntry />
-          </View>
-
           {validatingPdf ? <ActivityIndicator color={ERUBRICA_COLORS.primary} /> : null}
           {pdfValidation ? <Text style={styles.clientDetailValue}>{JSON.stringify(pdfValidation, null, 2)}</Text> : null}
 
@@ -13394,10 +13399,9 @@ function ERubricaMobileScreen({
               setSignaturePage(1);
               setSignaturePosition({ x: 0.68, y: 0.82 });
             }} />
-            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Previsualizar documento" onPress={() => pdfFile ? onPreviewPdf(pdfFile) : Alert.alert('Selecciona un PDF', 'Carga primero el documento que deseas previsualizar.')} />
+            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Previsualizar documento" onPress={() => void signPdfDocument(true)} />
             <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Estampar PDF" loading={signing} onPress={signPdfDocument} />
           </View>
-          <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Validar firma del PDF" onPress={validatePdfSignature} />
           {signedFileUri ? <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Compartir documento firmado" loading={false} onPress={shareSignedDocument} /> : null}
         </View>
       ) : null}

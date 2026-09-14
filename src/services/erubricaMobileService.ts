@@ -119,7 +119,7 @@ export const validarERubricaFirmaPdf = (pdf: { uri: string; name: string; mimeTy
 };
 
 export const firmarERubricaDocumento = (form: FormData) =>
-  apiRequestBinary(`${ROOT}/documentos/firmar`, { method: 'POST', body: form });
+  apiRequestBinary(`${ROOT}/documentos/firmar`, { method: 'POST', body: form, timeoutMs: 60000 });
 
 export type ERubricaPagoResponse = {
   paymentUrl?: string | null;
