@@ -71,6 +71,8 @@ export const getERubricaSolicitudes = () => apiRequest<unknown[]>(`${ROOT}/solic
 
 export const getERubricaFirmas = () => apiRequest<unknown[]>(`${ROOT}/firmas`);
 
+export const getERubricaDocumentosFirmados = () => apiRequest<unknown[]>(`${ROOT}/documentos/firmados`);
+
 export const getERubricaRenovacion = () => apiRequest<unknown>(`${ROOT}/renovacion`);
 
 export const getERubricaNotificaciones = (take = 8) =>
