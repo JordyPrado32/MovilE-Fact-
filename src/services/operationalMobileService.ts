@@ -242,13 +242,6 @@ export function getEstadoCuentaExcel(userId: number, idCliente: number) {
   return apiRequestBinary(`/api/cuentas-cobrar/estado-cuenta/${idCliente}/excel?idUsuario=${userId}`);
 }
 
-export function enviarEstadoCuenta(userId: number, idCliente: number) {
-  return apiRequest<{ message?: string; correo?: string }>(`/api/cuentas-cobrar/estado-cuenta/${idCliente}/enviar?idUsuario=${userId}`, {
-    method: 'POST',
-    timeoutMs: 30000,
-  });
-}
-
 export function updateOperationalItem(module: OperationalModule, tab: string, id: string, payload: ApiRow, context: OperationalRequestContext = {}) {
   return requestWithFallback<void>(getOperationalEndpoints(module, tab), (endpoint) => withUserQuery(`${endpoint}/${encodeURIComponent(id)}`, context), {
     method: 'PUT',

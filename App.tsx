@@ -47,7 +47,7 @@ import { anularNotaCredito, buscarNotaCreditoFacturas, emitirNotaCredito, emitir
 import { anularNotaDebito, buscarNotaDebitoFacturas, emitirNotaDebito, enviarNotaDebitoCorreo, getNotaDebitoDetallesFactura, getNotaDebitoPdf, getNotaDebitoPreparacion, getNotasDebito, getNotaDebitoXml, guardarNotaDebito, NotaDebitoListItem } from './src/services/notasDebitoMobileService';
 import { clearNotificaciones, dismissNotificacion, getNotificaciones, NotificacionItem } from './src/services/notificacionesService';
 import { syncDeviceNotifications } from './src/services/deviceNotificationsService';
-import { CompraDocumentosEstado, CompraDocumentosTransferenciaInput, createOperationalItem, deleteOperationalItem, enviarEstadoCuenta, getCompraDocumentosEstado, getEstadoCuentaDetalle, getEstadoCuentaExcel, getEstadoCuentaListadoExcel, getEstadoCuentaPdf, getOperationalMobileModule, getOperationalModuleConfig, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, registrarTransferenciaCompraDocumentos, updateOperationalItem } from './src/services/operationalMobileService';
+import { CompraDocumentosEstado, CompraDocumentosTransferenciaInput, createOperationalItem, deleteOperationalItem, getCompraDocumentosEstado, getEstadoCuentaDetalle, getEstadoCuentaExcel, getEstadoCuentaListadoExcel, getEstadoCuentaPdf, getOperationalMobileModule, getOperationalModuleConfig, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, registrarTransferenciaCompraDocumentos, updateOperationalItem } from './src/services/operationalMobileService';
 import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
 import { createPuntoEmision, deletePuntoEmision, getPuntoEmisionSiguienteSecuencial, getPuntosEmision, markPuntoPrincipal, PuntoDocumentoKey, savePuntoEmisionSecuenciaInicial, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
@@ -84,6 +84,8 @@ import { EFACT_THEME, ERUBRICA_COLORS } from './src/styles/theme';
 import { getDocumentSerieOptions, getEffectiveDocumentSerie, getNextSequence, getNextSequenceFromOptions, getPuntoDocumentSequences, getPuntoSerie, getSelectedDocumentSerieOption, getSerieCodemisorFromOptions, getSerieLabel, getSerieLabelFromOptions, getSerieValue, normalizeSerieCode, normalizeSerieDisplay, serieNeedsInitialSequence, usePreferredDocumentSerie } from './src/utils/documentSeries';
 import type { NuevaFacturaFormState, NuevaFacturaLinea } from './src/types/invoices';
 import { formatDocumentDate, formatMoney, listItemKey } from './src/utils/documentFormatting';
+
+const PDFJS_VIEWER_URI = Image.resolveAssetSource(require('./assets/pdfjs/pdf.min.pdf')).uri;
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'change';
 
@@ -1051,7 +1053,7 @@ async function saveBinaryFileToDevice(bytes: ArrayBuffer, fileName: string, mime
   const sourceUri = `${baseDirectory}${safeName}`;
   await FileSystem.writeAsStringAsync(sourceUri, arrayBufferToBase64(bytes), { encoding: FileSystem.EncodingType.Base64 });
   const savedUri = await saveFileToDevice(sourceUri, safeName, mimeType);
-  return savedUri ? { name: safeName, uri: savedUri } : null;
+  return savedUri ? { name: safeName, uri: savedUri, shareUri: sourceUri } : null;
 }
 
 async function exportRowsToCsv(filename: string, rows: Record<string, unknown>[]) {
@@ -6484,7 +6486,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       raw: { ...(item.raw ?? {}), ...detalle },
     };
   };
-  const sendEstadoCuentaEmail = async (item: OperationalMobileItem) => {
+  const shareEstadoCuenta = async (item: OperationalMobileItem) => {
     if (!catalogUserId) return;
     const idCliente = Number(item.id);
     if (!Number.isInteger(idCliente) || idCliente <= 0) {
@@ -6493,10 +6495,16 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
 
     try {
-      const response = await enviarEstadoCuenta(catalogUserId, idCliente);
-      setDirectoryMessage({ type: 'success', text: response.correo ? `Estado de cuenta enviado a ${response.correo}.` : response.message || 'Estado de cuenta enviado correctamente.' });
+      const response = await getEstadoCuentaPdf(catalogUserId, idCliente);
+      const saved = await saveBinaryFileToDevice(response.bytes, `estado-cuenta-${idCliente}.pdf`, 'application/pdf');
+      if (saved && await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(saved.shareUri, { mimeType: 'application/pdf', dialogTitle: 'Compartir estado de cuenta', UTI: 'com.adobe.pdf' });
+        return;
+      }
+
+      setDirectoryMessage({ type: saved ? 'success' : 'info', text: saved ? `Archivo guardado en el dispositivo: ${saved.name}` : 'No se pudo preparar el archivo para compartir.' });
     } catch (error) {
-      setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo enviar el estado de cuenta.' });
+      setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo compartir el estado de cuenta.' });
     }
   };
   const downloadEstadoCuentaListExcel = async () => {
@@ -7725,7 +7733,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onRegisterPayment={openAccountPaymentFromStatement}
                 onDownloadStatementFile={downloadEstadoCuentaFile}
                 onLoadStatementDetail={loadEstadoCuentaDetail}
-                onSendStatementEmail={sendEstadoCuentaEmail}
+                onShareStatement={shareEstadoCuenta}
                 onDownloadStatementListExcel={downloadEstadoCuentaListExcel}
                 />
               )
@@ -10952,7 +10960,7 @@ function OperationalModuleScreen({
   onRegisterPayment,
   onDownloadStatementFile,
   onLoadStatementDetail,
-  onSendStatementEmail,
+  onShareStatement,
   onDownloadStatementListExcel,
 }: {
   view: WorkspaceView;
@@ -10977,7 +10985,7 @@ function OperationalModuleScreen({
   onRegisterPayment?: (item: OperationalMobileItem) => void;
   onDownloadStatementFile?: (item: OperationalMobileItem, format: 'pdf' | 'excel') => void;
   onLoadStatementDetail?: (item: OperationalMobileItem) => Promise<OperationalMobileItem>;
-  onSendStatementEmail?: (item: OperationalMobileItem) => void;
+  onShareStatement?: (item: OperationalMobileItem) => void;
   onDownloadStatementListExcel?: () => void;
 }) {
   const module = getOperationalModuleSlug(view);
@@ -11041,7 +11049,7 @@ function OperationalModuleScreen({
         onRegisterPayment={onRegisterPayment}
         onDownloadFile={onDownloadStatementFile}
         onLoadDetail={onLoadStatementDetail}
-        onSendEmail={onSendStatementEmail}
+        onShare={onShareStatement}
         onDownloadListExcel={onDownloadStatementListExcel}
       />
     );
@@ -11425,7 +11433,7 @@ function AccountStatementScreen({
   onRegisterPayment,
   onDownloadFile,
   onLoadDetail,
-  onSendEmail,
+  onShare,
   onDownloadListExcel,
 }: {
   search: string;
@@ -11438,7 +11446,7 @@ function AccountStatementScreen({
   onRegisterPayment?: (item: OperationalMobileItem) => void;
   onDownloadFile?: (item: OperationalMobileItem, format: 'pdf' | 'excel') => void;
   onLoadDetail?: (item: OperationalMobileItem) => Promise<OperationalMobileItem>;
-  onSendEmail?: (item: OperationalMobileItem) => void;
+  onShare?: (item: OperationalMobileItem) => void;
   onDownloadListExcel?: () => void;
 }) {
   const [detailItem, setDetailItem] = useState<OperationalMobileItem | null>(null);
@@ -11533,8 +11541,8 @@ function AccountStatementScreen({
         onDownloadFile={(format) => {
           if (detailItem) onDownloadFile?.(detailItem, format);
         }}
-        onSend={() => {
-          if (detailItem) onSendEmail?.(detailItem);
+        onShare={() => {
+          if (detailItem) onShare?.(detailItem);
         }}
       />
     </>
@@ -11607,7 +11615,7 @@ function AccountClientStat({ label, value, danger }: { label: string; value: str
   );
 }
 
-function AccountStatementDetailModal({ item, loading, onClose, onRegister, onDownloadFile, onSend }: { item: OperationalMobileItem | null; loading: boolean; onClose: () => void; onRegister: () => void; onDownloadFile: (format: 'pdf' | 'excel') => void; onSend: () => void }) {
+function AccountStatementDetailModal({ item, loading, onClose, onRegister, onDownloadFile, onShare }: { item: OperationalMobileItem | null; loading: boolean; onClose: () => void; onRegister: () => void; onDownloadFile: (format: 'pdf' | 'excel') => void; onShare: () => void }) {
   const [activeTab, setActiveTab] = useState<AccountStatementTab>('Historial');
   useEffect(() => {
     if (item) setActiveTab('Historial');
@@ -11677,9 +11685,9 @@ function AccountStatementDetailModal({ item, loading, onClose, onRegister, onDow
               <MaterialCommunityIcons name="cash-plus" size={17} color="#128A46" />
               <Text style={styles.accountModalRegisterText}>Registrar abono</Text>
             </Pressable>
-            <Pressable style={styles.accountModalActionButton} onPress={onSend}>
-              <MaterialCommunityIcons name="email-outline" size={17} color="#315A7A" />
-              <Text style={styles.accountModalActionText}>Enviar estado</Text>
+            <Pressable style={styles.accountModalActionButton} onPress={onShare}>
+              <MaterialCommunityIcons name="share-variant-outline" size={17} color="#315A7A" />
+              <Text style={styles.accountModalActionText}>Compartir estado</Text>
             </Pressable>
             <Pressable style={styles.accountModalActionButton} onPress={() => onDownloadFile('pdf')}>
               <MaterialCommunityIcons name="download-outline" size={17} color="#315A7A" />
@@ -12802,17 +12810,21 @@ function DirectoryHero({
 function PdfSignaturePositionPicker({
   pdfUri,
   page,
+  pageCount,
   position,
   pageSize,
   onPageChange,
+  onPageCountChange,
   onPositionChange,
   onPageSizeChange,
 }: {
   pdfUri: string;
   page: number;
+  pageCount: number;
   position: { x: number; y: number };
   pageSize: { widthMm: number; heightMm: number };
   onPageChange: (page: number) => void;
+  onPageCountChange: (pageCount: number) => void;
   onPositionChange: (position: { x: number; y: number }) => void;
   onPageSizeChange: (size: { widthMm: number; heightMm: number }) => void;
 }) {
@@ -12828,7 +12840,7 @@ function PdfSignaturePositionPicker({
     return () => { mounted = false; };
   }, [pdfUri]);
 
-  const pdfHtml = pdfBase64 ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" /><style>html,body{margin:0;background:#eef3f7;font-family:Arial}#stage{position:relative;width:100%;min-height:100vh;display:flex;justify-content:center;align-items:flex-start;padding:10px;box-sizing:border-box}#canvas{max-width:100%;height:auto;background:#fff;box-shadow:0 2px 8px #8293a555}#marker{position:absolute;width:92px;height:42px;border:2px solid #0878c9;background:#dff2ffdd;color:#0878c9;font-weight:bold;font-size:12px;display:flex;align-items:center;justify-content:center;pointer-events:none;box-sizing:border-box;border-radius:4px}</style></head><body><div id="stage"><canvas id="canvas"></canvas><div id="marker">FIRMA AQUÍ</div></div><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script>try{const raw=atob('${pdfBase64}');const bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';const pageNumber=${page};const posX=${position.x};const posY=${position.y};pdfjsLib.getDocument({data:bytes}).promise.then(pdf=>pdf.getPage(pageNumber)).then(page=>{const base=page.getViewport({scale:1});const widthMm=base.width*25.4/72;const heightMm=base.height*25.4/72;window.ReactNativeWebView.postMessage(JSON.stringify({type:'size',widthMm,heightMm}));const maxWidth=Math.min(window.innerWidth-20,680);const viewport=page.getViewport({scale:maxWidth/base.width});const canvas=document.getElementById('canvas');canvas.width=viewport.width;canvas.height=viewport.height;canvas.style.width=viewport.width+'px';canvas.style.height=viewport.height+'px';page.render({canvasContext:canvas.getContext('2d'),viewport});const marker=document.getElementById('marker');marker.style.left=(10+posX*viewport.width-46)+'px';marker.style.top=(10+posY*viewport.height-21)+'px';canvas.onclick=e=>{const r=canvas.getBoundingClientRect();window.ReactNativeWebView.postMessage(JSON.stringify({type:'position',x:Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y:Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))}))}}).catch(()=>window.ReactNativeWebView.postMessage(JSON.stringify({type:'error'})))}catch(e){window.ReactNativeWebView.postMessage(JSON.stringify({type:'error'}))}</script></body></html>` : '<html><body style="font-family:Arial;text-align:center;padding:24px;color:#637587">Cargando previsualización del PDF…</body></html>';
+  const pdfHtml = pdfBase64 ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" /><style>html,body{margin:0;background:#eef3f7;font-family:Arial}#stage{position:relative;width:100%;min-height:100vh;display:flex;justify-content:center;align-items:flex-start;padding:10px;box-sizing:border-box}#canvas{max-width:100%;height:auto;background:#fff;box-shadow:0 2px 8px #8293a555}#marker{position:absolute;width:92px;height:42px;border:2px solid #0878c9;background:#dff2ffdd;color:#0878c9;font-weight:bold;font-size:12px;display:flex;align-items:center;justify-content:center;pointer-events:none;box-sizing:border-box;border-radius:4px}</style></head><body><div id="stage"><canvas id="canvas"></canvas><div id="marker">FIRMA AQUÍ</div></div><script src="${PDFJS_VIEWER_URI}"></script><script>try{const raw=atob('${pdfBase64}');const bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);const pageNumber=${page};const posX=${position.x};const posY=${position.y};pdfjsLib.getDocument({data:bytes,disableWorker:true}).promise.then(pdf=>{window.ReactNativeWebView.postMessage(JSON.stringify({type:'pages',count:pdf.numPages}));if(pageNumber>pdf.numPages)throw new Error('page-out-of-range');return pdf.getPage(pageNumber)}).then(page=>{const base=page.getViewport({scale:1});const widthMm=base.width*25.4/72;const heightMm=base.height*25.4/72;window.ReactNativeWebView.postMessage(JSON.stringify({type:'size',widthMm,heightMm}));const maxWidth=Math.min(window.innerWidth-20,680);const viewport=page.getViewport({scale:maxWidth/base.width});const canvas=document.getElementById('canvas');canvas.width=viewport.width;canvas.height=viewport.height;canvas.style.width=viewport.width+'px';canvas.style.height=viewport.height+'px';page.render({canvasContext:canvas.getContext('2d'),viewport}).promise}).then(()=>{const marker=document.getElementById('marker');marker.style.left=(10+posX*document.getElementById('canvas').width-46)+'px';marker.style.top=(10+posY*document.getElementById('canvas').height-21)+'px';document.getElementById('canvas').onclick=e=>{const r=e.currentTarget.getBoundingClientRect();window.ReactNativeWebView.postMessage(JSON.stringify({type:'position',x:Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y:Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))}))}}).catch(()=>window.ReactNativeWebView.postMessage(JSON.stringify({type:'error'})))}catch(e){window.ReactNativeWebView.postMessage(JSON.stringify({type:'error'}))}</script></body></html>` : '<html><body style="font-family:Arial;text-align:center;padding:24px;color:#637587">Cargando previsualización del PDF…</body></html>';
 
   return (
     <View style={styles.pdfPositionCard}>
@@ -12844,9 +12856,9 @@ function PdfSignaturePositionPicker({
         <Pressable accessibilityLabel="Página anterior" disabled={page <= 1} style={[styles.pdfPageButton, page <= 1 && styles.pdfPageButtonDisabled]} onPress={() => onPageChange(Math.max(1, page - 1))}>
           <MaterialCommunityIcons name="chevron-left" size={20} color={page <= 1 ? EFACT_THEME.colors.disabled : ERUBRICA_COLORS.primary} />
         </Pressable>
-        <Text style={styles.pdfPageNumber}>{page}</Text>
-        <Pressable accessibilityLabel="Página siguiente" style={styles.pdfPageButton} onPress={() => onPageChange(page + 1)}>
-          <MaterialCommunityIcons name="chevron-right" size={20} color={ERUBRICA_COLORS.primary} />
+        <Text style={styles.pdfPageNumber}>{page} / {pageCount}</Text>
+        <Pressable accessibilityLabel="Página siguiente" disabled={page >= pageCount} style={[styles.pdfPageButton, page >= pageCount && styles.pdfPageButtonDisabled]} onPress={() => onPageChange(Math.min(pageCount, page + 1))}>
+          <MaterialCommunityIcons name="chevron-right" size={20} color={page >= pageCount ? EFACT_THEME.colors.disabled : ERUBRICA_COLORS.primary} />
         </Pressable>
       </View>
       <View style={styles.pdfPageStage}>
@@ -12855,18 +12867,21 @@ function PdfSignaturePositionPicker({
           source={{ html: pdfHtml }}
           javaScriptEnabled
           allowFileAccess
+          allowFileAccessFromFileURLs
+          allowUniversalAccessFromFileURLs
           style={styles.pdfWebView}
           onMessage={(event: { nativeEvent: { data: string } }) => {
             try {
-              const result = JSON.parse(event.nativeEvent.data) as { type?: string; x?: number; y?: number; widthMm?: number; heightMm?: number };
+              const result = JSON.parse(event.nativeEvent.data) as { type?: string; x?: number; y?: number; widthMm?: number; heightMm?: number; count?: number };
               if (result.type === 'position' && typeof result.x === 'number' && typeof result.y === 'number') onPositionChange({ x: result.x, y: result.y });
               if (result.type === 'size' && typeof result.widthMm === 'number' && typeof result.heightMm === 'number') onPageSizeChange({ widthMm: result.widthMm, heightMm: result.heightMm });
+              if (result.type === 'pages' && typeof result.count === 'number') onPageCountChange(result.count);
               if (result.type === 'error') setViewerError(true);
             } catch { /* ignore malformed viewer messages */ }
           }}
         />
       </View>
-      {viewerError ? <Text style={styles.pdfViewerError}>No se pudo cargar la previsualización. Verifica la conexión a internet y vuelve a seleccionar el PDF.</Text> : null}
+      {viewerError ? <Text style={styles.pdfViewerError}>No se pudo cargar la previsualización. Vuelve a seleccionar el PDF.</Text> : null}
       <View style={styles.pdfPositionInfo}>
         <MaterialCommunityIcons name="information-outline" size={18} color={ERUBRICA_COLORS.primary} />
         <Text style={styles.pdfPositionInfoText}>Página {page} · posición horizontal {Math.round(position.x * 100)}% · vertical {Math.round(position.y * 100)}%</Text>
@@ -12886,7 +12901,7 @@ function PdfDocumentPreview({ uri }: { uri: string }) {
     return () => { mounted = false; };
   }, [uri]);
 
-  const html = base64 ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>html,body{margin:0;background:#eef3f7}#canvas{display:block;margin:12px auto;background:#fff;max-width:calc(100% - 24px);box-shadow:0 2px 8px #63758755}</style></head><body><canvas id="canvas"></canvas><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script>try{const r=atob('${base64}'),b=new Uint8Array(r.length);for(let i=0;i<r.length;i++)b[i]=r.charCodeAt(i);pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';pdfjsLib.getDocument({data:b}).promise.then(p=>p.getPage(1)).then(p=>{const v=p.getViewport({scale:1}),s=Math.min((innerWidth-24)/v.width,1.5),q=p.getViewport({scale:s}),c=document.getElementById('canvas');c.width=q.width;c.height=q.height;p.render({canvasContext:c.getContext('2d'),viewport:q})}).catch(()=>document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>')}catch(e){document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>'}</script></body></html>` : '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">Cargando PDF…</p>';
+  const html = base64 ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>html,body{margin:0;background:#eef3f7}#canvas{display:block;margin:12px auto;background:#fff;max-width:calc(100% - 24px);box-shadow:0 2px 8px #63758755}</style></head><body><canvas id="canvas"></canvas><script src="${PDFJS_VIEWER_URI}"></script><script>try{const r=atob('${base64}'),b=new Uint8Array(r.length);for(let i=0;i<r.length;i++)b[i]=r.charCodeAt(i);pdfjsLib.getDocument({data:b,disableWorker:true}).promise.then(p=>p.getPage(1)).then(p=>{const v=p.getViewport({scale:1}),s=Math.min((innerWidth-24)/v.width,1.5),q=p.getViewport({scale:s}),c=document.getElementById('canvas');c.width=q.width;c.height=q.height;p.render({canvasContext:c.getContext('2d'),viewport:q})}).catch(()=>document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>')}catch(e){document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>'}</script></body></html>` : '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">Cargando PDF…</p>';
   return <WebView originWhitelist={['*']} source={{ html }} javaScriptEnabled style={styles.pdfDocumentWebView} />;
 }
 
@@ -12932,6 +12947,7 @@ function ERubricaMobileScreen({
   const [historialDate, setHistorialDate] = useState('');
   const [historialStatus, setHistorialStatus] = useState('');
   const [signaturePage, setSignaturePage] = useState(1);
+  const [signaturePageCount, setSignaturePageCount] = useState(1);
   const [signaturePosition, setSignaturePosition] = useState({ x: 0.68, y: 0.82 });
   const [signaturePageSize, setSignaturePageSize] = useState({ widthMm: 210, heightMm: 297 });
   const [solicitudStep, setSolicitudStep] = useState(1);
@@ -13075,6 +13091,7 @@ function ERubricaMobileScreen({
       setPdfFile(file);
       setSignedFileUri(null);
       setSignaturePage(1);
+      setSignaturePageCount(1);
       setSignaturePosition({ x: 0.68, y: 0.82 });
     }
   };
@@ -13354,7 +13371,7 @@ function ERubricaMobileScreen({
               <Text style={styles.erubricaValidationStripText}>Haz clic o arrastra en el documento para seleccionar la posición de la firma.</Text>
             </View>
             {pdfFile ? (
-              <PdfSignaturePositionPicker pdfUri={pdfFile.uri} page={signaturePage} position={signaturePosition} pageSize={signaturePageSize} onPageChange={setSignaturePage} onPositionChange={setSignaturePosition} onPageSizeChange={setSignaturePageSize} />
+              <PdfSignaturePositionPicker pdfUri={pdfFile.uri} page={signaturePage} pageCount={signaturePageCount} position={signaturePosition} pageSize={signaturePageSize} onPageChange={setSignaturePage} onPageCountChange={setSignaturePageCount} onPositionChange={setSignaturePosition} onPageSizeChange={setSignaturePageSize} />
             ) : (
               <View style={styles.erubricaEmptyPreview}>
                 <View style={styles.erubricaPreviewSidebar}>
@@ -13397,6 +13414,7 @@ function ERubricaMobileScreen({
               setSignedFileUri(null);
               setPdfValidation(null);
               setSignaturePage(1);
+              setSignaturePageCount(1);
               setSignaturePosition({ x: 0.68, y: 0.82 });
             }} />
             <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Previsualizar documento" onPress={() => void signPdfDocument(true)} />
