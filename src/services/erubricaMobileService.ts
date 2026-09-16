@@ -1,6 +1,7 @@
 import { apiRequest, apiRequestBinary } from './apiClient';
 import { FirmaEstado } from '../types/business';
 import { ERUBRICA_SOLICITUD_PAGO_PATH, ERUBRICA_SOLICITUD_PATH, ERUBRICA_SOLICITUD_TRANSFERENCIA_PATH } from '../config/api';
+import { File as ExpoFile } from 'expo-file-system';
 
 export type ERubricaDashboard = {
   solicitudes?: unknown[];
@@ -34,7 +35,27 @@ export type ERubricaEmisor = {
   mensaje?: string | null;
 };
 
+export type ERubricaFirmaEstado = {
+  tieneCertificado: boolean;
+  tieneClave: boolean;
+  esValida: boolean;
+  estadoVigencia?: string | null;
+  fechaExpiracion?: string | null;
+  diasRestantes?: number | null;
+  mensaje?: string | null;
+  nombreTitular?: string | null;
+  identificacion?: string | null;
+  fechaEmision?: string | null;
+  numeroSerie?: string | null;
+  huellaDigital?: string | null;
+  emisor?: string | null;
+};
+
 const ROOT = '/api/mobile/e-rubrica';
+
+export const appendERubricaFile = (form: FormData, field: string, file: { uri: string; name: string }) => {
+  form.append(field, new ExpoFile(file.uri), file.name);
+};
 
 export const getERubricaDashboard = (take = 8) =>
   apiRequest<ERubricaDashboard>(`${ROOT}/dashboard?take=${Math.max(1, Math.min(50, take))}`);
@@ -51,7 +72,7 @@ export const getERubricaEmisores = async () => {
   }));
 };
 
-export const getERubricaFirmaEstado = (id: number) =>
+export const getERubricaFirmaEstado = (id: number): Promise<ERubricaFirmaEstado> =>
   apiRequest<Record<string, unknown>>(`${ROOT}/emisores/${id}/firma/estado`, { timeoutMs: 12000 }).then((item) => ({
     tieneCertificado: Boolean(item.tieneCertificado ?? item.TieneCertificado),
     tieneClave: Boolean(item.tieneClave ?? item.TieneClave),
@@ -65,11 +86,19 @@ export const getERubricaFirmaEstado = (id: number) =>
     fechaEmision: (item.fechaEmision ?? item.FechaEmision) as string | null | undefined,
     numeroSerie: (item.numeroSerie ?? item.NumeroSerie) as string | null | undefined,
     huellaDigital: (item.huellaDigital ?? item.HuellaDigital) as string | null | undefined,
+    emisor: (item.emisor ?? item.Emisor) as string | null | undefined,
   }));
+
+export const validarERubricaFirmaTemporal = (archivo: { uri: string; name: string; mimeType?: string | null }, clave: string) => {
+  const form = new FormData();
+  appendERubricaFile(form, 'archivo', archivo);
+  form.append('clave', clave);
+  return apiRequest<ERubricaFirmaEstado>(`${ROOT}/emisores/firma/validar-temporal`, { method: 'POST', body: form, timeoutMs: 60000 });
+};
 
 export const configurarERubricaFirma = (id: number, certificado: { uri: string; name: string; mimeType?: string | null }, clave: string) => {
   const form = new FormData();
-  form.append('certificado', { uri: certificado.uri, name: certificado.name, type: certificado.mimeType || 'application/x-pkcs12' } as unknown as Blob);
+  appendERubricaFile(form, 'certificado', certificado);
   form.append('clave', clave);
   return apiRequest<unknown>(`${ROOT}/emisores/${id}/firma/configurar`, { method: 'POST', body: form, timeoutMs: 60000 });
 };
@@ -78,7 +107,40 @@ export const getERubricaSolicitudes = () => apiRequest<unknown[]>(`${ROOT}/solic
 
 export const getERubricaFirmas = () => apiRequest<unknown[]>(`${ROOT}/firmas`);
 
-export const getERubricaDocumentosFirmados = () => apiRequest<unknown[]>(`${ROOT}/documentos/firmados`);
+export type ERubricaDocumentoFirmado = {
+  nombreDocumento: string;
+  nombreArchivo: string;
+  fechaFirma: string;
+  estado: string;
+  tamano: string;
+  downloadUrl: string;
+  previewUrl: string;
+};
+
+export const getERubricaDocumentosFirmados = () => apiRequest<ERubricaDocumentoFirmado[]>(`${ROOT}/documentos/firmados`);
+
+export type ERubricaDocumentoPendiente = {
+  id: string;
+  nombreDocumento: string;
+  nombreArchivo: string;
+  codigo: string;
+  tamanoBytes: number;
+  fecha: string;
+  estado: string;
+  url: string;
+};
+
+export const getERubricaDocumentosPendientes = () =>
+  apiRequest<ERubricaDocumentoPendiente[]>(`${ROOT}/documentos/pendientes`);
+
+export const cargarERubricaDocumentoPendiente = (pdf: { uri: string; name: string; mimeType?: string | null }) => {
+  const form = new FormData();
+  appendERubricaFile(form, 'pdf', { uri: pdf.uri, name: pdf.name || 'documento.pdf' });
+  return apiRequest<ERubricaDocumentoPendiente>(`${ROOT}/documentos/pendientes`, { method: 'POST', body: form, timeoutMs: 60000 });
+};
+
+export const eliminarERubricaDocumentoPendiente = (nombreArchivo: string) =>
+  apiRequest<{ eliminado: boolean }>(`${ROOT}/documentos/pendientes/${encodeURIComponent(nombreArchivo)}`, { method: 'DELETE' });
 
 export const getERubricaRenovacion = () => apiRequest<unknown>(`${ROOT}/renovacion`);
 
@@ -121,11 +183,7 @@ export const validarERubricaQr = (entrada: string) =>
 
 export const validarERubricaFirmaPdf = (pdf: { uri: string; name: string; mimeType?: string | null }) => {
   const form = new FormData();
-  form.append('pdf', {
-    uri: pdf.uri,
-    name: pdf.name || 'documento.pdf',
-    type: pdf.mimeType || 'application/pdf',
-  } as unknown as Blob);
+  appendERubricaFile(form, 'pdf', { uri: pdf.uri, name: pdf.name || 'documento.pdf' });
   return apiRequest<unknown>(`${ROOT}/documentos/validar-firma`, { method: 'POST', body: form, timeoutMs: 30000 });
 };
 
