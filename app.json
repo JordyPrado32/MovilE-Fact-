@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "e-fact movil",
-    "slug": "efact-mobile",
+    "name": "Numérica Software",
+    "slug": "Numérica Software",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo-numerica.png",
     "userInterfaceStyle": "light",
     "ios": {
       "infoPlist": {
@@ -60,10 +60,11 @@
           "microphonePermission": "e-fact necesita el micrófono para recibir tus órdenes de facturación.",
           "speechRecognitionPermission": "e-fact necesita reconocimiento de voz para procesar tus órdenes de facturación."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/logo-numerica.png"
     },
     "extra": {
       "eas": {

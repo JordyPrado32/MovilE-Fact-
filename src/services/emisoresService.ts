@@ -29,6 +29,19 @@ type EmisorApi = Emisor & {
   CodPuntoEmision?: string | null;
 };
 
+export type EmisorSriLookup = {
+  found: boolean;
+  mensaje?: string | null;
+  ruc?: string | null;
+  razonSocial?: string | null;
+  nomComercial?: string | null;
+  dirEstablecimiento?: string | null;
+  direccionMatriz?: string | null;
+  codEstablecimiento?: string | null;
+  llevaContabilidad?: string | null;
+  retenciones?: string | null;
+};
+
 function normalizeEmisor(emisor: EmisorApi): Emisor {
   return {
     codigo: emisor.codigo ?? emisor.Codigo ?? 0,
@@ -88,6 +101,13 @@ export async function getEmisores(userId: number) {
 export async function getEmisor(userId: number, codigo: number) {
   const emisor = await apiRequest<EmisorApi>(`/api/emisores/${codigo}?idUsuario=${userId}`);
   return normalizeEmisor(emisor);
+}
+
+export function consultarEmisorSri(ruc: string) {
+  const rucNormalizado = ruc.replace(/\D/g, '');
+  return apiRequest<EmisorSriLookup>(`/api/emisores/consulta-ruc?ruc=${encodeURIComponent(rucNormalizado)}`, {
+    timeoutMs: 15000,
+  });
 }
 
 export async function createEmisor(userId: number, emisor: EmisorUpsert) {
