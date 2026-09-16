@@ -28,6 +28,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -53,8 +54,8 @@ import { CompraDocumentosEstado, CompraDocumentosTransferenciaInput, createOpera
 import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
 import { createPuntoEmision, deletePuntoEmision, getPuntoEmisionSiguienteSecuencial, getPuntosEmision, markPuntoPrincipal, PuntoDocumentoKey, savePuntoEmisionSecuenciaInicial, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
-import { emitirRetencionSri, enviarRetencionCorreo, getRetencionPdf, getRetenciones, getRetencionXml, RetencionListItem } from './src/services/retencionesMobileService';
-import { ERubricaDashboard, ERubricaEmisor, buscarERubricaSolicitudesProveedor, crearERubricaSolicitud, descargarERubricaFirmaP12, enviarTransferenciaERubricaSolicitud, firmarERubricaDocumento, getERubricaDashboard, getERubricaEmisores, getERubricaFirmaEstado, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, iniciarPagoERubricaSolicitud, sincronizarERubricaPendientes, validarERubricaFirmaPdf, validarERubricaQr } from './src/services/erubricaMobileService';
+import { crearRetencionDesdeLiquidacion, emitirRetencionSri, enviarRetencionCorreo, getRetencionCatalogo, getRetencionPdf, getRetenciones, getRetencionXml, LiquidacionRetencionInput, RetencionCatalogItem, RetencionListItem } from './src/services/retencionesMobileService';
+import { ERubricaDashboard, ERubricaDocumentoFirmado, ERubricaDocumentoPendiente, ERubricaEmisor, ERubricaFirmaEstado, appendERubricaFile, buscarERubricaSolicitudesProveedor, cargarERubricaDocumentoPendiente, configurarERubricaFirma, crearERubricaSolicitud, descargarERubricaFirmaP12, eliminarERubricaDocumentoPendiente, enviarTransferenciaERubricaSolicitud, firmarERubricaDocumento, getERubricaDashboard, getERubricaDocumentosFirmados, getERubricaDocumentosPendientes, getERubricaEmisores, getERubricaFirmaEstado, getERubricaPlan, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, iniciarPagoERubricaSolicitud, sincronizarERubricaPendientes, sincronizarERubricaSolicitud, validarERubricaFirmaPdf, validarERubricaFirmaTemporal, validarERubricaQr } from './src/services/erubricaMobileService';
 import { ChangePasswordRequest, DynamicMenu, LoginResponse, RegisterRequest, ServiceAccess, TipoDocumento } from './src/types/auth';
 import { CategoriaCatalogo, CiudadLookup, Cliente, ClienteLookups, Emisor, FirmaEstado, PerfilLookup, PerfilUsuario, Producto, ProductoLookups, ProductoTipo, ProvinciaLookup, PuntoEmision, PuntosEmisionData, SubcategoriaCatalogo, SubcategoriaLookup } from './src/types/business';
 import {
@@ -78,25 +79,25 @@ import type { BotVoiceControls } from './src/components/bot/EfactBotScreen';
 import { InitialSequenceModal } from './src/components/documentos/InitialSequenceModal';
 import { PuntosEmisionScreen } from './src/components/puntos/PuntosEmisionScreen';
 import { DirectoryTabButton, DropdownField, FormTopBar, ToggleRow } from './src/components/ui/FormShared';
+import { DashboardActivityItem, DashboardChartCard, DashboardPrimaryAction, DashboardServiceRow } from './src/components/dashboard/DashboardWidgets';
 import { EmptyState } from './src/components/ui/FeedbackStates';
-import { DashboardHomeScreen } from './src/components/dashboard/DashboardHomeScreen';
 import { NuevaFacturaMobileScreen } from './src/components/facturacion/NuevaFacturaMobileScreen';
 import { ModuleCard, NavButton, PortalBottomNav, PortalHeaderAvatar } from './src/components/portal/PortalNavigation';
 import { CatalogCard, SubcategoriaCard } from './src/components/catalog/CatalogCards';
 import { InitialsAvatar, MenuItem } from './src/components/ui/MenuItem';
 import { BiometricSetupModal, BrandLockup, BrandMark, LoadingScreen, ScreenFrame } from './src/components/auth/AuthWidgets';
 import { AdminModuleScreen, getAdminModuleConfig, getAdminModuleSlug, isAdminMobileView } from './src/components/admin/AdminModuleScreen';
-import { RechargeHistoryScreen } from './src/components/recargas/RechargeHistoryScreen';
-import { ClienteForm } from './src/components/clientes/ClienteForm';
-import type { ClienteFormMode, ClienteFormState } from './src/components/clientes/ClienteForm';
-import { AccountsReceivableScreen, AccountStatementScreen, getAccountStatementClientId, OperationalForm, PurchaseDocumentsScreen } from './src/components/cuentas/OperationalFinancialScreens';
-import type { OperationalFormMode, OperationalFormState } from './src/components/cuentas/OperationalFinancialScreens';
 import { EFACT_THEME, ERUBRICA_COLORS } from './src/styles/theme';
 import { getDocumentSerieOptions, getEffectiveDocumentSerie, getNextSequence, getNextSequenceFromOptions, getPuntoDocumentSequences, getPuntoSerie, getSelectedDocumentSerieOption, getSerieCodemisorFromOptions, getSerieLabel, getSerieLabelFromOptions, getSerieValue, normalizeSerieCode, normalizeSerieDisplay, serieNeedsInitialSequence, usePreferredDocumentSerie } from './src/utils/documentSeries';
-import type { NotaCreditoFormState, NotaDebitoFormState, NotaDebitoLinea, NuevaFacturaFormState, NuevaFacturaLinea } from './src/types/invoices';
+import type { NuevaFacturaFormState, NuevaFacturaLinea } from './src/types/invoices';
 import { NuevaNotaCreditoMobileScreen } from './src/components/facturacion/NuevaNotaCreditoMobileScreen';
 import { NuevaNotaDebitoMobileScreen } from './src/components/facturacion/NuevaNotaDebitoMobileScreen';
+import { MisNotasDebitoMobileScreen } from './src/components/documents/MisNotasDebitoMobileScreen';
 import { formatDocumentDate, formatMoney, listItemKey } from './src/utils/documentFormatting';
+import { getClienteDisplayName, getClienteEmail, getClienteIdentification, getClienteKey } from './src/utils/clientDisplay';
+import { getIvaOptionValue, getIvaOptions } from './src/utils/facturaOptions';
+import { parseDocumentNumber, validateDateRange, validateFiscalLine, validatePositiveTotal } from './src/utils/documentValidation';
+import { InvoiceHistoryMetric, getInvoiceStatusStyle, getInvoiceStatusTextStyle } from './src/components/documents/DocumentHistoryShared';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'change';
 
@@ -134,6 +135,36 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
 
   return debouncedValue;
 }
+
+function getDocumentAssetUrl(response: { url?: string | null } | string) {
+  const value = typeof response === 'string' ? response : response.url;
+  if (!value) return '';
+  return value.startsWith('http') ? value : `${API_BASE_URL.replace(/\/$/, '')}/${value.replace(/^\//, '')}`;
+}
+
+const PDFJS_VIEWER_URI = Image.resolveAssetSource(require('./assets/pdfjs/pdf.min.pdf')).uri;
+const PDFJS_WORKER_URI = Image.resolveAssetSource(require('./assets/pdfjs/pdf.worker.min.pdf')).uri;
+
+function usePdfJsSource(uri: string) {
+  const [source, setSource] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const value = uri.startsWith('file:') ? await FileSystem.readAsStringAsync(uri) : await (await fetch(uri)).text();
+        if (mounted) setSource(value);
+      } catch {
+        if (mounted) setSource('');
+      }
+    };
+    void load();
+    return () => { mounted = false; };
+  }, [uri]);
+
+  return source;
+}
+
 type WorkspaceView =
   | 'portal'
   | 'dashboard'
@@ -208,6 +239,17 @@ type ERubricaTab =
   | 'proveedor'
   | 'catalogos'
   | 'soporte';
+
+function getERubricaTabTitle(tab: ERubricaTab) {
+  const titles: Record<ERubricaTab, string> = {
+    inicio: 'Inicio', solicitudes: 'Solicitudes', firmas: 'Firmas', 'documentos-por-firmar': 'Documentos por firmar',
+    'historial-documentos': 'Historial documentos', 'validar-firma': 'Validar firma', firmar: 'Firmar PDF', validar: 'Validar documento',
+    'nueva-solicitud': 'Solicitar firma', 'historial-solicitudes': 'Historial de solicitudes', 'ver-mis-firmas': 'Mis firmas',
+    'plan-disponible': 'Plan disponible', 'firma-config': 'Configurar firma', renovacion: 'Renovación', proveedor: 'Proveedor',
+    catalogos: 'Catálogos', soporte: 'Soporte',
+  };
+  return titles[tab];
+}
 type SolicitudDocumentoKey =
   | 'cedulaFrontal'
   | 'cedulaPosterior'
@@ -224,6 +266,7 @@ const SOLICITUD_FORM_INITIAL = {
   tipoDocumento: '',
   identificacion: '',
   codigoDactilar: '',
+  poseeRuc: false,
   ruc: '',
   nombres: '',
   primerApellido: '',
@@ -293,6 +336,10 @@ type ClienteFormState = {
   creditoTributarioProveedor: string;
   codigoProveedor: string;
   esSujetoRetencionProveedor: boolean;
+  registraInformacionBancariaProveedor: boolean;
+  bancoProveedor: string;
+  tipoCuentaProveedor: string;
+  numeroCuentaProveedor: string;
 };
 type MessageState = {
   type: 'success' | 'error' | 'info';
@@ -300,6 +347,7 @@ type MessageState = {
 } | null;
 type OperationalFormState = {
   codigo: string;
+  facturaId: string;
   descripcion: string;
   valor: string;
   observacion: string;
@@ -7016,6 +7064,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     : null;
   const firmaResumenVisible = isERubricaWorkspace
     ? {
+        active: Boolean(renovacionFirma?.esValida ?? renovacionFirma?.EsValida),
         label: renovacionFirma ? (renovacionFirma.esValida ?? renovacionFirma.EsValida) ? estadoFirmaERubrica || 'Vigente' : estadoFirmaERubrica || 'Requiere revisión' : 'Sin firma configurada',
         caption: vigenciaFirmaERubrica ?? renovacionFirma?.mensaje ?? renovacionFirma?.Mensaje ?? 'Configura tu certificado .p12 y su clave.',
         tone: ((renovacionFirma?.esValida ?? renovacionFirma?.EsValida) ? 'success' : renovacionFirma ? 'warning' : 'danger') as 'success' | 'warning' | 'danger',
@@ -7201,6 +7250,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         {!loadingMenus && activeView === 'dashboard' ? (
           <DashboardHomeScreen
             facturas={facturasList}
+            clientesCount={clientes.length}
+            productosCount={productos.length}
             modules={modules}
             onOpenView={(view) => openView(view as WorkspaceView)}
             onOpenVoice={() => botVoiceControlsRef.current?.startHandsFree()}
@@ -8177,8 +8228,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
                 onChange={updateRechargeForm}
                 onSelectPlan={selectRechargePlan}
                 onSave={saveOperational}
-                onTransfer={saveRechargeTransfer}
-              />
+               />
               ) : (
                 <OperationalModuleScreen
                 view={activeView}
@@ -12501,8 +12551,8 @@ function ERubricaMobileScreen({
       const directory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
       if (!directory) throw new Error('missing-directory');
       const safeName = buildDeviceFileName(documentName, '.pdf');
-      const token = getSessionToken();
-      const download = await FileSystem.downloadAsync(url, `${directory}validar-${Date.now()}-${safeName}`, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+      const cookie = getAuthSessionCookie();
+      const download = await FileSystem.downloadAsync(url, `${directory}validar-${Date.now()}-${safeName}`, cookie ? { headers: { Cookie: cookie } } : undefined);
       setPdfFile({ uri: download.uri, name: documentName, mimeType: 'application/pdf' });
       setPdfValidation(null);
       setSignedDocumentsModalOpen(false);
@@ -12544,8 +12594,8 @@ function ERubricaMobileScreen({
       const url = getDocumentAssetUrl(documento.url);
       const directory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
       if (!url || !directory) throw new Error('missing-document');
-      const token = getSessionToken();
-      const download = await FileSystem.downloadAsync(url, `${directory}firmar-${Date.now()}-${buildDeviceFileName(documento.nombreDocumento, '.pdf')}`, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+      const cookie = getAuthSessionCookie();
+      const download = await FileSystem.downloadAsync(url, `${directory}firmar-${Date.now()}-${buildDeviceFileName(documento.nombreDocumento, '.pdf')}`, cookie ? { headers: { Cookie: cookie } } : undefined);
       setPdfFile({ uri: download.uri, name: documento.nombreDocumento, mimeType: 'application/pdf' });
       setDocumentoPendienteSeleccionado(documento.nombreArchivo);
       setSignedFileUri(null);
@@ -13471,7 +13521,7 @@ function ERubricaMobileScreen({
           <View style={styles.erubricaPlanCard}>
             <View style={styles.erubricaPlanHero}>
               <View style={styles.erubricaPlanPills}>
-              <Text style={styles.erubricaPlanPill}>{label(planDisponible, ['tieneFirmaPagada'], false) === 'true' && planEstado.toLowerCase() === 'activo' ? 'Firma vigente' : 'Sin firma vigente'}</Text>
+              <Text style={styles.erubricaPlanPill}>{label(planDisponible, ['tieneFirmaPagada'], 'false') === 'true' && planEstado.toLowerCase() === 'activo' ? 'Firma vigente' : 'Sin firma vigente'}</Text>
                 <Text style={styles.erubricaPlanPillAlt}>Servicio: E-Rúbrica</Text>
               </View>
               <View style={styles.erubricaPlanHeroBody}>
