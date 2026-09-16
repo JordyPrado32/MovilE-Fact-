@@ -144,7 +144,17 @@ export const eliminarERubricaDocumentoPendiente = (nombreArchivo: string) =>
 
 export const getERubricaRenovacion = () => apiRequest<unknown>(`${ROOT}/renovacion`);
 
-export const getERubricaPlan = () => apiRequest<unknown>(`${ROOT}/plan`);
+export type ERubricaPlan = {
+  tieneFirmaPagada: boolean;
+  solicitudId?: number;
+  vigencia?: string | null;
+  fechaInicio?: string | null;
+  fechaVencimiento?: string | null;
+  diasRestantes: number;
+  estado: string;
+};
+
+export const getERubricaPlan = () => apiRequest<ERubricaPlan>(`${ROOT}/plan`);
 
 export const getERubricaNotificaciones = (take = 8) =>
   apiRequest<unknown[]>(`${ROOT}/notificaciones?take=${Math.max(1, Math.min(50, take))}`);

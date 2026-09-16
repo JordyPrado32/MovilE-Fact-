@@ -13987,7 +13987,7 @@ function ERubricaMobileScreen({
           <View style={styles.erubricaPlanCard}>
             <View style={styles.erubricaPlanHero}>
               <View style={styles.erubricaPlanPills}>
-                <Text style={styles.erubricaPlanPill}>Firma vigente</Text>
+              <Text style={styles.erubricaPlanPill}>{label(planDisponible, ['tieneFirmaPagada'], false) === 'true' && planEstado.toLowerCase() === 'activo' ? 'Firma vigente' : 'Sin firma vigente'}</Text>
                 <Text style={styles.erubricaPlanPillAlt}>Servicio: E-Rúbrica</Text>
               </View>
               <View style={styles.erubricaPlanHeroBody}>
@@ -14010,7 +14010,7 @@ function ERubricaMobileScreen({
               <View style={styles.erubricaRequestHistoryCell}><Text style={styles.erubricaHistoryMetricLabel}>ESTADO DEL ACCESO</Text><Text style={[styles.erubricaRequestHistoryValue, { color: ERUBRICA_COLORS.primary }]}>{planEstado}</Text></View>
             </View>
             <View style={styles.erubricaPendingActionRow}>
-              <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Solicitar Nueva Firma" loading={false} onPress={() => selectTab('nueva-solicitud')} />
+              <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label={planEstado.toLowerCase() === 'activo' ? 'Renovar firma' : 'Solicitar Nueva Firma'} loading={false} onPress={() => selectTab('nueva-solicitud')} />
               <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Ver Mis Trámites" onPress={() => selectTab('historial-solicitudes')} />
             </View>
           </View>
@@ -14055,7 +14055,6 @@ function ERubricaMobileScreen({
             <View style={styles.erubricaPendingDocCopy}>
               <Text style={styles.erubricaConfigStatusTitle}>{firmaEfactValida ? 'Firma vigente en E-Fact' : firmaEfact ? 'Firma configurada en E-Fact' : 'Firma pendiente'}</Text>
               <Text style={styles.erubricaConfigStatusText}>{firmaEfactValida ? `${firmaEfact?.diasRestantes ?? 'Sin dato'} días para renovar. Expira el ${firmaEfactExpira}.` : firmaEfact?.mensaje ?? 'Carga un certificado .p12 para habilitar la firma electrónica.'}</Text>
-              <Text style={styles.erubricaConfigStatusOwner}>{firmaEfact ? `Emisor: ${firmaEfact.razonSocial ?? firmaEfact.ruc ?? 'E-Fact'}` : `Titular: ${firmaTitular}`}</Text>
             </View>
           </View>
 
@@ -14143,6 +14142,7 @@ function ERubricaMobileScreen({
           </View>
 
           <View style={styles.erubricaConfigActionBar}>
+            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label={loadingFirmaDetalle ? "Validando..." : "Validar ahora"} onPress={() => void cargarFirmaActiva(true)} />
             <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Cancelar" onPress={() => selectTab('inicio')} />
             <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar" onPress={() => { setCertificateFile(null); setCertificatePassword(''); }} />
             <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Guardar firma" loading={savingConfiguredSignature} onPress={() => void saveConfiguredSignature()} />
