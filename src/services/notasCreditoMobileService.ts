@@ -1,6 +1,6 @@
 import { ApiError, apiRequest } from './apiClient';
 import { Cliente } from '../types/business';
-import { FacturaListItem, FacturaPreparacion, FacturaProducto, getFacturas, normalizeFacturaPreparacion } from './facturasMobileService';
+import { FacturaListItem, FacturaPreparacion, FacturaProducto, normalizeFacturaPreparacion } from './facturasMobileService';
 import type { DocumentPdfFormat } from '../utils/documentFormatting';
 
 type ApiRow = Record<string, unknown>;
@@ -44,6 +44,7 @@ export type NotaCreditoLineaInput = {
   precio: number;
   descuento: number;
   tarifa: number;
+  detalle?: string | null;
 };
 
 export type NotaCreditoDetalleDisponible = {
@@ -85,25 +86,11 @@ export async function getNotasCredito(userId: number, top = 0) {
 }
 
 export async function buscarNotaCreditoFacturas(userId: number, filtro: string) {
-  try {
-    const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
-      `/api/notas-credito/buscar-facturas?idUsuario=${userId}&texto=${encodeURIComponent(filtro)}`,
-      `/api/notas-credito/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
-      `/api/nota-credito/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
-    ]);
+  const response = await apiRequest<ApiRow[] | Record<string, unknown>>(
+    `/api/notas-credito/buscar-facturas?idUsuario=${userId}&texto=${encodeURIComponent(filtro)}`,
+  );
 
-    return normalizeFacturaRows(response);
-  } catch (error) {
-    if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 0)) throw error;
-    const facturas = await getFacturas(userId, 0);
-    const term = filtro.trim().toLowerCase();
-    return facturas.filter((factura) => [
-      factura.numeroCompleto,
-      factura.numfactura,
-      factura.cliente,
-      factura.identificacionCliente,
-    ].filter(Boolean).some((value) => String(value).toLowerCase().includes(term)));
-  }
+  return normalizeFacturaRows(response);
 }
 
 export async function getNotaCreditoDetallesDisponibles(userId: number, codfactura: number): Promise<NotaCreditoDetalleDisponible[]> {
@@ -145,6 +132,7 @@ export async function guardarNotaCredito(input: NotaCreditoGuardarInput) {
       Codprincipal: item.producto.codprincipal,
       Codauxiliar: item.producto.codauxiliar,
       Descripcion: item.producto.descripcion ?? 'Producto',
+      Detalle: item.detalle?.trim() || null,
       Cantidad: item.cantidad,
       Preciounitario: item.precio,
       Descuento: item.descuento,
@@ -161,6 +149,7 @@ export async function guardarNotaCredito(input: NotaCreditoGuardarInput) {
       body: JSON.stringify({
         IdUsuario: input.idUsuario,
         NotaCredito: notaCredito,
+        Cliente: input.cliente,
         Detalles: detalles,
         Correos: input.correos?.filter(Boolean).map((correo) => ({ correo, guardarEnCliente: false })) ?? [],
       }),

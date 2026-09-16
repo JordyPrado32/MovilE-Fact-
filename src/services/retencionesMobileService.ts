@@ -1,4 +1,4 @@
-import { ApiError, apiRequest } from './apiClient';
+import { apiRequest } from './apiClient';
 import { RETENCIONES_GENERADAS_PATH } from '../config/api';
 import type { DocumentPdfFormat } from '../utils/documentFormatting';
 
@@ -112,13 +112,27 @@ export type RetencionListItem = {
   mensajeSri?: string | null;
 };
 
+export type RetencionCatalogItem = {
+  codigo: string;
+  descripcion: string;
+  valor?: number | null;
+};
+
+export type LiquidacionRetencionInput = {
+  tipo: 'IVA' | 'RENTA';
+  idRet: number;
+  codigoRetencion: string;
+  descripcionRet: string;
+  base: number;
+  porcentajeRetencion: number;
+  valorRetenido: number;
+  valor: number;
+};
+
 export async function getRetenciones(userId: number, top = 0) {
-  const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
+  const response = await apiRequest<ApiRow[] | Record<string, unknown>>(
     withQuery(RETENCIONES_GENERADAS_PATH, { idUsuario: userId, top }),
-    withQuery('/api/reportes/documentos/emitidos', { idUsuario: userId, top, tipo: 'retencion' }),
-    withQuery('/api/reportes/documentos', { idUsuario: userId, top, tipo: 'retencion' }),
-    withQuery('/api/reportes/documentos/recibidos', { idUsuario: userId, top, tipo: 'retencion' }),
-  ]);
+  );
   const rows = normalizeRows(response);
   const retenciones = rows.filter(isRetencionRow);
   return (retenciones.length ? retenciones : rows).map(toRetencionListItem);
@@ -143,6 +157,25 @@ export function emitirRetencionSri(userId: number, codRetencion: number) {
   return apiRequest<{ estado?: string; mensaje?: string; autorizacion?: string }>(`/api/retenciones/${codRetencion}/emitir?idUsuario=${userId}`, { method: 'POST' });
 }
 
+export async function getRetencionCatalogo(tipo: 'IVA' | 'RENTA') {
+  const response = await apiRequest<ApiRow[] | Record<string, unknown>>(`/api/retenciones-catalogo/${tipo.toLowerCase()}`);
+  return normalizeRows(response).map((row) => ({
+    codigo: text(pickValue(row, ['codigo', 'Codigo', 'id', 'Id'])),
+    descripcion: text(pickValue(row, ['descripcion', 'Descripcion', 'nombre', 'Nombre'])) || 'Retencion',
+    valor: numberValue(pickValue(row, ['valorFinal', 'ValorFinal', 'valor', 'Valor', 'porcentaje', 'Porcentaje'])),
+  })).filter((item) => item.codigo);
+}
+
+export function crearRetencionDesdeLiquidacion(userId: number, codLiquidacion: number, retencion: LiquidacionRetencionInput) {
+  return apiRequest<{ codLiquidacion?: number; codRetencion?: number | null; numeroRetencion?: string }>(
+    `/api/liquidaciones-compra/${codLiquidacion}/retencion?idUsuario=${userId}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ Retenciones: [retencion] }),
+    },
+  );
+}
+
 function normalizeRows(response: ApiRow[] | Record<string, unknown>): ApiRow[] {
   if (Array.isArray(response)) return response;
   const values = [response.items, response.Items, response.data, response.Data, response.retenciones, response.Retenciones, response.registros, response.Registros, response.result, response.Result, response.results, response.Results];
@@ -156,19 +189,6 @@ function normalizeRows(response: ApiRow[] | Record<string, unknown>): ApiRow[] {
   const firstArray = Object.values(response).find(Array.isArray);
   if (Array.isArray(firstArray)) return firstArray as ApiRow[];
   return Object.keys(response).length ? [response] : [];
-}
-
-async function requestWithFallback<T>(paths: string[]) {
-  let lastError: unknown;
-  for (const path of paths) {
-    try {
-      return await apiRequest<T>(path, { suppressErrorLog: true });
-    } catch (error) {
-      lastError = error;
-      if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 0)) throw error;
-    }
-  }
-  throw lastError;
 }
 
 function withQuery(path: string, params: Record<string, string | number>) {
@@ -199,6 +219,8 @@ function toRetencionListItem(row: ApiRow): RetencionListItem {
   const base = numberValue(pickValue(row, RETENCION_BASE_KEYS)) ?? sumNestedNumbers(row, RETENCION_DETAIL_KEYS, RETENCION_BASE_KEYS);
   const retenido = numberValue(pickValue(row, RETENIDO_KEYS)) ?? sumNestedNumbers(row, RETENCION_DETAIL_KEYS, RETENIDO_KEYS);
 
+  const autorizado = booleanValue(pickValue(row, ['autorizado', 'Autorizado'])) === true;
+
   return {
     codRetencion: numberValue(pickValue(row, ['codRetencion', 'CodRetencion', 'codretencion', 'codFactura', 'CodFactura', 'codfactura', 'secRetencion', 'SecRetencion', 'sec', 'Sec', 'idRetencion', 'IdRetencion', 'id', 'Id'])) ?? 0,
     numero: numeroCompleto || [serie, numero].filter(Boolean).join('-') || numero || null,
@@ -206,8 +228,8 @@ function toRetencionListItem(row: ApiRow): RetencionListItem {
     documentoSustento: text(pickValue(row, ['documentoSustento', 'DocumentoSustento', 'sustento', 'Sustento', 'numeroSustento', 'NumeroSustento', 'factura', 'Factura'])) || null,
     proveedor: text(pickValue(row, ['proveedor', 'Proveedor', 'nombreProveedor', 'NombreProveedor', 'razonSocial', 'RazonSocial'])) || null,
     identificacionProveedor: text(pickValue(row, ['identificacionProveedor', 'IdentificacionProveedor', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc'])) || null,
-    estadoSri: text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estado', 'Estado'])) || null,
-    autorizado: booleanValue(pickValue(row, ['autorizado', 'Autorizado'])),
+    estadoSri: normalizeRetencionState(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estado', 'Estado']), autorizado),
+    autorizado,
     base,
     retenido,
     pdfUrl: text(pickValue(row, ['pdfUrl', 'PdfUrl', 'urlPdf', 'UrlPdf'])) || null,
@@ -215,6 +237,14 @@ function toRetencionListItem(row: ApiRow): RetencionListItem {
     numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'numAutorizacion', 'NumAutorizacion', 'claveAcceso', 'ClaveAcceso'])) || null,
     mensajeSri: text(pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje', 'errorSri', 'ErrorSri', 'observacion', 'Observacion'])) || null,
   };
+}
+
+function normalizeRetencionState(value: unknown, autorizado: boolean) {
+  const normalized = text(value).trim().toUpperCase().replace(/-/g, '_');
+  if (autorizado || normalized.includes('AUTORIZ')) return 'AUTORIZADO';
+  if (normalized.includes('ERROR') || normalized.includes('FALL') || normalized.includes('EXCEPTION')) return 'ERROR';
+  if (normalized.includes('RECHAZ') || normalized.includes('DEVUELT') || normalized.includes('NO_AUTORIZ') || normalized.includes('NEGAD')) return 'RECHAZADO';
+  return 'PENDIENTE';
 }
 
 function pickValue(row: ApiRow, keys: string[]) {
@@ -275,7 +305,7 @@ function booleanValue(value: unknown) {
   if (typeof value === 'number') return value === 1;
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
-    if (['true', '1', 'si', 'sí', 's', 'autorizado', 'activo'].includes(normalized)) return true;
+    if (['true', '1', 'si', 'sí', 's', 'a', 'autorizado'].includes(normalized)) return true;
     if (['false', '0', 'no', 'n', 'pendiente', 'no autorizado', 'inactivo'].includes(normalized)) return false;
   }
   return null;

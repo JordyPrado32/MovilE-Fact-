@@ -49,10 +49,19 @@ export function SearchField({ label, value, onChangeText, placeholder, resultCou
   onSelectSuggestion?: (suggestion: { id: string; title: string; subtitle?: string }) => void;
 }) {
   const hasQuery = value.trim().length > 0;
+  const lastInputValue = useRef(value);
   const submitRef = useRef(onSubmit);
   submitRef.current = onSubmit;
+  const handleChangeText = (nextValue: string) => {
+    lastInputValue.current = nextValue;
+    onChangeText(nextValue);
+  };
   useEffect(() => {
     if (!predictive || !value.trim() || !submitRef.current) return;
+    if (lastInputValue.current !== value) {
+      lastInputValue.current = value;
+      return;
+    }
     const timer = setTimeout(() => submitRef.current?.(), 350);
     return () => clearTimeout(timer);
   }, [predictive, value]);
@@ -68,8 +77,8 @@ export function SearchField({ label, value, onChangeText, placeholder, resultCou
       </View>
       <View style={styles.searchInputShell}>
         <Text style={styles.searchIcon}>⌕</Text>
-        <TextInput accessibilityLabel={label} autoCapitalize="none" autoCorrect={false} enterKeyHint="search" placeholder={placeholder ?? label} placeholderTextColor="#8191A2" returnKeyType="search" style={styles.searchInput} value={value} onChangeText={onChangeText} onSubmitEditing={onSubmit} />
-        {value ? <Pressable accessibilityLabel="Limpiar busqueda" hitSlop={8} style={styles.searchClearButton} onPress={() => onChangeText('')}><Text style={styles.searchClearText}>×</Text></Pressable> : null}
+        <TextInput accessibilityLabel={label} autoCapitalize="none" autoCorrect={false} enterKeyHint="search" placeholder={placeholder ?? label} placeholderTextColor="#8191A2" returnKeyType="search" style={styles.searchInput} value={value} onChangeText={handleChangeText} onSubmitEditing={onSubmit} />
+        {value ? <Pressable accessibilityLabel="Limpiar busqueda" hitSlop={8} style={styles.searchClearButton} onPress={() => handleChangeText('')}><Text style={styles.searchClearText}>×</Text></Pressable> : null}
         {onSubmit ? <Pressable accessibilityLabel="Ejecutar busqueda" style={styles.searchSubmitButton} onPress={onSubmit}><Text style={styles.searchSubmitText}>Buscar</Text></Pressable> : null}
       </View>
       {predictive && hasQuery && suggestions.length > 0 ? <View style={styles.searchSuggestions}>
@@ -95,9 +104,9 @@ export function BiometricButton({ label, loading, onPress }: { label: string; lo
   return <Pressable accessibilityLabel={label} disabled={loading} style={styles.biometricButton} onPress={onPress}>{loading ? <ActivityIndicator color="#00649D" /> : <MaterialCommunityIcons name="fingerprint" size={25} color="#00649D" />}<Text style={styles.biometricButtonText}>{label}</Text></Pressable>;
 }
 
-export function LoginActionTiles({ active, biometricLabel, onPassword, onBiometric, onGuest }: { active: 'password' | 'biometric' | 'guest'; biometricLabel: string | null; onPassword: () => void; onBiometric: () => void; onGuest: () => void }) {
+export function LoginActionTiles({ active, biometricLabel, onPassword, onBiometric }: { active: 'password' | 'biometric'; biometricLabel: string | null; onPassword: () => void; onBiometric: () => void }) {
   const platformBiometricLabel = Platform.OS === 'ios' ? 'Face ID' : 'Huella digital';
-  return <View style={styles.loginActionTiles}><LoginActionTile active={active === 'password'} icon="account-outline" label="Usuario / contraseña" onPress={onPassword} /><LoginActionTile active={active === 'biometric'} icon="fingerprint" label={biometricLabel || platformBiometricLabel} onPress={onBiometric} /><LoginActionTile active={active === 'guest'} icon="dots-horizontal-circle-outline" label="Invitado" onPress={onGuest} /></View>;
+  return <View style={styles.loginActionTiles}><LoginActionTile active={active === 'password'} icon="account-outline" label="Usuario / contraseña" onPress={onPassword} /><LoginActionTile active={active === 'biometric'} icon="fingerprint" label={biometricLabel || platformBiometricLabel} onPress={onBiometric} /></View>;
 }
 
 function LoginActionTile({ active, icon, label, onPress }: { active: boolean; icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; label: string; onPress: () => void }) {

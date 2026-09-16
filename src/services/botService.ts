@@ -55,9 +55,89 @@ export type BotSelectionOption = {
 
 let activeBotSession: { userId: number; sessionId: string } | null = null;
 let botHistoryWrite = Promise.resolve();
+const BOT_HISTORY_TTL_MS = 24 * 60 * 60 * 1000;
+const BOT_HISTORY_KEY_PREFIX = 'efact.bot.history.key.';
 
 function historyFileUri(userId: number) {
   return userId > 0 && FileSystem.documentDirectory ? `${FileSystem.documentDirectory}${BOT_HISTORY_FILE_PREFIX}${userId}.json` : null;
+}
+
+function historyKey(userId: number) {
+  return `${BOT_HISTORY_KEY_PREFIX}${userId}`;
+}
+
+function toBase64(bytes: Uint8Array) {
+  if (typeof globalThis.btoa !== 'function') return null;
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return globalThis.btoa(binary);
+}
+
+function fromBase64(value: string) {
+  if (typeof globalThis.atob !== 'function') return null;
+  const binary = globalThis.atob(value);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+async function getHistoryKey(userId: number, create: boolean) {
+  if (userId <= 0 || !(await SecureStore.isAvailableAsync())) return null;
+  try {
+    const stored = await SecureStore.getItemAsync(historyKey(userId));
+    if (stored) return stored;
+    if (!create || !globalThis.crypto?.getRandomValues) return null;
+    const bytes = new Uint8Array(32);
+    globalThis.crypto.getRandomValues(bytes);
+    const generated = toBase64(bytes);
+    if (!generated) return null;
+    await SecureStore.setItemAsync(historyKey(userId), generated);
+    return generated;
+  } catch {
+    return null;
+  }
+}
+
+async function encryptHistory(userId: number, value: string) {
+  const cryptoApi = globalThis.crypto;
+  const keyValue = await getHistoryKey(userId, true);
+  if (!cryptoApi?.subtle || !cryptoApi.getRandomValues || !keyValue) return null;
+  const rawKey = fromBase64(keyValue);
+  if (!rawKey) return null;
+
+  const key = await cryptoApi.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['encrypt']);
+  const iv = new Uint8Array(12);
+  cryptoApi.getRandomValues(iv);
+  const encrypted = await cryptoApi.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    new TextEncoder().encode(value),
+  );
+  const encodedIv = toBase64(iv);
+  const encodedData = toBase64(new Uint8Array(encrypted));
+  return encodedIv && encodedData ? `v1.${encodedIv}.${encodedData}` : null;
+}
+
+async function decryptHistory(userId: number, value: string) {
+  const cryptoApi = globalThis.crypto;
+  const keyValue = await getHistoryKey(userId, false);
+  if (!cryptoApi?.subtle || !keyValue || !value.startsWith('v1.')) return null;
+  const [, encodedIv, encodedData] = value.split('.');
+  const iv = encodedIv ? fromBase64(encodedIv) : null;
+  const encrypted = encodedData ? fromBase64(encodedData) : null;
+  const rawKey = fromBase64(keyValue);
+  if (!iv || !encrypted || !rawKey) return null;
+
+  const key = await cryptoApi.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['decrypt']);
+  const decrypted = await cryptoApi.subtle.decrypt({ name: 'AES-GCM', iv }, key, encrypted);
+  return new TextDecoder().decode(decrypted);
+}
+
+function sanitizeHistoryMessage(message: BotMessage): BotMessage {
+  return {
+    ...message,
+    text: message.text
+      .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[correo oculto]')
+      .replace(/\b\d{10,13}\b/g, '[identificación oculta]'),
+  };
 }
 
 function isBotMessage(value: unknown): value is BotMessage {
@@ -72,7 +152,16 @@ export async function loadBotHistory(userId: number) {
   try {
     const info = await FileSystem.getInfoAsync(uri);
     if (!info.exists) return null;
-    const parsed = JSON.parse(await FileSystem.readAsStringAsync(uri)) as { messages?: unknown; feedbackByMessage?: unknown };
+    const decrypted = await decryptHistory(userId, await FileSystem.readAsStringAsync(uri));
+    if (!decrypted) {
+      await FileSystem.deleteAsync(uri, { idempotent: true });
+      return null;
+    }
+    const parsed = JSON.parse(decrypted) as { savedAt?: number; messages?: unknown; feedbackByMessage?: unknown };
+    if (!parsed.savedAt || Date.now() - parsed.savedAt > BOT_HISTORY_TTL_MS) {
+      await FileSystem.deleteAsync(uri, { idempotent: true });
+      return null;
+    }
     const messages = Array.isArray(parsed.messages) ? parsed.messages.filter(isBotMessage).slice(-100) : [];
     const feedbackByMessage: BotFeedbackState = {};
     if (parsed.feedbackByMessage && typeof parsed.feedbackByMessage === 'object') {
@@ -89,10 +178,36 @@ export async function loadBotHistory(userId: number) {
 export function saveBotHistory(userId: number, messages: BotMessage[], feedbackByMessage: BotFeedbackState) {
   const uri = historyFileUri(userId);
   if (!uri) return Promise.resolve();
-  const value = JSON.stringify({ messages: messages.slice(-100), feedbackByMessage });
+  const value = JSON.stringify({
+    savedAt: Date.now(),
+    messages: messages.slice(-100).map(sanitizeHistoryMessage),
+    feedbackByMessage,
+  });
   botHistoryWrite = botHistoryWrite
-    .then(() => FileSystem.writeAsStringAsync(uri, value))
+    .then(async () => {
+      const encrypted = await encryptHistory(userId, value);
+      if (!encrypted) {
+        await FileSystem.deleteAsync(uri, { idempotent: true });
+        return;
+      }
+      await FileSystem.writeAsStringAsync(uri, encrypted);
+    })
     .catch(() => undefined);
+  return botHistoryWrite;
+}
+
+export function clearBotHistory(userId: number) {
+  const uri = historyFileUri(userId);
+  botHistoryWrite = botHistoryWrite
+    .then(async () => {
+      if (uri) await FileSystem.deleteAsync(uri, { idempotent: true });
+      if (userId > 0 && await SecureStore.isAvailableAsync()) {
+        await SecureStore.deleteItemAsync(historyKey(userId));
+        await SecureStore.deleteItemAsync(storageKey(userId));
+      }
+    })
+    .catch(() => undefined);
+  if (activeBotSession?.userId === userId) activeBotSession = null;
   return botHistoryWrite;
 }
 

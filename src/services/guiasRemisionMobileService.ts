@@ -1,6 +1,6 @@
 import { ApiError, apiRequest } from './apiClient';
 import { Cliente } from '../types/business';
-import { FacturaListItem, FacturaPreparacion, FacturaProducto, buscarFacturaClientes, buscarFacturaProductos, getFacturas, normalizeFacturaPreparacion } from './facturasMobileService';
+import { FacturaListItem, FacturaPreparacion, FacturaProducto, buscarFacturaClientes, buscarFacturaProductos, normalizeFacturaPreparacion } from './facturasMobileService';
 import type { DocumentPdfFormat } from '../utils/documentFormatting';
 
 type ApiRow = Record<string, unknown>;
@@ -66,32 +66,20 @@ export async function buscarGuiaClientes(userId: number, filtro: string) {
 }
 
 export async function buscarGuiaTransportistas(userId: number, filtro: string) {
-  try {
-    const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
-      `/api/guias-remision/transportistas?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
-      `/api/guias-remision/transportistas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
-      `/api/guia-remision/transportistas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
-    ]);
-    return normalizeRows(response).map(toCliente);
-  } catch (error) {
-    if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 0)) throw error;
-    return buscarFacturaClientes(userId, filtro);
-  }
+  const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
+    `/api/guias-remision/transportistas?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
+    `/api/guias-remision/transportistas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
+    `/api/guia-remision/transportistas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
+  ]);
+  return normalizeRows(response).map(toCliente);
 }
 
 export async function buscarGuiaFacturas(userId: number, filtro: string) {
-  try {
-    const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
-      `/api/facturas/buscar?idUsuario=${userId}&texto=${encodeURIComponent(filtro)}`,
-      `/api/guias-remision/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
-      `/api/guia-remision/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
-    ]);
-    return normalizeFacturaRows(response);
-  } catch (error) {
-    if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 0)) throw error;
-    const term = filtro.trim().toLowerCase();
-    return (await getFacturas(userId, 0)).filter((factura) => [factura.numeroCompleto, factura.numfactura, factura.cliente, factura.identificacionCliente].filter(Boolean).some((value) => String(value).toLowerCase().includes(term)));
-  }
+  const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
+    `/api/guias-remision/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
+    `/api/guia-remision/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
+  ]);
+  return normalizeFacturaRows(response);
 }
 
 export function buscarGuiaProductos(userId: number, filtro: string) {
@@ -117,7 +105,7 @@ export async function guardarGuiaRemision(input: GuiaRemisionGuardarInput) {
     CodInterno: item.producto.codprincipal || String(item.producto.codproducto || ''),
     CodAdicional: item.producto.codauxiliar || null,
     Descripcion: item.producto.descripcion,
-    Cantidad: Math.max(1, Math.round(item.cantidad)),
+    Cantidad: item.cantidad,
   }));
 
   const response = await apiRequest<{ mensaje?: string; sec?: number; secGuiaRemision?: number; Sec?: number; codGuia?: number; CodGuia?: number; numeroComprobante?: string | null }>(
@@ -224,6 +212,7 @@ function normalizeFacturaRows(response: ApiRow[] | Record<string, unknown>): Fac
     codfactura: numberValue(pickValue(row, ['codfactura', 'CodFactura', 'codFactura', 'idFactura', 'IdFactura', 'id', 'Id'])) ?? 0,
     numfactura: text(pickValue(row, ['numfactura', 'NumFactura', 'numeroFactura', 'NumeroFactura', 'numero', 'Numero'])) || null,
     numeroCompleto: text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento'])) || null,
+    serie: text(pickValue(row, ['serie', 'Serie'])) || null,
     cliente: text(pickValue(row, ['cliente', 'Cliente', 'clienteNombre', 'ClienteNombre', 'nombreCliente', 'NombreCliente', 'razonSocial', 'RazonSocial'])) || null,
     identificacionCliente: text(pickValue(row, ['identificacionCliente', 'IdentificacionCliente', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc'])) || null,
   }));

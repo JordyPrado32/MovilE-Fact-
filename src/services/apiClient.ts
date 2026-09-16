@@ -1,7 +1,6 @@
 import { API_BASE_URL } from '../config/api';
 
 type RequestOptions = RequestInit & {
-  token?: string;
   timeoutMs?: number;
   suppressErrorLog?: boolean;
 };
@@ -9,16 +8,19 @@ type RequestOptions = RequestInit & {
 const REQUEST_TIMEOUT_MS = 20000;
 const DEFAULT_ERROR_MESSAGE = 'No se pudo completar la solicitud. Intenta nuevamente.';
 
-let sessionToken: string | null = null;
 let authSessionCookie: string | null = null;
+let authFailureHandler: (() => void) | null = null;
 
-export function setSessionToken(token?: string | null) {
-  sessionToken = token?.trim() || null;
-  if (!sessionToken) authSessionCookie = null;
+export function clearAuthSession() {
+  authSessionCookie = null;
 }
 
-export function getSessionToken() {
-  return sessionToken;
+export function getAuthSessionCookie() {
+  return authSessionCookie;
+}
+
+export function setAuthFailureHandler(handler: (() => void) | null) {
+  authFailureHandler = handler;
 }
 
 export class ApiError extends Error {
@@ -32,8 +34,7 @@ export class ApiError extends Error {
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { token, timeoutMs, suppressErrorLog, headers, ...requestOptions } = options;
-  const authToken = token ?? sessionToken;
+  const { timeoutMs, suppressErrorLog, headers, ...requestOptions } = options;
   const isFormData = typeof FormData !== 'undefined' && requestOptions.body instanceof FormData;
   const controller = new AbortController();
   const requestTimeoutMs = timeoutMs ?? REQUEST_TIMEOUT_MS;
@@ -50,7 +51,6 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       headers: {
         Accept: 'application/json',
         ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         ...(authSessionCookie ? { Cookie: authSessionCookie } : {}),
         ...headers,
       },
@@ -76,6 +76,10 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const body = contentType.includes('application/json') && text ? safeParseJson(text) : text;
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearAuthSession();
+      if (!path.startsWith('/api/auth/')) authFailureHandler?.();
+    }
     const message = getErrorMessage(response.status, body, path);
     if (!suppressErrorLog) {
       logApiError(path, response.status, body, {
@@ -83,6 +87,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
         elapsedMs: Date.now() - startedAt,
         method: requestOptions.method,
         timeoutMs: requestTimeoutMs,
+        userMessage: message,
       });
     }
 
@@ -93,8 +98,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 }
 
 export async function apiRequestBinary(path: string, options: RequestOptions = {}) {
-  const { token, timeoutMs, suppressErrorLog, headers, ...requestOptions } = options;
-  const authToken = token ?? sessionToken;
+  const { timeoutMs, suppressErrorLog, headers, ...requestOptions } = options;
   const controller = new AbortController();
   const requestTimeoutMs = timeoutMs ?? REQUEST_TIMEOUT_MS;
   const startedAt = Date.now();
@@ -108,7 +112,6 @@ export async function apiRequestBinary(path: string, options: RequestOptions = {
       signal: controller.signal,
       headers: {
         Accept: 'application/pdf, application/json',
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         ...(authSessionCookie ? { Cookie: authSessionCookie } : {}),
         ...headers,
       },
@@ -123,16 +126,22 @@ export async function apiRequestBinary(path: string, options: RequestOptions = {
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearAuthSession();
+      if (!path.startsWith('/api/auth/')) authFailureHandler?.();
+    }
     const text = await response.text();
+    const message = getErrorMessage(response.status, text, path);
     if (!suppressErrorLog) {
       logApiError(path, response.status, text, {
         contentType: response.headers.get('content-type') ?? '',
         elapsedMs: Date.now() - startedAt,
         method: requestOptions.method,
         timeoutMs: requestTimeoutMs,
+        userMessage: message,
       });
     }
-    throw new ApiError(response.status, getErrorMessage(response.status, text, path));
+    throw new ApiError(response.status, message);
   }
 
   return { bytes: await response.arrayBuffer(), contentType: response.headers.get('content-type') ?? 'application/pdf' };
@@ -147,6 +156,21 @@ function safeParseJson(text: string) {
 }
 
 function getErrorMessage(status: number, body: unknown, path: string) {
+  const bodyMessage = getBodyErrorMessage(body);
+  const normalizedPath = path.toLowerCase().replace(/\/+$/, '');
+
+  if (status === 401 && normalizedPath === '/api/auth/login') {
+    return getLoginErrorMessage(bodyMessage);
+  }
+
+  if (status === 401 && normalizedPath.includes('/api/auth/recover-password')) {
+    return 'No encontramos una cuenta asociada a ese correo.';
+  }
+
+  if (status === 401 && normalizedPath.includes('/api/auth/change-password')) {
+    return 'La clave temporal o actual no es correcta.';
+  }
+
   if (status === 429) {
     return 'Se alcanzó el límite temporal de solicitudes. Espera unos segundos e inténtalo nuevamente.';
   }
@@ -159,38 +183,65 @@ function getErrorMessage(status: number, body: unknown, path: string) {
     return 'El servidor no pudo completar la operación. Intenta nuevamente.';
   }
 
-  if (status === 401 || status === 403) {
+  if (status === 401) {
+    return 'Tu sesión expiró. Inicia sesión nuevamente.';
+  }
+
+  if (status === 403) {
     return 'No tienes permisos para realizar esta operación.';
   }
 
-  if (typeof body === 'string') {
-    const message = body.trim();
-
-    if (!message) {
-      return `HTTP ${status}: ${DEFAULT_ERROR_MESSAGE}`;
-    }
-
-    if (looksLikeHtml(message)) {
-      return status >= 500
-        ? 'El servidor devolvio un error interno. Intenta nuevamente o revisa el backend.'
-        : `HTTP ${status}: ${DEFAULT_ERROR_MESSAGE}`;
-    }
-
-    return sanitizeUserMessage(message);
-  }
-
-  if (body && typeof body === 'object') {
-    const errorBody = body as { message?: string; title?: string; detail?: string };
-    return sanitizeUserMessage(errorBody.message ?? errorBody.title ?? errorBody.detail ?? '');
-  }
-
-  return DEFAULT_ERROR_MESSAGE;
+  return bodyMessage || DEFAULT_ERROR_MESSAGE;
 }
 
-function sanitizeUserMessage(value: string) {
+function getLoginErrorMessage(bodyMessage: string) {
+  const normalized = bodyMessage
+    .toLocaleLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  if (/(usuario|cuenta)\s+no\s+(?:esta\s+)?(?:registrad[oa]|encontrad[oa]|existe)|no\s+(?:existe|se\s+encuentra|se\s+encontro)\s+(?:el\s+)?(usuario|cuenta)/i.test(normalized)) {
+    return 'Usuario no encontrado.';
+  }
+
+  if (/contrasena|clave|password/.test(normalized) && /(incorrect|inval|errone|no\s+valida)/i.test(normalized)) {
+    return 'La contraseña es incorrecta.';
+  }
+
+  return 'Usuario o contraseña incorrectos.';
+}
+
+function getBodyErrorMessage(body: unknown): string {
+  if (typeof body === 'string') {
+    const message = body.trim();
+    if (!message || looksLikeHtml(message)) return '';
+    const parsed = safeParseJson(message);
+    if (parsed !== message) return getBodyErrorMessage(parsed);
+    return sanitizeUserMessage(message, '');
+  }
+
+  if (!body || typeof body !== 'object') return '';
+
+  const errorBody = body as Record<string, unknown>;
+  const directMessage = [errorBody.message, errorBody.title, errorBody.detail, errorBody.error]
+    .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+  if (directMessage) return sanitizeUserMessage(directMessage, '');
+
+  const errors = errorBody.errors;
+  if (errors && typeof errors === 'object') {
+    const validationMessage = Object.values(errors)
+      .flatMap((value) => Array.isArray(value) ? value : [value])
+      .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    if (validationMessage) return sanitizeUserMessage(validationMessage, '');
+  }
+
+  return '';
+}
+
+function sanitizeUserMessage(value: string, fallback = DEFAULT_ERROR_MESSAGE) {
   const message = value.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim();
   if (!message || message.length > 280 || /<[^>]+>|\b(stack trace|exception| at |innerexception|system\.)\b/i.test(message)) {
-    return DEFAULT_ERROR_MESSAGE;
+    return fallback;
   }
 
   return message;
@@ -204,22 +255,11 @@ function logApiError(
   path: string,
   status: number,
   body: unknown,
-  context: { contentType?: string; elapsedMs?: number; method?: string; timeoutMs?: number } = {},
+  context: { contentType?: string; elapsedMs?: number; method?: string; timeoutMs?: number; userMessage?: string } = {},
 ) {
   const bodyText = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
   const preview = sanitizeDiagnosticBody(bodyText);
-  console.error('[API ERROR]', {
-    baseUrl: API_BASE_URL,
-    path,
-    method: context.method ?? 'GET',
-    status,
-    elapsedMs: context.elapsedMs,
-    timeoutMs: context.timeoutMs,
-    contentType: context.contentType,
-    localDebug: getLocalApiErrorDebug(bodyText),
-    body: preview,
-    bodyLength: bodyText.length,
-  });
+  console.error('[API ERROR]', context.userMessage ?? preview ?? DEFAULT_ERROR_MESSAGE);
 
   logLocalApiErrorDetails(path, status, bodyText, context);
 }
@@ -250,7 +290,7 @@ function logLocalApiErrorDetails(
   path: string,
   status: number,
   bodyText: string,
-  context: { contentType?: string; elapsedMs?: number; method?: string; timeoutMs?: number } = {},
+  context: { contentType?: string; elapsedMs?: number; method?: string; timeoutMs?: number; userMessage?: string } = {},
 ) {
   if (typeof __DEV__ === 'undefined' || !__DEV__) return;
 

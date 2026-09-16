@@ -1,6 +1,6 @@
 import { ApiError, apiRequest } from './apiClient';
 import { Cliente } from '../types/business';
-import { FacturaListItem, FacturaPreparacion, getFacturas, normalizeFacturaPreparacion } from './facturasMobileService';
+import { FacturaListItem, FacturaPreparacion, normalizeFacturaPreparacion } from './facturasMobileService';
 import type { DocumentPdfFormat } from '../utils/documentFormatting';
 
 type ApiRow = Record<string, unknown>;
@@ -16,6 +16,7 @@ export type NotaDebitoListItem = {
   autorizado?: boolean | null;
   numeroAutorizacion?: string | null;
   mensajeSri?: string | null;
+  motivo?: string | null;
   total?: number | null;
 };
 
@@ -39,6 +40,7 @@ export type NotaDebitoGuardarInput = {
   cliente: Cliente;
   facturaModificada?: FacturaListItem | null;
   serie?: string | null;
+  numeroNotaDebito?: string | null;
   codemisor?: number | null;
   correos?: string[];
   detalles: NotaDebitoLineaInput[];
@@ -63,25 +65,13 @@ export async function getNotasDebito(userId: number, top = 0) {
 }
 
 export async function buscarNotaDebitoFacturas(userId: number, filtro: string) {
-  try {
-    const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
-      `/api/notas-debito/buscar-facturas?idUsuario=${userId}&texto=${encodeURIComponent(filtro)}`,
-      `/api/notas-debito/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
-      `/api/nota-debito/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
-    ]);
+  const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
+    `/api/notas-debito/buscar-facturas?idUsuario=${userId}&texto=${encodeURIComponent(filtro)}`,
+    `/api/notas-debito/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
+    `/api/nota-debito/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
+  ]);
 
-    return normalizeFacturaRows(response);
-  } catch (error) {
-    if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 0)) throw error;
-    const facturas = await getFacturas(userId, 0);
-    const term = filtro.trim().toLowerCase();
-    return facturas.filter((factura) => [
-      factura.numeroCompleto,
-      factura.numfactura,
-      factura.cliente,
-      factura.identificacionCliente,
-    ].filter(Boolean).some((value) => String(value).toLowerCase().includes(term)));
-  }
+  return normalizeFacturaRows(response);
 }
 
 export async function getNotaDebitoDetallesFactura(userId: number, codfactura: number): Promise<NotaDebitoDetalleFactura[]> {
@@ -107,7 +97,9 @@ export async function guardarNotaDebito(input: NotaDebitoGuardarInput) {
     NumDocModificado: input.facturaModificada?.numeroCompleto ?? input.facturaModificada?.numfactura ?? null,
     CodDocModificado: '01',
     FechaEmiDocModificado: input.facturaModificada?.fechaEmision || null,
+    Motivo: input.detalles[0]?.descripcion?.trim() || null,
     Serie: input.serie?.replace(/-/g, '') || null,
+    NumNotaDebito: input.numeroNotaDebito || null,
     Estado: '1',
     Autorizado: 'N',
     Subtotal: subtotal,
@@ -134,9 +126,10 @@ export async function guardarNotaDebito(input: NotaDebitoGuardarInput) {
       method: 'POST',
       body: JSON.stringify({
         IdUsuario: input.idUsuario,
+        Cliente: input.cliente,
         NotaDebito: notaDebito,
         Detalles: detalles,
-        Correos: input.correos?.filter(Boolean).map((correo) => ({ correo, guardarEnCliente: false })) ?? [],
+        Correos: input.correos?.filter(Boolean).map((correo) => ({ correo, guardarEnCliente: true })) ?? [],
       }),
     },
   );
@@ -216,14 +209,19 @@ function toNotaDebitoListItem(row: ApiRow): NotaDebitoListItem {
   return {
     codNotaDebito: numberValue(pickValue(row, ['codNotaDebito', 'CodNotaDebito', 'codnotadebito', 'codNota', 'CodNota', 'secNotaDebito', 'SecNotaDebito', 'sec', 'Sec', 'idNotaDebito', 'IdNotaDebito', 'id', 'Id'])) ?? 0,
     numeroNota: numeroCompleto || [serie, numero].filter(Boolean).join('-') || numero || null,
-    facturaModificada: text(pickValue(row, ['facturaModificada', 'FacturaModificada', 'numeroFactura', 'NumeroFactura', 'factura', 'Factura'])) || null,
+    facturaModificada: text(pickValue(row, ['numeroDocModificadoVisual', 'NumeroDocModificadoVisual', 'facturaModificada', 'FacturaModificada', 'numeroDocModificado', 'NumeroDocModificado', 'numeroFactura', 'NumeroFactura', 'factura', 'Factura'])) || null,
     fechaSustento: text(pickValue(row, ['fechaSustento', 'FechaSustento', 'fechaEmision', 'FechaEmision', 'fechaemision', 'Fechaemision', 'fechaDocumento', 'FechaDocumento', 'fechaFactura', 'FechaFactura', 'fecha', 'Fecha', 'fechaCreacion', 'FechaCreacion', 'fechaAutorizacion', 'FechaAutorizacion'])) || null,
     cliente: text(pickValue(row, ['cliente', 'Cliente', 'nombreCliente', 'NombreCliente', 'razonSocial', 'RazonSocial'])) || null,
     identificacionCliente: text(pickValue(row, ['identificacionCliente', 'IdentificacionCliente', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc'])) || null,
-    estadoSri: text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estado', 'Estado'])) || null,
+    estadoSri: normalizeNotaDebitoEstado(
+      pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estadoAutorizacion', 'EstadoAutorizacion']),
+      pickValue(row, ['autorizado', 'Autorizado', 'estaAutorizado', 'EstaAutorizado']),
+      pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje', 'errorSri', 'ErrorSri', 'observacion', 'Observacion']),
+    ),
     autorizado: booleanValue(pickValue(row, ['autorizado', 'Autorizado', 'estaAutorizado', 'EstaAutorizado'])),
     numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'numAutorizacion', 'NumAutorizacion', 'claveAcceso', 'ClaveAcceso'])) || null,
     mensajeSri: text(pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje', 'errorSri', 'ErrorSri', 'observacion', 'Observacion'])) || null,
+    motivo: text(pickValue(row, ['motivo', 'Motivo'])) || null,
     total: numberValue(pickValue(row, ['total', 'Total', 'valortotal', 'ValorTotal', 'valorTotal', 'totalNotaDebito', 'TotalNotaDebito', 'totalComprobante', 'TotalComprobante', 'totalDocumento', 'TotalDocumento', 'montoTotal', 'MontoTotal', 'importeTotal', 'ImporteTotal', 'valorDocumento', 'ValorDocumento', 'totalGeneral', 'TotalGeneral', 'monto', 'Monto', 'importe', 'Importe', 'valor', 'Valor'])),
   };
 }
@@ -277,4 +275,40 @@ function booleanValue(value: unknown) {
     if (['false', '0', 'no', 'n', 'pendiente', 'no autorizado', 'inactivo', 'anulado'].includes(normalized)) return false;
   }
   return null;
+}
+
+function normalizeNotaDebitoEstado(estado: unknown, autorizado: unknown, mensaje: unknown) {
+  const estadoText = text(estado).trim();
+  const autorizadoText = text(autorizado).trim();
+  const mensajeText = text(mensaje).trim();
+  const autorizadoNormalizado = autorizadoText.toUpperCase();
+  const estadoNormalizado = estadoText.toUpperCase();
+  const mensajeNormalizado = mensajeText.toUpperCase();
+
+  if (['TRUE', '1', 'T', 'S', 'SI', 'SÍ', 'A', 'AUTORIZADO'].includes(autorizadoNormalizado)
+    || estadoNormalizado === 'A'
+    || (estadoNormalizado.includes('AUTORIZ') && !isNotaDebitoNoAutorizado(estadoNormalizado))) return 'AUTORIZADO';
+
+  if (estadoNormalizado === 'ANULADA' || mensajeNormalizado.includes('ANULAD')) return 'ANULADO';
+
+  if (estadoNormalizado === 'N'
+    || isNotaDebitoNoAutorizado(estadoNormalizado) || isNotaDebitoNoAutorizado(mensajeNormalizado)
+    || ['N', 'NO'].includes(autorizadoNormalizado)) return 'NO AUTORIZADO';
+
+  if (['0', 'FALSE', 'F', 'P', 'PENDIENTE'].includes(estadoNormalizado)) return 'PENDIENTE';
+
+  if (estadoNormalizado && !['TRUE', 'FALSE'].includes(estadoNormalizado)) {
+    if (estadoNormalizado.includes('PEND')) return 'PENDIENTE';
+    return estadoText;
+  }
+
+  return 'PENDIENTE';
+}
+
+function isNotaDebitoNoAutorizado(value: string) {
+  return value.includes('NO AUTORIZ')
+    || value.includes('RECHAZ')
+    || value.includes('DEVUELT')
+    || value.includes('NEGAD')
+    || value.includes('ERROR');
 }

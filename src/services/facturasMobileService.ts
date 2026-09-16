@@ -43,6 +43,7 @@ export type FacturaProducto = {
 };
 
 export type FacturaPreparacion = {
+  direccionOrigen?: string | null;
   emisores?: { codemisor?: number; codigo?: number; ruc?: string | null; razonsocial?: string | null; razonSocial?: string | null }[];
   porcentajesIva?: { codigo?: string | number | null; descripcion?: string | null; valor?: number | null; valorCalculo?: number | null }[];
   tiposCliente?: { codigo?: number | null; descripcion?: string | null }[];
@@ -89,6 +90,7 @@ export type FacturaLineaInput = {
 
 export type FacturaGuardarInput = {
   idUsuario: number;
+  requestId?: string;
   cliente: Cliente;
   serie?: string | null;
   codemisor?: number | null;
@@ -229,6 +231,7 @@ export function guardarFactura(input: FacturaGuardarInput) {
       method: 'POST',
       body: JSON.stringify({
         idUsuario: input.idUsuario,
+        requestId: input.requestId,
         factura,
         cliente: input.cliente,
         detalles,
@@ -338,7 +341,7 @@ function toFacturaListItem(row: ApiRow): FacturaListItem {
     numeroCompleto: numeroCompleto || [serie, numero].filter(Boolean).join('-') || null,
     serie: serie || null,
     fechaEmision: text(pickValue(row, ['fechaEmision', 'FechaEmision', 'fechaemision', 'Fechaemision', 'fecha', 'Fecha', 'fechaDocumento', 'FechaDocumento', 'fechaSustento', 'FechaSustento', 'fechaentrega', 'FechaEntrega', 'fechaCreacion', 'FechaCreacion', 'createdAt', 'CreatedAt'])) || null,
-    estadoSri: text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estadoAutorizacion', 'EstadoAutorizacion', 'estado', 'Estado'])) || null,
+    estadoSri: normalizeFacturaSriState(row),
     autorizado: booleanValue(pickValue(row, ['autorizado', 'Autorizado', 'estaAutorizado', 'EstaAutorizado'])),
     numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'autorizacion', 'Autorizacion'])) || null,
     mensajeSri: text(pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje'])) || null,
@@ -347,10 +350,21 @@ function toFacturaListItem(row: ApiRow): FacturaListItem {
     saldoPendiente: numberValue(pickValue(row, ['saldoPendiente', 'SaldoPendiente', 'saldo', 'Saldo', 'valorPendiente', 'ValorPendiente', 'montoPendiente', 'MontoPendiente'])),
     tipopago: text(pickValue(row, ['tipopago', 'TipoPago', 'tipoPago', 'formaPago', 'FormaPago', 'descripcionFormaPago', 'DescripcionFormaPago', 'nombreFormaPago', 'NombreFormaPago', 'tipoPagoDescripcion', 'TipoPagoDescripcion'])) || null,
     estadoPago: text(pickValue(row, ['estadoPago', 'EstadoPago'])) || null,
-    cliente: text(pickValue(row, ['cliente', 'Cliente', 'nombreCliente', 'NombreCliente', 'razonSocial', 'RazonSocial', 'nombrerazonsocial', 'NombreRazonSocial'])) || null,
+    cliente: text(pickValue(row, ['cliente', 'Cliente', 'clienteNombre', 'ClienteNombre', 'nombreCliente', 'NombreCliente', 'razonSocial', 'RazonSocial', 'nombrerazonsocial', 'NombreRazonSocial'])) || null,
     identificacionCliente: text(pickValue(row, ['identificacionCliente', 'IdentificacionCliente', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc', 'cedula', 'Cedula'])) || null,
     estado: booleanValue(pickValue(row, ['estado', 'Estado', 'activo', 'Activo'])),
   };
+}
+
+function normalizeFacturaSriState(row: ApiRow) {
+  const explicitState = pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estadoAutorizacion', 'EstadoAutorizacion']);
+  const genericState = pickValue(row, ['estado', 'Estado']);
+  const value = explicitState ?? (typeof genericState === 'string' ? genericState : null);
+  if (value === null || value === undefined) return null;
+
+  const normalized = String(value).trim().toLowerCase();
+  if (['true', 'false', '1', '0'].includes(normalized)) return null;
+  return normalized ? String(value).trim() : null;
 }
 
 function toFacturaProducto(row: ApiRow): FacturaProducto {

@@ -6,6 +6,8 @@ export type NuevaFacturaLinea = {
   precio: string;
   descuento: string;
   tarifa: string;
+  detalle?: string;
+  cantidadDisponible?: string;
 };
 
 export type NuevaFacturaFormState = {
@@ -24,4 +26,22 @@ export type NuevaFacturaFormState = {
   referencia: string;
   correoAdicional: string;
   detalleLinea: string;
+};
+
+export type NotaCreditoFormState = NuevaFacturaFormState & {
+  facturaBusqueda: string;
+  motivo: string;
+  observacion: string;
+};
+
+export type NotaDebitoLinea = {
+  descripcion: string;
+  precio: string;
+  tarifa: string;
+  impuestoIce: string;
+  valorIce: string;
+};
+
+export type NotaDebitoFormState = NuevaFacturaFormState & {
+  facturaBusqueda: string;
 };

@@ -1,6 +1,6 @@
 import { ApiError, apiRequest } from './apiClient';
 import { Cliente } from '../types/business';
-import { FacturaPreparacion, FacturaProducto, buscarFacturaClientes, buscarFacturaProductos, normalizeFacturaPreparacion } from './facturasMobileService';
+import { FacturaPreparacion, FacturaProducto, buscarFacturaProductos, normalizeFacturaPreparacion } from './facturasMobileService';
 import type { DocumentPdfFormat } from '../utils/documentFormatting';
 
 type ApiRow = Record<string, unknown>;
@@ -16,6 +16,7 @@ export type LiquidacionCompraListItem = {
   numeroAutorizacion?: string | null;
   mensajeSri?: string | null;
   retencionDisponible?: boolean | null;
+  numeroRetencion?: string | null;
   base?: number | null;
   iva?: number | null;
   total?: number | null;
@@ -27,6 +28,8 @@ export type LiquidacionCompraLineaInput = {
   precio: number;
   descuento: number;
   tarifa: number;
+  codigoPorcentaje: number;
+  detalle?: string | null;
 };
 
 export type LiquidacionCompraGuardarInput = {
@@ -38,8 +41,19 @@ export type LiquidacionCompraGuardarInput = {
   formaPago?: string | null;
   diasCredito?: number | null;
   correos?: string[];
+  correosGuardar?: string[];
   detalles: LiquidacionCompraLineaInput[];
 };
+
+export function getLiquidacionCodigoPorcentaje(producto: FacturaProducto, tarifa: number) {
+  const codigoProducto = Number(String(producto.codigoImpuestoSri ?? '').trim());
+  if (String(producto.codigoImpuestoSri ?? '').trim() && [0, 4, 5, 6, 7, 8].includes(codigoProducto)) return codigoProducto;
+
+  if (tarifa === 15) return 4;
+  if (tarifa === 5) return 5;
+  if (tarifa === 8) return 8;
+  return 0;
+}
 
 export function getLiquidacionCompraPreparacion(userId: number) {
   return requestWithFallback<Record<string, unknown>>([
@@ -60,16 +74,11 @@ export async function getLiquidacionesCompra(userId: number, top = 0) {
 }
 
 export async function buscarLiquidacionProveedores(userId: number, filtro: string) {
-  try {
-    const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
-      `/api/liquidaciones-compra/proveedores/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
-      `/api/liquidacion-compra/proveedores/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
-    ]);
-    return normalizeRows(response).map(toProveedor);
-  } catch (error) {
-    if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 0)) throw error;
-    return buscarFacturaClientes(userId, filtro);
-  }
+  const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
+    `/api/liquidaciones-compra/proveedores?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
+    `/api/liquidacion-compra/proveedores?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
+  ]);
+  return normalizeRows(response).map(toProveedor);
 }
 
 export function buscarLiquidacionProductos(userId: number, filtro: string) {
@@ -93,12 +102,16 @@ export async function guardarLiquidacionCompra(input: LiquidacionCompraGuardarIn
     const base = Math.max(item.cantidad * item.precio - item.descuento, 0);
     const valorIva = base * (item.tarifa / 100);
     return {
+      CodProducto: item.producto.codproducto,
       CodigoPrincipal: item.producto.codprincipal || String(item.producto.codproducto || ''),
       CodigoAuxiliar: item.producto.codauxiliar || '',
-      Descripcion: item.producto.descripcion || 'Producto',
+      Descripcion: [item.producto.descripcion, item.detalle?.trim()].filter(Boolean).join(' - ') || 'Producto',
       Cantidad: item.cantidad,
       PrecioUnitario: item.precio,
+      PorcentajeDescuento: item.precio > 0 && item.cantidad > 0 ? (item.descuento / (item.cantidad * item.precio)) * 100 : 0,
       Descuento: item.descuento,
+      PrecioTotalSinImpuesto: base,
+      CodigoPorcentaje: item.codigoPorcentaje,
       Tarifa: item.tarifa,
       BaseImponible: base,
       ValorIva: valorIva,
@@ -125,7 +138,7 @@ export async function guardarLiquidacionCompra(input: LiquidacionCompraGuardarIn
         TelefonoProveedor: input.proveedor.celular || '',
         EmailProveedor: input.proveedor.correo || '',
         CorreosAdicionalesProveedor: input.correos?.filter(Boolean) ?? [],
-        CorreosAdicionalesProveedorGuardar: [],
+        CorreosAdicionalesProveedorGuardar: input.correosGuardar?.filter(Boolean) ?? [],
         CodProveedor: input.proveedor.codcliente || null,
         FormaPago: input.formaPago || '01',
         Plazo: input.diasCredito ?? 0,
@@ -238,9 +251,11 @@ function toProveedor(row: ApiRow): Cliente {
     codcliente: numberValue(pickValue(row, ['codcliente', 'CodCliente', 'codProveedor', 'CodProveedor', 'id', 'Id'])) ?? 0,
     nombrerazonsocial: text(pickValue(row, ['nombrerazonsocial', 'NombreRazonSocial', 'razonSocial', 'RazonSocial', 'proveedor', 'Proveedor', 'nombre', 'Nombre'])) || null,
     numeroidentificacion: text(pickValue(row, ['numeroidentificacion', 'NumeroIdentificacion', 'identificacion', 'Identificacion', 'ruc', 'Ruc'])) || null,
+    tipoidentificacion: text(pickValue(row, ['tipoidentificacion', 'TipoIdentificacion', 'tipoIdentificacion'])) || null,
     correo: text(pickValue(row, ['correo', 'Correo', 'email', 'Email'])) || null,
     direccion: text(pickValue(row, ['direccion', 'Direccion'])) || null,
-    celular: text(pickValue(row, ['celular', 'Celular', 'telefono', 'Telefono'])) || null,
+    telefonoconvencional: text(pickValue(row, ['telefonoconvencional', 'TelefonoConvencional', 'telefonoFijo', 'TelefonoFijo'])) || null,
+    celular: text(pickValue(row, ['celular', 'Celular', 'telefonoMovil', 'TelefonoMovil', 'telefono', 'Telefono'])) || null,
     esProveedor: true,
   };
 }
@@ -249,6 +264,7 @@ function toLiquidacionListItem(row: ApiRow): LiquidacionCompraListItem {
   const serie = text(pickValue(row, ['serie', 'Serie']));
   const numero = text(pickValue(row, ['numero', 'Numero', 'numLiquidacion', 'NumLiquidacion', 'secuencial', 'Secuencial']));
   const numeroCompleto = text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento']));
+  const numeroRetencion = text(pickValue(row, ['numeroRetencion', 'NumeroRetencion', 'numRetencion', 'NumRetencion']));
   return {
     codLiquidacion: numberValue(pickValue(row, ['codLiquidacion', 'CodLiquidacion', 'codliquidacion', 'codFactura', 'CodFactura', 'codfactura', 'secLiquidacion', 'SecLiquidacion', 'sec', 'Sec', 'idLiquidacion', 'IdLiquidacion', 'id', 'Id'])) ?? 0,
     numero: numeroCompleto || [serie, numero].filter(Boolean).join('-') || numero || null,
@@ -259,7 +275,8 @@ function toLiquidacionListItem(row: ApiRow): LiquidacionCompraListItem {
     autorizado: booleanValue(pickValue(row, ['autorizado', 'Autorizado'])),
     numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'numAutorizacion', 'NumAutorizacion', 'claveAcceso', 'ClaveAcceso'])) || null,
     mensajeSri: text(pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje', 'errorSri', 'ErrorSri', 'observacion', 'Observacion'])) || null,
-    retencionDisponible: booleanValue(pickValue(row, ['retencionDisponible', 'RetencionDisponible', 'tieneRetencion', 'TieneRetencion'])),
+    retencionDisponible: booleanValue(pickValue(row, ['retencionDisponible', 'RetencionDisponible', 'tieneRetencion', 'TieneRetencion'])) === true || Boolean(numeroRetencion),
+    numeroRetencion: numeroRetencion || null,
     base: numberValue(pickValue(row, ['base', 'Base', 'baseImponible', 'BaseImponible', 'subtotal', 'Subtotal', 'subtotalBase', 'SubtotalBase', 'subtotalSinImpuestos', 'SubtotalSinImpuestos', 'totalSinImpuestos', 'TotalSinImpuestos', 'baseGravada', 'BaseGravada', 'valorBase', 'ValorBase', 'importeBase', 'ImporteBase'])),
     iva: numberValue(pickValue(row, ['iva', 'Iva', 'IVA', 'valorIva', 'ValorIva', 'valorIVA', 'ValorIVA', 'totalIva', 'TotalIva', 'totalIVA', 'TotalIVA', 'importeIva', 'ImporteIva'])),
     total: numberValue(pickValue(row, ['total', 'Total', 'valortotal', 'ValorTotal', 'valorTotal', 'totalLiquidacion', 'TotalLiquidacion', 'totalComprobante', 'TotalComprobante', 'totalDocumento', 'TotalDocumento', 'montoTotal', 'MontoTotal', 'importeTotal', 'ImporteTotal', 'valorDocumento', 'ValorDocumento', 'totalGeneral', 'TotalGeneral', 'monto', 'Monto', 'importe', 'Importe', 'valor', 'Valor'])),

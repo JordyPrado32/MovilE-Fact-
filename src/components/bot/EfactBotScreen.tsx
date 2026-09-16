@@ -1,11 +1,11 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Alert, Animated, AppState, Easing, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import * as Speech from 'expo-speech';
 import type * as SpeechRecognition from 'expo-speech-recognition';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ApiError } from '../../services/apiClient';
-import { resetBotSession, sendBotMessage } from '../../services/botService';
+import { clearBotHistory, sendBotMessage } from '../../services/botService';
 import type { BotFacturaDraft, BotSelectionOption } from '../../services/botService';
 import type { BotFeedbackState, BotMessage } from '../../types/bot';
 import { NumiThinkingIndicator } from './NumiThinkingIndicator';
@@ -13,6 +13,7 @@ import { styles } from '../../styles/appStyles';
 
 type SpeechRecognitionBindings = typeof SpeechRecognition;
 type VoiceOverlayState = 'listening' | 'review' | 'processing' | 'response';
+type VoiceFlowState = 'idle' | 'listening' | 'processing' | 'speaking' | 'awaitingConfirmation' | 'error';
 
 let speechRecognitionBindings: SpeechRecognitionBindings | null = null;
 try {
@@ -76,7 +77,7 @@ export function EfactBotScreen({
   const [voiceOverlayState, setVoiceOverlayState] = useState<VoiceOverlayState | null>(null);
   const [voiceResponse, setVoiceResponse] = useState('');
   const [handsFreeEnabled, setHandsFreeEnabled] = useState(false);
-  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardTop, setKeyboardTop] = useState<number | null>(null);
   const [chatTop, setChatTop] = useState<number | null>(null);
@@ -88,6 +89,12 @@ export function EfactBotScreen({
   const handsFreeAwaitingConfirmationRef = useRef(false);
   const handsFreeResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceNavigationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceFlowStateRef = useRef<VoiceFlowState>('idle');
+  const voiceStartInFlightRef = useRef(false);
+  const voicePermissionGrantedRef = useRef(false);
+  const voiceAppStateRef = useRef(AppState.currentState);
+  const voiceConfidenceRef = useRef(0);
+  const handsFreeNoSpeechCountRef = useRef(0);
   const messagesScrollRef = useRef<ScrollView>(null);
   const botContainerRef = useRef<View>(null);
   const voiceInputRef = useRef<TextInput>(null);
@@ -101,7 +108,19 @@ export function EfactBotScreen({
     handsFreeResumeTimerRef.current = null;
   };
 
+  const transitionVoice = (state: VoiceFlowState, overlay: VoiceOverlayState | null) => {
+    voiceFlowStateRef.current = state;
+    setVoiceOverlayState(overlay);
+  };
+
   const startNewConversation = async () => {
+    Alert.alert('Nueva conversación', 'Se limpiará el chat actual y se iniciará una nueva sesión con Númi.', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Continuar', style: 'destructive', onPress: () => void resetConversation() },
+    ]);
+  };
+
+  const resetConversation = async () => {
     Speech.stop();
     clearVoiceTimers();
     voiceHolding.current = false;
@@ -110,7 +129,7 @@ export function EfactBotScreen({
     handsFreeAwaitingConfirmationRef.current = false;
     setHandsFreeEnabled(false);
     if (voiceRecognitionStarted.current) ExpoSpeechRecognitionModule?.stop();
-    await resetBotSession(userId);
+    await clearBotHistory(userId);
     setMessages([]);
     setDraft('');
     setFeedbackByMessage({});
@@ -122,8 +141,9 @@ export function EfactBotScreen({
     setInvoiceState('');
     setSelectionOptions([]);
     setPendingOperation(null);
-    setVoiceOverlayState(null);
+    transitionVoice('idle', null);
     setVoiceResponse('');
+    setQuickActionsOpen(false);
   };
 
   useEffect(() => {
@@ -135,6 +155,25 @@ export function EfactBotScreen({
     Speech.stop();
     if (voiceRecognitionStarted.current) ExpoSpeechRecognitionModule?.stop();
   }, []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      voiceAppStateRef.current = nextState;
+      if (nextState !== 'active') {
+        clearVoiceTimers();
+        void Speech.stop();
+        if (voiceRecognitionStarted.current) ExpoSpeechRecognitionModule?.abort();
+        voiceRecognitionStarted.current = false;
+        setListening(false);
+        if (handsFreeEnabledRef.current) transitionVoice('idle', null);
+        return;
+      }
+
+      if (handsFreeEnabledRef.current && !sending) scheduleHandsFreeResume(700);
+    });
+
+    return () => subscription.remove();
+  }, [sending]);
 
   const measureChatTop = () => {
     requestAnimationFrame(() => {
@@ -177,12 +216,14 @@ export function EfactBotScreen({
   useSpeechRecognitionEvent('start', () => {
     voiceRecognitionStarted.current = true;
     setListening(true);
-    setVoiceOverlayState('listening');
+    transitionVoice('listening', 'listening');
   });
 
   useSpeechRecognitionEvent('result', (event) => {
     const transcript = event.results?.[0]?.transcript?.trim() ?? '';
     if (!transcript) return;
+    handsFreeNoSpeechCountRef.current = 0;
+    voiceConfidenceRef.current = event.results?.[0]?.confidence ?? 0;
     voiceTranscriptRef.current = transcript;
     setVoiceTranscript(transcript);
   });
@@ -190,17 +231,43 @@ export function EfactBotScreen({
   useSpeechRecognitionEvent('error', (event) => {
     voiceRecognitionStarted.current = false;
     setListening(false);
-    setVoiceOverlayState(null);
-    if (event.error !== 'aborted' && event.error !== 'no-speech') {
+    transitionVoice('idle', null);
+    const permanentError = event.error === 'not-allowed'
+      || event.error === 'service-not-allowed'
+      || event.error === 'language-not-supported';
+    if (permanentError) {
       handsFreeEnabledRef.current = false;
       setHandsFreeEnabled(false);
     }
     if (event.error === 'no-speech' && handsFreeEnabledRef.current) {
-      setVoiceOverlayState(handsFreeAwaitingConfirmationRef.current ? 'response' : 'listening');
+      handsFreeNoSpeechCountRef.current += 1;
+      if (handsFreeNoSpeechCountRef.current >= 3) {
+        clearVoiceTimers();
+        handsFreeEnabledRef.current = false;
+        handsFreeAwaitingConfirmationRef.current = false;
+        voiceHolding.current = false;
+        voiceShouldSubmit.current = false;
+        setHandsFreeEnabled(false);
+        const voiceMessage = 'No detecté una orden. Pausaré el modo manos libres; puedes activarlo nuevamente cuando quieras.';
+        setVoiceResponse(voiceMessage);
+        transitionVoice('error', 'response');
+        void speakBotText(voiceMessage);
+        return;
+      }
+      transitionVoice(handsFreeAwaitingConfirmationRef.current ? 'awaitingConfirmation' : 'listening', handsFreeAwaitingConfirmationRef.current ? 'response' : 'listening');
       if (!handsFreeAwaitingConfirmationRef.current) scheduleHandsFreeResume(700);
     }
     if (event.error !== 'aborted' && event.error !== 'no-speech') {
-      setError(event.message || 'No se pudo reconocer la voz. Intenta nuevamente.');
+      voiceHolding.current = false;
+      voiceShouldSubmit.current = false;
+      const message = event.message || 'No se pudo reconocer la voz. Repetiré la escucha.';
+      setError(message);
+      if (handsFreeEnabledRef.current && !permanentError) {
+        const voiceError = 'No pude entenderte bien. Repetiré la escucha; puedes decir la orden nuevamente.';
+        setVoiceResponse(voiceError);
+        transitionVoice('error', 'response');
+        void speakBotText(voiceError).then(() => scheduleHandsFreeResume(1400));
+      }
     }
   });
 
@@ -210,7 +277,12 @@ export function EfactBotScreen({
     const shouldProcessTranscript = voiceShouldSubmit.current || voiceHolding.current;
     voiceHolding.current = false;
     if (!shouldProcessTranscript) {
-      setVoiceOverlayState(null);
+      if (handsFreeEnabledRef.current && voiceAppStateRef.current === 'active') {
+        transitionVoice(handsFreeAwaitingConfirmationRef.current ? 'awaitingConfirmation' : 'listening', handsFreeAwaitingConfirmationRef.current ? 'response' : 'listening');
+        scheduleHandsFreeResume(500);
+      } else {
+        transitionVoice('idle', null);
+      }
       return;
     }
     voiceShouldSubmit.current = false;
@@ -219,25 +291,33 @@ export function EfactBotScreen({
       if (handsFreeEnabledRef.current) {
         if (handsFreeAwaitingConfirmationRef.current) {
           if (isExplicitConfirmation(transcript)) {
-            setVoiceOverlayState('processing');
+            transitionVoice('processing', 'processing');
             void send(pendingOperation ? 'confirmar' : 'emitir', 'voz');
           } else if (isExplicitCancellation(transcript)) {
-            setVoiceOverlayState('processing');
+            transitionVoice('processing', 'processing');
             void send('cancelar', 'voz');
           } else {
             setVoiceResponse('Para ejecutar esta operación di “confirmado” o pulsa el botón Confirmar.');
-            setVoiceOverlayState('response');
+            transitionVoice('awaitingConfirmation', 'response');
           }
         } else {
-          setVoiceOverlayState('processing');
-          handsFreeResumeTimerRef.current = setTimeout(() => void send(transcript, 'voz'), 900);
+          if (voiceConfidenceRef.current > 0 && voiceConfidenceRef.current < 0.45) {
+            const voiceMessage = 'No estoy suficientemente segura de lo que entendí. Repetiré la escucha.';
+            setVoiceResponse(voiceMessage);
+            transitionVoice('error', 'response');
+            void speakBotText(voiceMessage).then(() => scheduleHandsFreeResume(1200));
+            return;
+          }
+          transitionVoice('processing', 'processing');
+          const command = normalizeVoiceSelectionCommand(transcript, selectionOptions);
+          handsFreeResumeTimerRef.current = setTimeout(() => void send(command, 'voz'), 1200);
         }
       } else {
         setDraft(transcript);
-        setVoiceOverlayState('review');
+        transitionVoice('idle', 'review');
       }
     } else {
-      setVoiceOverlayState(null);
+      transitionVoice('idle', null);
     }
   });
 
@@ -253,12 +333,12 @@ export function EfactBotScreen({
     const voiceRequest = modo === 'voz';
     if (voiceRequest) {
       clearVoiceTimers();
-      setVoiceOverlayState('processing');
+      transitionVoice('processing', 'processing');
       setVoiceResponse('');
     }
     setDraft('');
     setError('');
-    setMessages((current) => [...current, { id: `user-${Date.now()}`, role: 'user', text }]);
+    if (!voiceOnly) setMessages((current) => [...current, { id: `user-${Date.now()}`, role: 'user', text }]);
     setThinkingRequest(text);
     setSending(true);
     try {
@@ -272,7 +352,7 @@ export function EfactBotScreen({
       const presentationAnswer = botResult.draft?.cliente || botResult.draft?.items?.length
         ? buildVoiceResponse(botResult.answer, botResult.draft ?? null, botResult.missing)
         : botResult.answer;
-      setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: 'assistant', text: presentationAnswer }]);
+      if (!voiceOnly) setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: 'assistant', text: presentationAnswer }]);
       setInvoiceDraft(botResult.draft ?? null);
       setMissingData(botResult.missing);
       setRequiresConfirmation(botResult.requiresConfirmation);
@@ -280,13 +360,13 @@ export function EfactBotScreen({
       setSelectionOptions(botResult.selectionOptions);
       setPendingOperation(botResult.pendingOperation);
        handsFreeAwaitingConfirmationRef.current = Boolean(botResult.pendingOperation || botResult.requiresConfirmation);
-       if (voiceRequest) {
-         const voiceAnswer = presentationAnswer;
-         setVoiceResponse(voiceAnswer);
-         setVoiceOverlayState('response');
-         void speakBotText(voiceAnswer).then(() => {
-           if (handsFreeEnabledRef.current) scheduleHandsFreeResume(2000);
-         });
+        if (voiceRequest) {
+          const voiceAnswer = buildSpeechResponse(presentationAnswer, botResult.selectionOptions);
+          setVoiceResponse(voiceAnswer);
+          transitionVoice(handsFreeAwaitingConfirmationRef.current ? 'awaitingConfirmation' : 'speaking', 'response');
+          void speakBotText(voiceAnswer).then(() => {
+            if (handsFreeEnabledRef.current) scheduleHandsFreeResume(2000);
+          });
        }
        if (botResult.suggestedRoute && !voiceOnly) {
         if (voiceRequest) {
@@ -298,8 +378,10 @@ export function EfactBotScreen({
     } catch (err) {
       if (voiceRequest) {
         clearVoiceTimers();
-        setVoiceOverlayState(null);
-        setVoiceResponse('');
+        const voiceError = 'No pude completar la operación. Repetiré la escucha para que puedas intentarlo nuevamente.';
+        setVoiceResponse(voiceError);
+        transitionVoice('error', handsFreeEnabledRef.current ? 'response' : null);
+        if (handsFreeEnabledRef.current) void speakBotText(voiceError).then(() => scheduleHandsFreeResume(1800));
       }
       setError(err instanceof ApiError || err instanceof Error ? err.message : 'No se pudo contactar al bot.');
     } finally {
@@ -309,7 +391,7 @@ export function EfactBotScreen({
   };
 
   const startVoiceInput = async () => {
-    if (sending) return;
+    if (sending || voiceStartInFlightRef.current || voiceRecognitionStarted.current || voiceAppStateRef.current !== 'active') return;
     if (!ExpoSpeechRecognitionModule) {
       setError('El reconocimiento de voz requiere abrir la app en un development build, no en Expo Go.');
       return;
@@ -317,15 +399,20 @@ export function EfactBotScreen({
     setError('');
     setVoiceTranscript('');
     voiceTranscriptRef.current = '';
+    voiceConfidenceRef.current = 0;
     voiceHolding.current = true;
     voiceShouldSubmit.current = false;
+    voiceStartInFlightRef.current = true;
     try {
       await Speech.stop();
-      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-      if (!permission.granted) {
-        voiceHolding.current = false;
-        setError('Necesito permiso para usar el micrófono y reconocer tu voz.');
-        return;
+      if (!voicePermissionGrantedRef.current) {
+        const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+        if (!permission.granted) {
+          voiceHolding.current = false;
+          setError('Necesito permiso para usar el micrófono y reconocer tu voz.');
+          return;
+        }
+        voicePermissionGrantedRef.current = true;
       }
       if (!voiceHolding.current || !ExpoSpeechRecognitionModule.isRecognitionAvailable()) {
         voiceHolding.current = false;
@@ -344,7 +431,7 @@ export function EfactBotScreen({
       }
       if (!voiceHolding.current) {
         voiceShouldSubmit.current = false;
-        setVoiceOverlayState(null);
+        transitionVoice('idle', null);
         return;
       }
       ExpoSpeechRecognitionModule.start({
@@ -353,14 +440,44 @@ export function EfactBotScreen({
         maxAlternatives: 1,
         continuous: false,
         addsPunctuation: false,
-        contextualStrings: speechContext,
+        contextualStrings: [
+          ...speechContext,
+          invoiceDraft?.cliente?.nombre,
+          ...(invoiceDraft?.items?.map((item) => item.descripcion) ?? []),
+          ...selectionOptions.map((option) => option.etiqueta),
+        ].filter((value): value is string => Boolean(value?.trim())).slice(0, 40),
         iosTaskHint: 'dictation',
       });
     } catch (err) {
       voiceHolding.current = false;
       setError(err instanceof Error ? err.message : 'No se pudo iniciar el micrófono.');
+    } finally {
+      voiceStartInFlightRef.current = false;
     }
   };
+
+  const contextualActions = pendingOperation || requiresConfirmation
+    ? [
+      { label: pendingOperation ? 'Confirmar operación' : 'Emitir factura', command: pendingOperation ? 'confirmar' : 'emitir', icon: 'check' as const },
+      { label: pendingOperation ? 'Cancelar operación' : 'Cancelar emisión', command: 'cancelar', icon: 'close' as const },
+    ]
+    : invoiceDraft?.items?.length
+      ? [
+        { label: 'Agregar producto', command: 'Agrega otro producto', icon: 'plus' as const },
+        { label: 'Ver resumen', command: 'Muéstrame el resumen', icon: 'file-document-outline' as const },
+        { label: 'Cambiar pago', command: 'Quiero cambiar la forma de pago', icon: 'cash' as const },
+      ]
+      : invoiceDraft?.cliente
+        ? [
+          { label: 'Agregar producto', command: 'Agrega un producto', icon: 'plus' as const },
+          { label: 'Qué falta', command: 'Qué falta para completar la factura', icon: 'clipboard-alert-outline' as const },
+          { label: 'Ver resumen', command: 'Muéstrame el resumen', icon: 'file-document-outline' as const },
+        ]
+        : [
+          { label: 'Crear factura', command: 'Quiero crear una factura', icon: 'file-plus-outline' as const },
+          { label: 'Consultar facturas', command: 'Muéstrame mis facturas', icon: 'file-document-outline' as const },
+          { label: 'Ver cartera', command: 'Muéstrame mis cuentas por cobrar', icon: 'cash-multiple' as const },
+        ];
 
   const resumeHandsFreeListening = async () => {
     if (!handsFreeEnabledRef.current || sending) return;
@@ -372,7 +489,7 @@ export function EfactBotScreen({
     } catch {
       // Si el motor de audio no informa su estado, se respeta igualmente la espera prudente.
     }
-    if (handsFreeEnabledRef.current) void startVoiceInput();
+    if (handsFreeEnabledRef.current && voiceAppStateRef.current === 'active') void startVoiceInput();
   };
 
   const scheduleHandsFreeResume = (delay = 2200) => {
@@ -390,7 +507,7 @@ export function EfactBotScreen({
       ExpoSpeechRecognitionModule?.stop();
     } else {
       voiceShouldSubmit.current = false;
-      setVoiceOverlayState(null);
+      transitionVoice('idle', null);
     }
   };
 
@@ -404,7 +521,7 @@ export function EfactBotScreen({
     if (voiceRecognitionStarted.current) ExpoSpeechRecognitionModule?.abort();
     voiceRecognitionStarted.current = false;
     setListening(false);
-    setVoiceOverlayState(null);
+    transitionVoice('idle', null);
   };
 
   const toggleHandsFreeMode = () => {
@@ -419,6 +536,7 @@ export function EfactBotScreen({
     setError('');
     handsFreeEnabledRef.current = true;
     handsFreeAwaitingConfirmationRef.current = false;
+    handsFreeNoSpeechCountRef.current = 0;
     setHandsFreeEnabled(true);
     void startVoiceInput();
   };
@@ -435,9 +553,10 @@ export function EfactBotScreen({
     clearVoiceTimers();
     handsFreeEnabledRef.current = true;
     handsFreeAwaitingConfirmationRef.current = true;
+    handsFreeNoSpeechCountRef.current = 0;
     setHandsFreeEnabled(true);
     setVoiceResponse('');
-    setVoiceOverlayState(null);
+    transitionVoice('idle', null);
     void startVoiceInput();
   };
 
@@ -453,7 +572,7 @@ export function EfactBotScreen({
     if (voiceRecognitionStarted.current) ExpoSpeechRecognitionModule?.stop();
     voiceRecognitionStarted.current = false;
     setListening(false);
-    setVoiceOverlayState(null);
+    transitionVoice('idle', null);
     setVoiceResponse('');
     setVoiceTranscript('');
   };
@@ -491,7 +610,7 @@ export function EfactBotScreen({
       }}
       onCancel={cancelVoiceInput}
       onReviewEdit={() => {
-        setVoiceOverlayState(null);
+        transitionVoice('idle', null);
         requestAnimationFrame(() => voiceInputRef.current?.focus());
       }}
       onReviewSend={() => void send(voiceTranscriptRef.current, 'voz')}
@@ -570,6 +689,23 @@ export function EfactBotScreen({
             </View>
           </View>
         ))}
+        {messages.length === 1 && messages[0]?.id === 'welcome' ? (
+          <View style={styles.botQuickActions}>
+            <Text style={styles.botQuickActionsTitle}>Puedes comenzar con:</Text>
+            <View style={styles.botQuickActionsGrid}>
+              {[
+                { label: 'Crear factura', command: 'Quiero crear una factura' },
+                { label: 'Consultar facturas', command: 'Muéstrame mis facturas' },
+                { label: 'Ver cartera', command: 'Muéstrame mis cuentas por cobrar' },
+                { label: 'Qué puedes hacer', command: '¿Qué puedes hacer?' },
+              ].map((action) => (
+                <Pressable accessibilityRole="button" accessibilityLabel={action.label} key={action.label} style={styles.botQuickAction} onPress={() => void send(action.command)} disabled={sending}>
+                  <Text style={styles.botQuickActionText}>{action.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
         {sending ? (
           <View style={styles.botAssistantRow}>
             <Image source={require('../../../assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} />
@@ -595,11 +731,22 @@ export function EfactBotScreen({
           <Pressable accessibilityLabel="Desactivar modo manos libres" onPress={stopHandsFreeMode} hitSlop={8}><Text style={styles.botHandsFreeBannerAction}>Detener</Text></Pressable>
         </View>
       ) : null}
-      {emojiOpen ? (
-        <View style={styles.botEmojiTray}>
-          {['👍', 'Gracias', 'Factura', 'Firma', 'Ayuda'].map((emoji) => (
-            <Pressable key={emoji} style={styles.botEmojiChip} onPress={() => setDraft((current) => `${current}${current ? ' ' : ''}${emoji}`)}>
-              <Text style={styles.botEmojiText}>{emoji}</Text>
+      {quickActionsOpen ? (
+        <View style={styles.botQuickActionsTray}>
+          {contextualActions.map((action) => (
+            <Pressable
+              key={action.label}
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
+              style={styles.botQuickActionChip}
+              onPress={() => {
+                setQuickActionsOpen(false);
+                void send(action.command);
+              }}
+              disabled={sending}
+            >
+              <MaterialCommunityIcons name={action.icon} size={15} color="#0867A9" />
+              <Text style={styles.botQuickActionText}>{action.label}</Text>
             </Pressable>
           ))}
         </View>
@@ -608,8 +755,8 @@ export function EfactBotScreen({
         <Pressable accessibilityLabel={handsFreeEnabled ? 'Desactivar modo manos libres' : 'Activar modo manos libres'} style={[styles.botToolButton, handsFreeEnabled && styles.botToolButtonActive]} disabled={sending || !voiceRecognitionAvailable} onPress={toggleHandsFreeMode}>
           <MaterialCommunityIcons name="headset" size={19} color={handsFreeEnabled ? '#FFFFFF' : '#6E94B4'} />
         </Pressable>
-        <Pressable style={[styles.botToolButton, emojiOpen && styles.botToolButtonActive]} disabled={sending || listening} onPress={() => setEmojiOpen((value) => !value)}>
-          <MaterialCommunityIcons name="emoticon-outline" size={19} color={emojiOpen ? '#FFFFFF' : '#6E94B4'} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Mostrar acciones rápidas" style={[styles.botToolButton, quickActionsOpen && styles.botToolButtonActive]} disabled={sending || listening} onPress={() => setQuickActionsOpen((value) => !value)}>
+          <MaterialCommunityIcons name="lightning-bolt-outline" size={19} color={quickActionsOpen ? '#FFFFFF' : '#6E94B4'} />
         </Pressable>
         <TextInput ref={voiceInputRef} value={draft} onChangeText={setDraft} placeholder={listening ? 'Escuchando... toca para detener' : voiceRecognitionAvailable ? 'Escribe o toca el micrófono para hablar...' : 'Escribe tu orden...'} placeholderTextColor="#8DA1B4" style={styles.botInput} editable={!sending && !listening} multiline maxLength={800} onFocus={() => scrollMessagesToEnd()} onSubmitEditing={() => send()} />
         <Pressable
@@ -730,9 +877,24 @@ function BotInvoiceWorkflowCard({ draft, missing, requiresConfirmation, state, s
   onCommand: (command: string) => void;
 }) {
   const pulse = useRef(new Animated.Value(1)).current;
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(() => getRemainingSeconds(pendingOperation?.expiraEn));
   const actualMissing = missing.filter((item) => !item.toLowerCase().includes('confirm'));
   const hasCalculatedValues = Boolean(draft?.items?.length && (draft.subtotal !== undefined || draft.impuesto !== undefined || draft.total !== undefined));
   const hasWorkflow = actualMissing.length > 0 || requiresConfirmation || selectionOptions.length > 0 || Boolean(draft?.cliente || draft?.items?.length) || hasCalculatedValues || Boolean(pendingOperation);
+  const hasPayment = Boolean(draft?.formaPago);
+  const currentStep = !draft?.cliente ? 0 : !draft.items?.length ? 1 : !hasPayment ? 2 : 3;
+  const workflowTone = pendingOperation || requiresConfirmation
+    ? { backgroundColor: '#E8F7EF', borderColor: '#B8E4C9', color: '#0F8A4B' }
+    : actualMissing.length
+      ? { backgroundColor: '#FFF8E8', borderColor: '#F5D78B', color: '#A66A00' }
+      : { backgroundColor: '#F1F8FD', borderColor: '#D8ECF7', color: '#0878C9' };
+
+  useEffect(() => {
+    setRemainingSeconds(getRemainingSeconds(pendingOperation?.expiraEn));
+    if (!pendingOperation?.expiraEn) return undefined;
+    const timer = setInterval(() => setRemainingSeconds(getRemainingSeconds(pendingOperation.expiraEn)), 1000);
+    return () => clearInterval(timer);
+  }, [pendingOperation?.expiraEn]);
 
   useEffect(() => {
     if (!requiresConfirmation) {
@@ -751,15 +913,34 @@ function BotInvoiceWorkflowCard({ draft, missing, requiresConfirmation, state, s
   if (!hasWorkflow) return null;
 
   return (
-    <Animated.View style={[styles.botWorkflowCard, requiresConfirmation && { transform: [{ scale: pulse }] }]}>
+    <Animated.View style={[styles.botWorkflowCard, { borderColor: workflowTone.borderColor }, requiresConfirmation && { transform: [{ scale: pulse }] }]}>
       <View style={styles.botWorkflowHeader}>
-        <View style={styles.botWorkflowIcon}><MaterialCommunityIcons name={requiresConfirmation ? 'check-decagram-outline' : 'clipboard-alert-outline'} size={20} color={requiresConfirmation ? '#0F8A4B' : '#0878C9'} /></View>
+        <View style={[styles.botWorkflowIcon, { backgroundColor: workflowTone.backgroundColor, borderColor: workflowTone.borderColor }]}><MaterialCommunityIcons name={requiresConfirmation ? 'check-decagram-outline' : 'clipboard-alert-outline'} size={20} color={workflowTone.color} /></View>
         <View style={styles.botWorkflowHeaderCopy}>
           <Text style={styles.botWorkflowTitle}>{pendingOperation ? 'Confirma la operación' : requiresConfirmation ? 'Confirma la emisión' : actualMissing.length ? 'Datos pendientes' : 'Resultados encontrados'}</Text>
           <Text style={styles.botWorkflowSubtitle}>{pendingOperation ? 'No se ejecutará nada sin tu autorización explícita.' : requiresConfirmation ? 'Revisa el resumen y elige cómo continuar.' : actualMissing.length ? 'Te indico lo que falta y cómo continuar.' : 'Númi verificó los datos y calculó los valores.'}</Text>
         </View>
       </View>
+      {draft?.cliente || draft?.items?.length || hasPayment ? (
+        <View style={styles.botWorkflowProgress} accessibilityLabel="Progreso de la factura">
+          {[
+            { label: 'Cliente', complete: Boolean(draft?.cliente) },
+            { label: 'Productos', complete: Boolean(draft?.items?.length) },
+            { label: 'Pago', complete: hasPayment },
+            { label: 'Confirmar', complete: state === 'FacturaEmitida' || requiresConfirmation },
+          ].map((step, index) => (
+            <View key={step.label} style={styles.botWorkflowProgressStep}>
+              <View style={[styles.botWorkflowProgressCircle, step.complete && styles.botWorkflowProgressCircleComplete, !step.complete && index === currentStep && styles.botWorkflowProgressCircleCurrent]}>
+                {step.complete ? <MaterialCommunityIcons name="check" size={12} color="#FFFFFF" /> : <Text style={styles.botWorkflowProgressNumber}>{index + 1}</Text>}
+              </View>
+              <Text style={[styles.botWorkflowProgressLabel, step.complete && styles.botWorkflowProgressLabelComplete]}>{step.label}</Text>
+              {index < 3 ? <View style={[styles.botWorkflowProgressLine, step.complete && styles.botWorkflowProgressLineComplete]} /> : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
       {pendingOperation ? <View style={styles.botWorkflowClient}><Text style={styles.botWorkflowLabel}>Operación pendiente</Text><Text style={styles.botWorkflowValue}>{pendingOperation.resumen || 'Operación que requiere confirmación'}</Text></View> : null}
+      {pendingOperation ? <View style={styles.botWorkflowExpiry}><MaterialCommunityIcons name="timer-outline" size={15} color={remainingSeconds === 0 ? '#B42318' : '#7A5A00'} /><Text style={styles.botWorkflowExpiryText}>{remainingSeconds === 0 ? 'La confirmación expiró' : `Expira en ${formatRemainingTime(remainingSeconds)}`}</Text></View> : null}
       {actualMissing.length > 0 ? (
         <View style={styles.botWorkflowMissingBox}>
           <Text style={styles.botWorkflowSectionTitle}>Falta completar</Text>
@@ -768,7 +949,7 @@ function BotInvoiceWorkflowCard({ draft, missing, requiresConfirmation, state, s
       ) : null}
       {draft?.cliente ? (
         <View style={styles.botWorkflowClient}>
-          <Text style={styles.botWorkflowLabel}>Cliente encontrado</Text>
+          <Text style={styles.botWorkflowLabel}>Cliente confirmado</Text>
           <Text style={styles.botWorkflowValue}>{draft.cliente.nombre || 'Cliente'}{draft.cliente.identificacion ? ` · ${draft.cliente.identificacion}` : ''}</Text>
         </View>
       ) : null}
@@ -785,12 +966,13 @@ function BotInvoiceWorkflowCard({ draft, missing, requiresConfirmation, state, s
       ) : null}
       {draft?.items?.length && (draft.subtotal !== undefined || draft.impuesto !== undefined || draft.total !== undefined) ? (
         <View style={styles.botWorkflowTotals}>
-          <Text style={styles.botWorkflowSectionTitle}>Valores calculados</Text>
+          <Text style={styles.botWorkflowSectionTitle}>Total calculado</Text>
           <Text style={styles.botWorkflowTotalText}>Subtotal {formatMoney(draft.subtotal ?? 0)}</Text>
           <Text style={styles.botWorkflowTotalText}>IVA {formatMoney(draft.impuesto ?? 0)}</Text>
           <Text style={styles.botWorkflowTotalStrong}>Total {formatMoney(draft.total ?? 0)}</Text>
         </View>
       ) : null}
+      {hasPayment ? <View style={styles.botWorkflowClient}><Text style={styles.botWorkflowLabel}>Forma de pago confirmada</Text><Text style={styles.botWorkflowValue}>{draft?.formaPago}</Text></View> : null}
       {selectionOptions.length > 0 ? (
         <View style={styles.botWorkflowOptions}>
           <Text style={styles.botWorkflowSectionTitle}>Selecciona una opción</Text>
@@ -805,13 +987,27 @@ function BotInvoiceWorkflowCard({ draft, missing, requiresConfirmation, state, s
       ) : null}
       {showActions && (requiresConfirmation || pendingOperation) ? (
         <View style={styles.botWorkflowActions}>
-          <Pressable style={styles.botWorkflowCancelButton} onPress={() => onCommand('cancelar')}><Text style={styles.botWorkflowCancelText}>Cancelar</Text></Pressable>
-          <Pressable style={styles.botWorkflowConfirmButton} onPress={() => onCommand(pendingOperation ? 'confirmar' : 'emitir')}><MaterialCommunityIcons name="check" size={17} color="#FFFFFF" /><Text style={styles.botWorkflowConfirmText}>{pendingOperation ? 'Confirmar' : 'Emitir factura'}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={pendingOperation ? 'Cancelar operación' : 'Cancelar emisión'} style={styles.botWorkflowCancelButton} onPress={() => onCommand('cancelar')}><Text style={styles.botWorkflowCancelText}>{pendingOperation ? 'Cancelar operación' : 'Cancelar emisión'}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={pendingOperation ? 'Confirmar operación' : 'Emitir factura'} style={[styles.botWorkflowConfirmButton, styles.botWorkflowConfirmButtonProminent]} onPress={() => onCommand(pendingOperation ? 'confirmar' : 'emitir')}><MaterialCommunityIcons name="check" size={18} color="#FFFFFF" /><Text style={styles.botWorkflowConfirmText}>{pendingOperation ? 'Confirmar operación' : 'Emitir factura'}</Text></Pressable>
         </View>
       ) : null}
       {state === 'FacturaEmitida' ? <Text style={styles.botWorkflowSuccess}>Factura emitida correctamente.</Text> : null}
     </Animated.View>
   );
+}
+
+function getRemainingSeconds(expiraEn?: string | null) {
+  if (!expiraEn) return null;
+  const expiration = Date.parse(expiraEn);
+  if (!Number.isFinite(expiration)) return null;
+  return Math.max(0, Math.ceil((expiration - Date.now()) / 1000));
+}
+
+function formatRemainingTime(seconds: number | null) {
+  if (seconds === null) return 'unos minutos';
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}:${String(remainder).padStart(2, '0')}`;
 }
 
 function formatMoney(value: number) {
@@ -842,6 +1038,50 @@ function buildVoiceResponse(answer: string, draft: BotFacturaDraft | null, missi
 
 function normalizeVoiceCommand(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+function normalizeVoiceSelectionCommand(value: string, options: BotSelectionOption[]) {
+  if (options.length === 0) return value;
+
+  const normalized = normalizeVoiceCommand(value);
+  const numberWords: Record<string, number> = {
+    uno: 1,
+    primero: 1,
+    primera: 1,
+    dos: 2,
+    segundo: 2,
+    segunda: 2,
+    tres: 3,
+    tercero: 3,
+    tercera: 3,
+    cuatro: 4,
+    cuarto: 4,
+    cuarta: 4,
+    cinco: 5,
+    quinto: 5,
+    quinta: 5,
+  };
+  const match = normalized.match(/\b(?:opcion|alternativa|numero|el|la)?\s*(\d+|uno|primero|primera|dos|segundo|segunda|tres|tercero|tercera|cuatro|cuarto|cuarta|cinco|quinto|quinta)\b/);
+  if (!match) return value;
+
+  const index = Number(match[1]) || numberWords[match[1]];
+  return options.some((option) => option.indice === index) ? String(index) : value;
+}
+
+function buildSpeechResponse(answer: string, options: BotSelectionOption[] = []) {
+  const compact = answer
+    .replace(/\s+/g, ' ')
+    .replace(/\s*•\s*/g, '')
+    .replace(/\s*-\s+(?=[A-ZÁÉÍÓÚÑ])/g, ' ')
+    .trim();
+  const optionsText = options.length > 0
+    ? ` Opciones: ${options.slice(0, 3).map((option) => `${option.indice}, ${option.etiqueta}`).join('; ')}.`
+    : '';
+  const withOptions = `${compact}${optionsText}`.trim();
+  if (withOptions.length <= 520) return withOptions;
+
+  const cutoff = withOptions.lastIndexOf('.', 500);
+  return `${withOptions.slice(0, cutoff > 180 ? cutoff + 1 : 500).trim()} Para continuar, dime qué deseas hacer.`;
 }
 
 function isExplicitConfirmation(value: string) {
