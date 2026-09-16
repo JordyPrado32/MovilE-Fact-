@@ -67,6 +67,13 @@ export const getERubricaFirmaEstado = (id: number) =>
     huellaDigital: (item.huellaDigital ?? item.HuellaDigital) as string | null | undefined,
   }));
 
+export const configurarERubricaFirma = (id: number, certificado: { uri: string; name: string; mimeType?: string | null }, clave: string) => {
+  const form = new FormData();
+  form.append('certificado', { uri: certificado.uri, name: certificado.name, type: certificado.mimeType || 'application/x-pkcs12' } as unknown as Blob);
+  form.append('clave', clave);
+  return apiRequest<unknown>(`${ROOT}/emisores/${id}/firma/configurar`, { method: 'POST', body: form, timeoutMs: 60000 });
+};
+
 export const getERubricaSolicitudes = () => apiRequest<unknown[]>(`${ROOT}/solicitudes`);
 
 export const getERubricaFirmas = () => apiRequest<unknown[]>(`${ROOT}/firmas`);
@@ -74,6 +81,8 @@ export const getERubricaFirmas = () => apiRequest<unknown[]>(`${ROOT}/firmas`);
 export const getERubricaDocumentosFirmados = () => apiRequest<unknown[]>(`${ROOT}/documentos/firmados`);
 
 export const getERubricaRenovacion = () => apiRequest<unknown>(`${ROOT}/renovacion`);
+
+export const getERubricaPlan = () => apiRequest<unknown>(`${ROOT}/plan`);
 
 export const getERubricaNotificaciones = (take = 8) =>
   apiRequest<unknown[]>(`${ROOT}/notificaciones?take=${Math.max(1, Math.min(50, take))}`);
