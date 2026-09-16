@@ -60,7 +60,8 @@
           "microphonePermission": "e-fact necesita el micrófono para recibir tus órdenes de facturación.",
           "speechRecognitionPermission": "e-fact necesita reconocimiento de voz para procesar tus órdenes de facturación."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "web": {
       "favicon": "./assets/logo-numerica.png"

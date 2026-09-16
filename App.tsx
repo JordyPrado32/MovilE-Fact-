@@ -6,6 +6,8 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import * as Speech from 'expo-speech';
 import * as Sharing from 'expo-sharing';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Picker } from '@react-native-picker/picker';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ActivityIndicator,
@@ -12857,6 +12859,7 @@ function ERubricaMobileScreen({
   const [solicitudPlan, setSolicitudPlan] = useState({ label: '7 días', price: 9 });
   const [solicitudPersona, setSolicitudPersona] = useState('Persona natural con cédula');
   const [solicitudForm, setSolicitudForm] = useState(SOLICITUD_FORM_INITIAL);
+  const [showSolicitudBirthDate, setShowSolicitudBirthDate] = useState(false);
   const [solicitudFiles, setSolicitudFiles] = useState(SOLICITUD_FILES_INITIAL);
   const [solicitudId, setSolicitudId] = useState<number | null>(null);
   const [solicitudSaving, setSolicitudSaving] = useState(false);
@@ -13283,7 +13286,7 @@ function ERubricaMobileScreen({
     { key: 'cedulaPosterior' as SolicitudDocumentoKey, label: 'Documento de identificación posterior *', types: ['image/*', 'application/pdf'] },
     { key: 'selfieCedula' as SolicitudDocumentoKey, label: 'Selfie sosteniendo su documento *', types: ['image/*'] },
     ...(parseSolicitudAge() >= 65 ? [{ key: 'videoAceptacion' as SolicitudDocumentoKey, label: 'Video de aceptación *', types: ['video/*'] }] : []),
-    ...(solicitudPersona !== 'Persona natural con cédula' ? [{ key: 'rucFile' as SolicitudDocumentoKey, label: 'Archivo RUC *', types: ['application/pdf'] }] : []),
+    ...(solicitudForm.poseeRuc || solicitudPersona === 'Representante legal' ? [{ key: 'rucFile' as SolicitudDocumentoKey, label: 'Archivo RUC *', types: ['application/pdf'] }] : []),
     ...(solicitudPersona === 'Representante legal' ? [
       { key: 'nombramiento' as SolicitudDocumentoKey, label: 'Nombramiento *', types: ['application/pdf'] },
       { key: 'constitucion' as SolicitudDocumentoKey, label: 'Constitución *', types: ['application/pdf'] },
@@ -13329,6 +13332,7 @@ function ERubricaMobileScreen({
     form.append('tipoDocumento', solicitudForm.tipoDocumento);
     form.append('identificacion', solicitudForm.identificacion);
     form.append('codigoDactilar', solicitudForm.codigoDactilar);
+    form.append('poseeRuc', String(solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc));
     form.append('ruc', solicitudForm.ruc);
     form.append('nombres', solicitudForm.nombres);
     form.append('primerApellido', solicitudForm.primerApellido);
@@ -13381,7 +13385,11 @@ function ERubricaMobileScreen({
       Alert.alert('Identificación no válida', 'La cédula debe contener 10 dígitos.');
       return false;
     }
-    if (solicitudPersona === 'Representante legal' && (!solicitudForm.ruc.trim() || !solicitudForm.razonSocialEmpresa.trim() || !solicitudForm.departamento.trim() || !solicitudForm.cargo.trim() || !solicitudForm.motivoFirma.trim() || !solicitudForm.representanteTipoDocumento.trim() || !solicitudForm.representanteIdentificacion.trim() || !solicitudForm.representanteNombres.trim() || !solicitudForm.representanteApellidos.trim())) {
+    if ((solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) && !/^\d{13}$/.test(solicitudForm.ruc.trim())) {
+      Alert.alert('RUC no válido', 'Ingresa un RUC de 13 dígitos.');
+      return false;
+    }
+    if (solicitudPersona === 'Representante legal' && (!solicitudForm.razonSocialEmpresa.trim() || !solicitudForm.departamento.trim() || !solicitudForm.cargo.trim() || !solicitudForm.motivoFirma.trim() || !solicitudForm.representanteTipoDocumento.trim() || !solicitudForm.representanteIdentificacion.trim() || !solicitudForm.representanteNombres.trim() || !solicitudForm.representanteApellidos.trim())) {
       Alert.alert('Datos incompletos', 'Completa los datos de empresa y representante legal.');
       return false;
     }
@@ -13636,18 +13644,15 @@ function ERubricaMobileScreen({
             const validation = unwrap(payload.validation ?? payload.Validation ?? payload);
             const firmasRaw = validation.firmas ?? validation.Firmas ?? payload.firmas ?? payload.Firmas;
             const firmasValidacion = Array.isArray(firmasRaw) ? firmasRaw.map(unwrap) : [];
-            const firma = Array.isArray(firmasValidacion) ? firmasValidacion[0] ?? {} : {};
             const value = (source: Record<string, unknown>, ...keys: string[]) => {
               const raw = keys.map((key) => source[key]).find((item) => item !== null && item !== undefined && item !== '');
               return raw === true ? 'Sí' : raw === false ? 'No' : String(raw ?? 'No disponible');
             };
-            const certificado = firma.certificadoDesde || firma.CertificadoDesde
-              ? `Vigente: ${formatDocumentDate(String(firma.certificadoDesde ?? firma.CertificadoDesde))} - ${formatDocumentDate(String(firma.certificadoHasta ?? firma.CertificadoHasta))}`
-              : value(firma, 'certificadoVigente', 'CertificadoVigente');
-            const esValida = Boolean(validation.valido ?? validation.Valido ?? firma.valida ?? firma.Valida);
+            const esValida = Boolean(validation.valido ?? validation.Valido ?? firmasValidacion.every((item) => Boolean(item.valida ?? item.Valida)));
             return <View style={styles.erubricaSignCard}>
               <View style={styles.erubricaConfigStatusCard}><MaterialCommunityIcons name={esValida ? 'check-circle-outline' : 'alert-circle-outline'} size={22} color={esValida ? ERUBRICA_COLORS.primary : '#B7791F'} /><View style={styles.erubricaPendingDocCopy}><Text style={styles.erubricaConfigStatusTitle}>{esValida ? 'Firma válida' : 'Firma con validación inconclusa'}</Text><Text style={styles.erubricaConfigStatusText}>{esValida ? 'El PDF tiene firma digital válida.' : value(validation, 'resumen', 'Resumen', 'mensaje', 'Mensaje')}</Text></View></View>
-              <View style={styles.erubricaSignatureInfoGrid}>{[['Firmas', value(validation, 'cantidadFirmas', 'CantidadFirmas')], ['Documento completo', value(validation, 'documentoCompletoCubierto', 'DocumentoCompletoCubierto')], ['Firmante', value(firma, 'firmante', 'Firmante')], ['Integridad', value(firma, 'integridadValida', 'IntegridadValida') === 'Sí' ? 'OK' : 'No'], ['Certificado', certificado], ['Revocación', value(firma, 'estadoRevocacion', 'EstadoRevocacion')], ['Sello de tiempo', value(firma, 'selloTiempoValido', 'SelloTiempoValido')]].map(([title, detail]) => <View key={title} style={styles.erubricaSignatureInfoCell}><Text style={styles.erubricaHistoryMetricLabel}>{title}</Text><Text style={styles.erubricaRequestHistoryValue}>{detail}</Text></View>)}</View>
+              <View style={styles.erubricaSignatureInfoGrid}>{[['Firmas', value(validation, 'cantidadFirmas', 'CantidadFirmas')], ['Documento completo', value(validation, 'documentoCompletoCubierto', 'DocumentoCompletoCubierto')]].map(([title, detail]) => <View key={title} style={styles.erubricaSignatureInfoCell}><Text style={styles.erubricaHistoryMetricLabel}>{title}</Text><Text style={styles.erubricaRequestHistoryValue}>{detail}</Text></View>)}</View>
+              {firmasValidacion.map((firma, index) => { const certificado = firma.certificadoDesde || firma.CertificadoDesde ? `Vigente: ${formatDocumentDate(String(firma.certificadoDesde ?? firma.CertificadoDesde))} - ${formatDocumentDate(String(firma.certificadoHasta ?? firma.CertificadoHasta))}` : value(firma, 'certificadoVigente', 'CertificadoVigente'); return <View key={`firma-validacion-${index}`} style={styles.erubricaHistoryPanel}><Text style={styles.erubricaSignStep}>Firma {index + 1}</Text><View style={styles.erubricaSignatureInfoGrid}>{[['Firmante', value(firma, 'firmante', 'Firmante')], ['Integridad', value(firma, 'integridadValida', 'IntegridadValida') === 'Sí' ? 'OK' : 'No'], ['Certificado', certificado], ['Revocación', value(firma, 'estadoRevocacion', 'EstadoRevocacion')], ['Sello de tiempo', value(firma, 'selloTiempoValido', 'SelloTiempoValido')]].map(([title, detail]) => <View key={title} style={styles.erubricaSignatureInfoCell}><Text style={styles.erubricaHistoryMetricLabel}>{title}</Text><Text style={styles.erubricaRequestHistoryValue}>{detail}</Text></View>)}</View></View>; })}
             </View>;
           })() : null}
         </View>
@@ -13790,7 +13795,7 @@ function ERubricaMobileScreen({
             {['Persona natural con cédula', 'Persona natural con RUC', 'Representante legal'].map((option) => {
               const active = solicitudPersona === option;
               return (
-                <Pressable key={option} style={[styles.erubricaRequestPerson, active && styles.erubricaRequestPersonActive]} onPress={() => { setSolicitudPersona(option); setSolicitudId(null); }}>
+              <Pressable key={option} style={[styles.erubricaRequestPerson, active && styles.erubricaRequestPersonActive]} onPress={() => { setSolicitudPersona(option); setSolicitudForm((current) => ({ ...current, poseeRuc: option !== 'Persona natural con cédula', ruc: option === 'Persona natural con cédula' ? '' : current.ruc })); setSolicitudId(null); }}>
                   <MaterialCommunityIcons name={active ? 'check-circle' : 'card-account-details-outline'} size={18} color={active ? ERUBRICA_COLORS.primary : '#607887'} />
                   <Text style={styles.erubricaRequestOptionTitle}>{option}</Text>
                 </Pressable>
@@ -13801,17 +13806,34 @@ function ERubricaMobileScreen({
           <View style={styles.erubricaRequestPanel}>
             <Text style={styles.erubricaHistoryEyebrow}>DATOS PERSONALES</Text>
             <Text style={styles.erubricaSignStep}>Completa la información del solicitante</Text>
-            <Field label="Tipo de documento *" value={solicitudForm.tipoDocumento} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, tipoDocumento: value }))} />
+            <Text style={styles.clientDetailLabel}>Tipo de documento *</Text>
+            <View style={styles.erubricaHistorySearchBox}>
+              <Picker selectedValue={solicitudForm.tipoDocumento} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, tipoDocumento: String(value), identificacion: '' }))}>
+                <Picker.Item label="Selecciona un documento" value="" />
+                <Picker.Item label="Cédula" value="CEDULA" />
+                <Picker.Item label="Pasaporte" value="PASAPORTE" />
+              </Picker>
+            </View>
             <Field label="Identificación *" value={solicitudForm.identificacion} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, identificacion: value }))} />
             <Field label="Código dactilar *" value={solicitudForm.codigoDactilar} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, codigoDactilar: value }))} autoCapitalize="characters" />
-            {solicitudPersona !== 'Persona natural con cédula' ? (
-              <Field label={solicitudPersona === 'Representante legal' ? 'Posee RUC? *' : 'Posee RUC?'} value={solicitudForm.ruc} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, ruc: value }))} keyboardType="number-pad" />
-            ) : null}
+            <Text style={styles.clientDetailLabel}>¿Posee RUC?{solicitudPersona === 'Representante legal' ? ' *' : ''}</Text>
+            <View style={styles.erubricaPendingActionRow}>
+              <Pressable style={[styles.erubricaRequestPerson, (solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) && styles.erubricaRequestPersonActive]} onPress={() => setSolicitudForm((current) => ({ ...current, poseeRuc: true }))}>
+                <MaterialCommunityIcons name={(solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) ? 'check-circle' : 'circle-outline'} size={18} color={ERUBRICA_COLORS.primary} /><Text style={styles.erubricaRequestOptionTitle}>Sí</Text>
+              </Pressable>
+              <Pressable disabled={solicitudPersona === 'Representante legal'} style={[styles.erubricaRequestPerson, !(solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) && styles.erubricaRequestPersonActive]} onPress={() => setSolicitudForm((current) => ({ ...current, poseeRuc: false, ruc: '' }))}>
+                <MaterialCommunityIcons name={!(solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) ? 'check-circle' : 'circle-outline'} size={18} color={ERUBRICA_COLORS.primary} /><Text style={styles.erubricaRequestOptionTitle}>No</Text>
+              </Pressable>
+            </View>
+            {(solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) ? <Field label="RUC *" value={solicitudForm.ruc} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, ruc: value.replace(/\D/g, '') }))} keyboardType="number-pad" /> : null}
             <Field label="Nombres *" value={solicitudForm.nombres} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, nombres: value }))} />
             <Field label="Primer apellido *" value={solicitudForm.primerApellido} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, primerApellido: value }))} />
             <Field label="Segundo apellido" value={solicitudForm.segundoApellido} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, segundoApellido: value }))} />
-            <Field label="Fecha de nacimiento * (dd/mm/aaaa)" value={solicitudForm.fechaNacimiento} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, fechaNacimiento: value }))} />
-            <Field label="Sexo *" value={solicitudForm.sexo} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, sexo: value }))} />
+            <Text style={styles.clientDetailLabel}>Fecha de nacimiento *</Text>
+            <Pressable style={styles.erubricaHistorySearchBox} onPress={() => setShowSolicitudBirthDate(true)}><Text style={[styles.erubricaHistoryInput, !solicitudForm.fechaNacimiento && { color: '#8AA0B5' }]}>{solicitudForm.fechaNacimiento || 'Seleccionar fecha'}</Text><MaterialCommunityIcons name="calendar" size={19} color={ERUBRICA_COLORS.primary} /></Pressable>
+            {showSolicitudBirthDate ? <DateTimePicker value={solicitudForm.fechaNacimiento ? new Date(`${solicitudForm.fechaNacimiento}T12:00:00`) : new Date(1990, 0, 1)} mode="date" maximumDate={new Date()} onChange={(_, date) => { setShowSolicitudBirthDate(Platform.OS === 'ios'); if (date) setSolicitudForm((current) => ({ ...current, fechaNacimiento: date.toISOString().slice(0, 10) })); }} /> : null}
+            <Text style={styles.clientDetailLabel}>Sexo *</Text>
+            <View style={styles.erubricaHistorySearchBox}><Picker selectedValue={solicitudForm.sexo} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, sexo: String(value) }))}><Picker.Item label="Selecciona" value="" /><Picker.Item label="Femenino" value="F" /><Picker.Item label="Masculino" value="M" /></Picker></View>
             <Field label="Nacionalidad *" value={solicitudForm.nacionalidad} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, nacionalidad: value }))} />
             <Field label="Celular *" value={solicitudForm.celular} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, celular: value }))} keyboardType="phone-pad" />
             <Field label="Correo principal *" value={solicitudForm.correo} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, correo: value }))} autoCapitalize="none" keyboardType="email-address" />

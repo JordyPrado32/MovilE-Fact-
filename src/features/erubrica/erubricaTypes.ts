@@ -42,7 +42,7 @@ export const getERubricaTabTitle = (tab: ERubricaTab) => {
 };
 
 export const SOLICITUD_FORM_INITIAL = {
-  tipoDocumento: '', identificacion: '', codigoDactilar: '', ruc: '', nombres: '', primerApellido: '', segundoApellido: '',
+  tipoDocumento: '', identificacion: '', codigoDactilar: '', poseeRuc: false, ruc: '', nombres: '', primerApellido: '', segundoApellido: '',
   fechaNacimiento: '', sexo: '', nacionalidad: 'ECUATORIANA', celular: '', correo: '', telefonoSecundario: '',
   correoSecundario: '', provincia: '', canton: '', direccion: '', razonSocialEmpresa: '', departamento: '', cargo: '',
   motivoFirma: '', representanteTipoDocumento: '', representanteIdentificacion: '', representanteNombres: '', representanteApellidos: '',
