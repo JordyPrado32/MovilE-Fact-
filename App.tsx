@@ -6438,14 +6438,6 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       ],
     },
     {
-      key: 'erubrica-mis-firmas',
-      label: 'Mis firmas',
-      icon: 'key-variant',
-      children: [
-        { key: 'erubrica-ver-mis-firmas', label: 'Ver mis firmas', icon: 'shield-account-outline', activeWhen: erubricaTabRequest === 'ver-mis-firmas', action: () => openERubricaTab('ver-mis-firmas') },
-      ],
-    },
-    {
       key: 'erubrica-configuracion',
       label: 'Configuracion',
       icon: 'cog-outline',
@@ -12997,7 +12989,7 @@ function ERubricaMobileScreen({
     }
     if ((tab === 'renovacion' || tab === 'plan-disponible' || tab === 'nueva-solicitud') && renovacion === null) void getERubricaRenovacion().then(setRenovacion).catch(() => undefined);
     if (tab === 'plan-disponible' && planDisponible === null) void getERubricaPlan().then(setPlanDisponible).catch(() => undefined);
-    if ((tab === 'firma-config' || tab === 'ver-mis-firmas') && !firmaEmisoresCargados) void cargarFirmaActiva();
+    if (tab === 'firma-config' && !firmaEmisoresCargados) void cargarFirmaActiva();
   }, [catalogos.length, firmaEmisoresCargados, renovacion, tab]);
   const cargarDocumentosFirmados = async () => {
     try {
