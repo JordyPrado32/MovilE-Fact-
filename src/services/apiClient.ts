@@ -268,8 +268,8 @@ function sanitizeDiagnosticBody(bodyText: string) {
   if (!bodyText.trim()) return undefined;
   const message = safeParseJson(bodyText);
   if (message && typeof message === 'object') {
-    const value = message as { message?: unknown; title?: unknown; detail?: unknown };
-    return sanitizeUserMessage(String(value.message ?? value.title ?? value.detail ?? ''));
+    const value = message as { mensaje?: unknown; message?: unknown; title?: unknown; detail?: unknown; error?: unknown };
+    return sanitizeUserMessage(String(value.mensaje ?? value.message ?? value.title ?? value.detail ?? value.error ?? ''));
   }
 
   return sanitizeUserMessage(bodyText);
