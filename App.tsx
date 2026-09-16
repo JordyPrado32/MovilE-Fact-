@@ -54,7 +54,7 @@ import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perf
 import { createPuntoEmision, deletePuntoEmision, getPuntoEmisionSiguienteSecuencial, getPuntosEmision, markPuntoPrincipal, PuntoDocumentoKey, savePuntoEmisionSecuenciaInicial, updatePuntoEmision } from './src/services/puntosEmisionService';
 import { createProducto, deleteProducto, getProducto, getProductoLookups, getProductos, getProductoSubcategorias, updateProducto } from './src/services/productosService';
 import { emitirRetencionSri, enviarRetencionCorreo, getRetencionPdf, getRetenciones, getRetencionXml, RetencionListItem } from './src/services/retencionesMobileService';
-import { ERubricaDashboard, ERubricaDocumentoFirmado, ERubricaDocumentoPendiente, ERubricaEmisor, ERubricaFirmaEstado, appendERubricaFile, buscarERubricaSolicitudesProveedor, cargarERubricaDocumentoPendiente, configurarERubricaFirma, crearERubricaSolicitud, descargarERubricaFirmaP12, eliminarERubricaDocumentoPendiente, enviarTransferenciaERubricaSolicitud, firmarERubricaDocumento, getERubricaDashboard, getERubricaDocumentosFirmados, getERubricaDocumentosPendientes, getERubricaEmisores, getERubricaFirmaEstado, getERubricaPlan, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, iniciarPagoERubricaSolicitud, sincronizarERubricaPendientes, sincronizarERubricaSolicitud, validarERubricaFirmaPdf, validarERubricaFirmaTemporal, validarERubricaQr } from './src/services/erubricaMobileService';
+import { ERubricaDashboard, ERubricaDocumentoFirmado, ERubricaDocumentoPendiente, ERubricaEmisor, ERubricaFirmaEstado, appendERubricaFile, buscarERubricaSolicitudesProveedor, cargarERubricaDocumentoPendiente, configurarERubricaFirma, crearERubricaSolicitud, descargarERubricaFirmaP12, eliminarERubricaDocumentoPendiente, enviarTransferenciaERubricaSolicitud, firmarERubricaDocumento, getERubricaDashboard, getERubricaDocumentosFirmados, getERubricaDocumentosPendientes, getERubricaEmisores, getERubricaFirmaEstado, getERubricaPlan, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, getERubricaSolicitudCatalogos, iniciarPagoERubricaSolicitud, sincronizarERubricaPendientes, sincronizarERubricaSolicitud, validarERubricaFirmaPdf, validarERubricaFirmaTemporal, validarERubricaQr } from './src/services/erubricaMobileService';
 import { ERubricaTab, getERubricaTabTitle, SOLICITUD_FILES_INITIAL, SOLICITUD_FORM_INITIAL, SolicitudDocumentoKey } from './src/features/erubrica/erubricaTypes';
 import { ChangePasswordRequest, DynamicMenu, LoginResponse, RegisterRequest, ServiceAccess, TipoDocumento } from './src/types/auth';
 import { CategoriaCatalogo, CiudadLookup, Cliente, ClienteLookups, Emisor, FirmaEstado, PerfilLookup, PerfilUsuario, Producto, ProductoLookups, ProductoTipo, ProvinciaLookup, PuntoEmision, PuntosEmisionData, SubcategoriaCatalogo, SubcategoriaLookup } from './src/types/business';
@@ -6623,6 +6623,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         {!loadingMenus && activeView === 'e-rubrica' ? (
           <ERubricaMobileScreen
             data={erubricaData}
+            puedeFirmarSinPlan={isSuperAdmin(currentUser)}
             initialPdf={erubricaInitialPdf}
             requestedTab={erubricaTabRequest}
             loading={loadingErubrica}
@@ -12794,6 +12795,7 @@ function PdfDocumentPreview({ uri }: { uri: string }) {
 
 function ERubricaMobileScreen({
   data,
+  puedeFirmarSinPlan,
   initialPdf,
   requestedTab,
   loading,
@@ -12806,6 +12808,7 @@ function ERubricaMobileScreen({
   onSync,
 }: {
   data: ERubricaDashboard | null;
+  puedeFirmarSinPlan: boolean;
   initialPdf?: { uri: string; name: string; mimeType?: string } | null;
   requestedTab?: ERubricaTab | null;
   loading: boolean;
@@ -12857,8 +12860,9 @@ function ERubricaMobileScreen({
   const [signaturePageSize, setSignaturePageSize] = useState({ widthMm: 210, heightMm: 297 });
   const [solicitudStep, setSolicitudStep] = useState(1);
   const [solicitudPlan, setSolicitudPlan] = useState({ label: '7 días', price: 9 });
-  const [solicitudPersona, setSolicitudPersona] = useState('Persona natural con cédula');
+  const [solicitudPersona, setSolicitudPersona] = useState<string | null>(null);
   const [solicitudForm, setSolicitudForm] = useState(SOLICITUD_FORM_INITIAL);
+  const [solicitudCatalogos, setSolicitudCatalogos] = useState<{ nacionalidades: string[]; provincias: Array<{ nombre: string; cantones: string[] }> }>({ nacionalidades: ['ECUATORIANA'], provincias: [] });
   const [showSolicitudBirthDate, setShowSolicitudBirthDate] = useState(false);
   const [solicitudFiles, setSolicitudFiles] = useState(SOLICITUD_FILES_INITIAL);
   const [solicitudId, setSolicitudId] = useState<number | null>(null);
@@ -12869,6 +12873,15 @@ function ERubricaMobileScreen({
   const [transferForm, setTransferForm] = useState({ banco: '', titular: '', cuenta: '', comprobante: '' });
   const [transferReceipt, setTransferReceipt] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const selectTab = (nextTab: ERubricaTab) => {
+    if (tab === 'validar-firma' && nextTab !== 'validar-firma') {
+      setPdfValidation(null);
+      setPdfFile(null);
+      setSignedDocumentsModalOpen(false);
+    }
+    if (nextTab === 'firmar' && !puedeFirmarPdf) {
+      Alert.alert('Firma no disponible', 'Primero adquiere una firma de E-Rúbrica para usar Firmar PDF.');
+      nextTab = 'plan-disponible';
+    }
     setTab(nextTab);
     onTabChange(nextTab);
   };
@@ -12922,6 +12935,12 @@ function ERubricaMobileScreen({
   const planDiasRestantes = label(renovacionActual, ['diasRestantes', 'vigenciaRestante', 'dias'], firmaDiasRestantes);
   const planFechaVencimiento = label(renovacionActual, ['fechaVencimiento', 'fechaExpiracion', 'vence'], firmaExpira);
   const planEstado = label(renovacionActual, ['estado', 'estadoAcceso', 'status'], firmaEstado);
+  const puedeFirmarPdf = puedeFirmarSinPlan || (
+    label(planDisponible, ['tieneFirmaPagada'], 'false').toLowerCase() === 'true' &&
+    planEstado.toLowerCase() === 'activo'
+  );
+  const cantonesSolicitud = solicitudCatalogos.provincias
+    .find((provincia) => provincia.nombre === solicitudForm.provincia)?.cantones ?? [];
   const formatSignedDate = (item: unknown) => {
     const raw = itemValue(item, ['fechaFirma', 'solFechaSolicitud', 'SolFechaSolicitud', 'solFechaAprobacion', 'SolFechaAprobacion', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']);
     if (!raw) return { date: 'Sin fecha', time: '' };
@@ -13004,10 +13023,13 @@ function ERubricaMobileScreen({
         setSaldo(Number(balance?.balance ?? 0));
       }).catch(() => undefined);
     }
+    if (tab === 'nueva-solicitud' && solicitudCatalogos.provincias.length === 0) {
+      void getERubricaSolicitudCatalogos().then(setSolicitudCatalogos).catch(() => undefined);
+    }
     if ((tab === 'renovacion' || tab === 'plan-disponible' || tab === 'nueva-solicitud') && renovacion === null) void getERubricaRenovacion().then(setRenovacion).catch(() => undefined);
     if (tab === 'plan-disponible' && planDisponible === null) void getERubricaPlan().then(setPlanDisponible).catch(() => undefined);
     if (tab === 'firma-config' && !firmaEmisoresCargados) void cargarFirmaActiva();
-  }, [catalogos.length, firmaEmisoresCargados, renovacion, tab]);
+  }, [catalogos.length, firmaEmisoresCargados, renovacion, solicitudCatalogos.provincias.length, tab]);
   const cargarDocumentosFirmados = async () => {
     try {
       setLoadingDocumentosFirmados(true);
@@ -13328,7 +13350,7 @@ function ERubricaMobileScreen({
   const buildSolicitudFormData = () => {
     const form = new FormData();
     form.append('vigencia', solicitudPlan.label);
-    form.append('tipoPersona', solicitudPersona);
+    form.append('tipoPersona', solicitudPersona ?? '');
     form.append('tipoDocumento', solicitudForm.tipoDocumento);
     form.append('identificacion', solicitudForm.identificacion);
     form.append('codigoDactilar', solicitudForm.codigoDactilar);
@@ -13369,7 +13391,11 @@ function ERubricaMobileScreen({
     return form;
   };
   const validateSolicitudBeforePayment = () => {
-    if (!solicitudForm.tipoDocumento.trim() || !solicitudForm.identificacion.trim() || !solicitudForm.codigoDactilar.trim() || !solicitudForm.nombres.trim() || !solicitudForm.primerApellido.trim() || !solicitudForm.fechaNacimiento.trim() || !solicitudForm.sexo.trim() || !solicitudForm.celular.trim() || !solicitudForm.correo.trim() || !solicitudForm.provincia.trim() || !solicitudForm.canton.trim() || !solicitudForm.direccion.trim()) {
+    if (!solicitudPersona) {
+      Alert.alert('Selecciona el tipo de solicitud', 'Elige Persona natural con cédula, Persona natural con RUC o Representante legal.');
+      return false;
+    }
+    if (!solicitudForm.tipoDocumento.trim() || !solicitudForm.identificacion.trim() || (solicitudForm.tipoDocumento === 'CEDULA' && !solicitudForm.codigoDactilar.trim()) || !solicitudForm.nombres.trim() || !solicitudForm.primerApellido.trim() || !solicitudForm.fechaNacimiento.trim() || !solicitudForm.sexo.trim() || !solicitudForm.celular.trim() || !solicitudForm.correo.trim() || !solicitudForm.provincia.trim() || !solicitudForm.canton.trim() || !solicitudForm.direccion.trim()) {
       Alert.alert('Datos incompletos', 'Completa los datos obligatorios del solicitante.');
       return false;
     }
@@ -13698,7 +13724,6 @@ function ERubricaMobileScreen({
               const documentCode = item.codigo || `DOC-${index + 1}`;
               const signedDate = formatDocumentDate(item.fecha);
               const status = item.estado || 'Pendiente';
-              const previewUrl = item.url;
               return (
                 <View key={`erubrica-pendiente-${index}`} style={styles.erubricaPendingRow}>
                   <View style={styles.erubricaPendingPdfBadge}>
@@ -13714,9 +13739,6 @@ function ERubricaMobileScreen({
                       <Text style={styles.erubricaPendingStatusText}>{status}</Text>
                     </View>
                     <View style={styles.erubricaPendingActionRow}>
-                      <Pressable style={styles.erubricaPendingPreviewButton} onPress={() => onPreviewRemotePdf(previewUrl, documentName)}>
-                        <MaterialCommunityIcons name="eye-outline" size={17} color={ERUBRICA_COLORS.primary} />
-                      </Pressable>
                       <Pressable style={styles.erubricaPendingPreviewButton} onPress={() => eliminarDocumentoPendiente(item)}>
                         <MaterialCommunityIcons name="trash-can-outline" size={17} color="#B4232D" />
                       </Pressable>
@@ -13795,7 +13817,7 @@ function ERubricaMobileScreen({
             {['Persona natural con cédula', 'Persona natural con RUC', 'Representante legal'].map((option) => {
               const active = solicitudPersona === option;
               return (
-              <Pressable key={option} style={[styles.erubricaRequestPerson, active && styles.erubricaRequestPersonActive]} onPress={() => { setSolicitudPersona(option); setSolicitudForm((current) => ({ ...current, poseeRuc: option !== 'Persona natural con cédula', ruc: option === 'Persona natural con cédula' ? '' : current.ruc })); setSolicitudId(null); }}>
+              <Pressable key={option} style={[styles.erubricaRequestPerson, active && styles.erubricaRequestPersonActive]} onPress={() => { setSolicitudPersona(option); setSolicitudForm({ ...SOLICITUD_FORM_INITIAL, poseeRuc: option !== 'Persona natural con cédula' }); setSolicitudFiles(SOLICITUD_FILES_INITIAL); setSolicitudId(null); }}>
                   <MaterialCommunityIcons name={active ? 'check-circle' : 'card-account-details-outline'} size={18} color={active ? ERUBRICA_COLORS.primary : '#607887'} />
                   <Text style={styles.erubricaRequestOptionTitle}>{option}</Text>
                 </Pressable>
@@ -13803,29 +13825,32 @@ function ERubricaMobileScreen({
             })}
           </View>
 
+          {solicitudPersona ? <>
           <View style={styles.erubricaRequestPanel}>
             <Text style={styles.erubricaHistoryEyebrow}>DATOS PERSONALES</Text>
             <Text style={styles.erubricaSignStep}>Completa la información del solicitante</Text>
             <Text style={styles.clientDetailLabel}>Tipo de documento *</Text>
             <View style={styles.erubricaHistorySearchBox}>
-              <Picker selectedValue={solicitudForm.tipoDocumento} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, tipoDocumento: String(value), identificacion: '' }))}>
+              <Picker selectedValue={solicitudForm.tipoDocumento} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, tipoDocumento: String(value), identificacion: '', codigoDactilar: '' }))}>
                 <Picker.Item label="Selecciona un documento" value="" />
                 <Picker.Item label="Cédula" value="CEDULA" />
                 <Picker.Item label="Pasaporte" value="PASAPORTE" />
               </Picker>
             </View>
             <Field label="Identificación *" value={solicitudForm.identificacion} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, identificacion: value }))} />
-            <Field label="Código dactilar *" value={solicitudForm.codigoDactilar} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, codigoDactilar: value }))} autoCapitalize="characters" />
-            <Text style={styles.clientDetailLabel}>¿Posee RUC?{solicitudPersona === 'Representante legal' ? ' *' : ''}</Text>
+            {solicitudForm.tipoDocumento === 'CEDULA' ? <Field label="Código dactilar *" value={solicitudForm.codigoDactilar} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, codigoDactilar: value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) }))} autoCapitalize="characters" /> : null}
+            {solicitudPersona !== 'Persona natural con cédula' ? <>
+            <Text style={styles.clientDetailLabel}>¿Posee RUC? *</Text>
             <View style={styles.erubricaPendingActionRow}>
               <Pressable style={[styles.erubricaRequestPerson, (solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) && styles.erubricaRequestPersonActive]} onPress={() => setSolicitudForm((current) => ({ ...current, poseeRuc: true }))}>
                 <MaterialCommunityIcons name={(solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) ? 'check-circle' : 'circle-outline'} size={18} color={ERUBRICA_COLORS.primary} /><Text style={styles.erubricaRequestOptionTitle}>Sí</Text>
               </Pressable>
-              <Pressable disabled={solicitudPersona === 'Representante legal'} style={[styles.erubricaRequestPerson, !(solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) && styles.erubricaRequestPersonActive]} onPress={() => setSolicitudForm((current) => ({ ...current, poseeRuc: false, ruc: '' }))}>
+              <Pressable disabled style={[styles.erubricaRequestPerson, !(solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) && styles.erubricaRequestPersonActive]}>
                 <MaterialCommunityIcons name={!(solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) ? 'check-circle' : 'circle-outline'} size={18} color={ERUBRICA_COLORS.primary} /><Text style={styles.erubricaRequestOptionTitle}>No</Text>
               </Pressable>
             </View>
-            {(solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) ? <Field label="RUC *" value={solicitudForm.ruc} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, ruc: value.replace(/\D/g, '') }))} keyboardType="number-pad" /> : null}
+            <Field label="RUC *" value={solicitudForm.ruc} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, ruc: value.replace(/\D/g, '') }))} keyboardType="number-pad" />
+            </> : null}
             <Field label="Nombres *" value={solicitudForm.nombres} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, nombres: value }))} />
             <Field label="Primer apellido *" value={solicitudForm.primerApellido} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, primerApellido: value }))} />
             <Field label="Segundo apellido" value={solicitudForm.segundoApellido} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, segundoApellido: value }))} />
@@ -13834,13 +13859,16 @@ function ERubricaMobileScreen({
             {showSolicitudBirthDate ? <DateTimePicker value={solicitudForm.fechaNacimiento ? new Date(`${solicitudForm.fechaNacimiento}T12:00:00`) : new Date(1990, 0, 1)} mode="date" maximumDate={new Date()} onChange={(_, date) => { setShowSolicitudBirthDate(Platform.OS === 'ios'); if (date) setSolicitudForm((current) => ({ ...current, fechaNacimiento: date.toISOString().slice(0, 10) })); }} /> : null}
             <Text style={styles.clientDetailLabel}>Sexo *</Text>
             <View style={styles.erubricaHistorySearchBox}><Picker selectedValue={solicitudForm.sexo} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, sexo: String(value) }))}><Picker.Item label="Selecciona" value="" /><Picker.Item label="Femenino" value="F" /><Picker.Item label="Masculino" value="M" /></Picker></View>
-            <Field label="Nacionalidad *" value={solicitudForm.nacionalidad} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, nacionalidad: value }))} />
+            <Text style={styles.clientDetailLabel}>Nacionalidad *</Text>
+            <View style={styles.erubricaHistorySearchBox}><Picker selectedValue={solicitudForm.nacionalidad} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, nacionalidad: String(value) }))}>{solicitudCatalogos.nacionalidades.map((item) => <Picker.Item key={item} label={item} value={item} />)}</Picker></View>
             <Field label="Celular *" value={solicitudForm.celular} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, celular: value }))} keyboardType="phone-pad" />
             <Field label="Correo principal *" value={solicitudForm.correo} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, correo: value }))} autoCapitalize="none" keyboardType="email-address" />
             <Field label="Teléfono secundario" value={solicitudForm.telefonoSecundario} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, telefonoSecundario: value }))} keyboardType="phone-pad" />
             <Field label="Correo secundario" value={solicitudForm.correoSecundario} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, correoSecundario: value }))} autoCapitalize="none" keyboardType="email-address" />
-            <Field label="Provincia *" value={solicitudForm.provincia} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, provincia: value }))} />
-            <Field label="Cantón *" value={solicitudForm.canton} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, canton: value }))} />
+            <Text style={styles.clientDetailLabel}>Provincia *</Text>
+            <View style={styles.erubricaHistorySearchBox}><Picker selectedValue={solicitudForm.provincia} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, provincia: String(value), canton: '' }))}><Picker.Item label="Selecciona una provincia" value="" />{solicitudCatalogos.provincias.map((item) => <Picker.Item key={item.nombre} label={item.nombre} value={item.nombre} />)}</Picker></View>
+            <Text style={styles.clientDetailLabel}>Cantón *</Text>
+            <View style={styles.erubricaHistorySearchBox}><Picker enabled={cantonesSolicitud.length > 0} selectedValue={solicitudForm.canton} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, canton: String(value) }))}><Picker.Item label={cantonesSolicitud.length ? 'Selecciona un cantón' : 'Selecciona una provincia'} value="" />{cantonesSolicitud.map((item) => <Picker.Item key={item} label={item} value={item} />)}</Picker></View>
             <Field label="Dirección *" value={solicitudForm.direccion} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, direccion: value }))} />
           </View>
 
@@ -13884,9 +13912,10 @@ function ERubricaMobileScreen({
           </View>
 
           <View style={styles.erubricaSignActions}>
-            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar formulario" onPress={() => { setSolicitudForm(SOLICITUD_FORM_INITIAL); setSolicitudFiles(SOLICITUD_FILES_INITIAL); setSolicitudId(null); }} />
+            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar formulario" onPress={() => { setSolicitudPersona(null); setSolicitudForm(SOLICITUD_FORM_INITIAL); setSolicitudFiles(SOLICITUD_FILES_INITIAL); setSolicitudId(null); }} />
             <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Siguiente" loading={solicitudSaving} onPress={openPaymentSummary} />
           </View>
+          </> : <View style={styles.erubricaRequestPanel}><Text style={styles.erubricaSignStep}>Selecciona el tipo de solicitud</Text><Text style={styles.erubricaSignHint}>El formulario se habilitará cuando elijas una de las tres opciones.</Text></View>}
         </View>
       ) : null}
       {tab === 'historial-solicitudes' ? (
@@ -14021,7 +14050,7 @@ function ERubricaMobileScreen({
           <View style={styles.erubricaPlanCard}>
             <View style={styles.erubricaPlanHero}>
               <View style={styles.erubricaPlanPills}>
-              <Text style={styles.erubricaPlanPill}>{label(planDisponible, ['tieneFirmaPagada'], false) === 'true' && planEstado.toLowerCase() === 'activo' ? 'Firma vigente' : 'Sin firma vigente'}</Text>
+              <Text style={styles.erubricaPlanPill}>{label(planDisponible, ['tieneFirmaPagada'], 'false') === 'true' && planEstado.toLowerCase() === 'activo' ? 'Firma vigente' : 'Sin firma vigente'}</Text>
                 <Text style={styles.erubricaPlanPillAlt}>Servicio: E-Rúbrica</Text>
               </View>
               <View style={styles.erubricaPlanHeroBody}>
