@@ -144,6 +144,14 @@ export const eliminarERubricaDocumentoPendiente = (nombreArchivo: string) =>
 
 export const getERubricaRenovacion = () => apiRequest<unknown>(`${ROOT}/renovacion`);
 
+export type ERubricaSolicitudCatalogos = {
+  nacionalidades: string[];
+  provincias: Array<{ nombre: string; cantones: string[] }>;
+};
+
+export const getERubricaSolicitudCatalogos = () =>
+  apiRequest<ERubricaSolicitudCatalogos>(`${ROOT}/catalogos/solicitud`);
+
 export type ERubricaPlan = {
   tieneFirmaPagada: boolean;
   solicitudId?: number;
