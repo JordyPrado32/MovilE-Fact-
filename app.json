@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Numérica Software",
-    "slug": "Numérica Software",
+    "slug": "efact-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/logo-numerica.png",
