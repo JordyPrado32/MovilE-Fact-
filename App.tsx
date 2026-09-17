@@ -10073,7 +10073,7 @@ function ERubricaMobileScreen({
     ]);
   };
   const saveConfiguredSignature = async () => {
-    const emisorId = firmaEmisores[0]?.id;
+    const emisorId = firmaEfact?.id ?? firmaEmisores[0]?.id;
     if (!certificateFile || !certificatePassword.trim()) {
       if (firmaEfact) {
         Alert.alert(firmaEfactValida ? 'Firma vigente' : 'Firma configurada', firmaEfactValida ? 'Ya estás usando la firma configurada en E-Fact.' : 'La firma existente requiere revisión antes de usarla.');
@@ -10152,8 +10152,19 @@ function ERubricaMobileScreen({
     setSigning(true);
     setSignedFileUri(null);
     try {
+      let emisorFirma = firmaEmisores.find((item) => item.tieneCertificado && item.tieneClave) ?? null;
+      if (!emisorFirma) {
+        const emisores = (await getERubricaEmisores()).filter((item) => item.id > 0);
+        setFirmaEmisores(emisores);
+        emisorFirma = emisores.find((item) => item.tieneCertificado && item.tieneClave) ?? null;
+      }
+      if (!emisorFirma) {
+        Alert.alert('Firma no configurada', 'Configura primero el certificado .p12 y su clave en la vista Firma.');
+        return;
+      }
       const form = new FormData();
       appendERubricaFile(form, 'pdf', { uri: pdfFile.uri, name: pdfFile.name || 'documento.pdf' });
+      form.append('idEmisor', String(emisorFirma.id));
       form.append('pagina', String(signaturePage));
       const signatureWidthMm = 60;
       const signatureHeightMm = 35;
@@ -10163,8 +10174,11 @@ function ERubricaMobileScreen({
       const positionY = Number.isFinite(signaturePosition.y) ? Math.min(1, Math.max(0, signaturePosition.y)) : 0.82;
       const xMm = Math.min(Math.max(0, pageWidthMm - signatureWidthMm), Math.max(0, positionX * pageWidthMm - signatureWidthMm / 2));
       const yMm = Math.min(Math.max(0, pageHeightMm - signatureHeightMm), Math.max(0, positionY * pageHeightMm - signatureHeightMm / 2));
-      form.append('xMm', xMm.toFixed(2));
-      form.append('yMm', yMm.toFixed(2));
+      // Se envían milímetros enteros: el backend y el proveedor reciben formularios
+      // con culturas distintas, por lo que un separador decimal podía convertirse en
+      // miles y exceder el límite permitido.
+      form.append('xMm', String(Math.round(Math.min(2000, Math.max(0, xMm)))));
+      form.append('yMm', String(Math.round(Math.min(2000, Math.max(0, yMm)))));
       form.append('anchoMm', '60');
       if (documentoPendienteSeleccionado) form.append('documentoPendiente', documentoPendienteSeleccionado);
       const result = await firmarERubricaDocumento(form);
@@ -11271,14 +11285,6 @@ function ERubricaMobileScreen({
                 />
                 <MaterialCommunityIcons name="magnify" size={19} color="#5C748A" />
               </View>
-              <View style={styles.erubricaHistoryFilterRow}>
-                <TextInput value={historialDate} onChangeText={setHistorialDate} placeholder="mm/dd/yyyy" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
-                <TextInput value={historialStatus} onChangeText={setHistorialStatus} placeholder="Todos los estados" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
-              </View>
-              <Pressable style={styles.erubricaHistoryClearButton} onPress={() => { setHistorialQuery(''); setHistorialDate(''); setHistorialStatus(''); }}>
-                <MaterialCommunityIcons name="filter-remove-outline" size={15} color={ERUBRICA_COLORS.primary} />
-                <Text style={styles.erubricaHistoryClearText}>Limpiar filtros</Text>
-              </Pressable>
             </View>
             {filteredFirmas.length === 0 ? (
               <EmptyState title="Sin documentos firmados" text="No se encontraron documentos con los filtros actuales." />

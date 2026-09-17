@@ -424,12 +424,8 @@ export function ERubricaMobileScreen({
     return !Number.isNaN(parsed.getTime()) && parsed.getMonth() === now.getMonth() && parsed.getFullYear() === now.getFullYear();
   }).length;
   const filteredFirmas = historialDocumentos.filter((item) => {
-    const content = JSON.stringify(item).toLowerCase();
-    const status = label(item, ['estado', 'status', 'estadoFirma', 'estadoSolicitud', 'EstadoSolicitud'], 'valido').toLowerCase();
-    const rawDate = itemValue(item, ['fechaFirma', 'solFechaSolicitud', 'SolFechaSolicitud', 'solFechaAprobacion', 'SolFechaAprobacion', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']).toLowerCase();
-    return (!historialQuery.trim() || content.includes(historialQuery.trim().toLowerCase()))
-      && (!historialDate.trim() || rawDate.includes(historialDate.trim().toLowerCase()))
-      && (!historialStatus.trim() || status.includes(historialStatus.trim().toLowerCase()));
+    const documentName = label(item, ['nombreDocumento', 'nombreArchivo', 'documento', 'archivo', 'fileName', 'nombre', 'descripcion'], '').toLowerCase();
+    return !historialQuery.trim() || documentName.includes(historialQuery.trim().toLowerCase());
   });
   const documentosPorFirmar = solicitudes.filter((item) => {
     const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud'], 'pendiente').toLowerCase();
@@ -1176,14 +1172,6 @@ export function ERubricaMobileScreen({
                   style={styles.erubricaHistoryInput}
                 />
               </View>
-              <View style={styles.erubricaHistoryFilterRow}>
-                <TextInput value={historialDate} onChangeText={setHistorialDate} placeholder="mm/dd/yyyy" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
-                <TextInput value={historialStatus} onChangeText={setHistorialStatus} placeholder="Todos los estados" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
-              </View>
-              <Pressable style={styles.erubricaHistoryClearButton} onPress={() => { setHistorialQuery(''); setHistorialDate(''); setHistorialStatus(''); }}>
-                <MaterialCommunityIcons name="filter-remove-outline" size={15} color={ERUBRICA_COLORS.primary} />
-                <Text style={styles.erubricaHistoryClearText}>Limpiar filtros</Text>
-              </Pressable>
             </View>
             {documentosPendientes.length === 0 ? <EmptyState title="Sin documentos por firmar" text="Carga un PDF para prepararlo y firmarlo." /> : documentosPendientes.slice(0, 10).map((item, index) => {
               const documentName = item.nombreDocumento;
@@ -1743,14 +1731,6 @@ export function ERubricaMobileScreen({
                 />
                 <MaterialCommunityIcons name="magnify" size={19} color="#5C748A" />
               </View>
-              <View style={styles.erubricaHistoryFilterRow}>
-                <TextInput value={historialDate} onChangeText={setHistorialDate} placeholder="mm/dd/yyyy" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
-                <TextInput value={historialStatus} onChangeText={setHistorialStatus} placeholder="Todos los estados" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
-              </View>
-              <Pressable style={styles.erubricaHistoryClearButton} onPress={() => { setHistorialQuery(''); setHistorialDate(''); setHistorialStatus(''); }}>
-                <MaterialCommunityIcons name="filter-remove-outline" size={15} color={ERUBRICA_COLORS.primary} />
-                <Text style={styles.erubricaHistoryClearText}>Limpiar filtros</Text>
-              </Pressable>
             </View>
             {filteredFirmas.length === 0 ? (
               <EmptyState title="Sin documentos firmados" text="No se encontraron documentos con los filtros actuales." />
