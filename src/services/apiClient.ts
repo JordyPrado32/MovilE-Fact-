@@ -223,7 +223,7 @@ function getBodyErrorMessage(body: unknown): string {
   if (!body || typeof body !== 'object') return '';
 
   const errorBody = body as Record<string, unknown>;
-  const directMessage = [errorBody.message, errorBody.title, errorBody.detail, errorBody.error]
+  const directMessage = [errorBody.mensaje, errorBody.message, errorBody.title, errorBody.detail, errorBody.error]
     .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
   if (directMessage) return sanitizeUserMessage(directMessage, '');
 
@@ -259,7 +259,17 @@ function logApiError(
 ) {
   const bodyText = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
   const preview = sanitizeDiagnosticBody(bodyText);
-  console.error('[API ERROR]', context.userMessage ?? preview ?? DEFAULT_ERROR_MESSAGE);
+  console.error('[API ERROR]', {
+    baseUrl: API_BASE_URL,
+    path,
+    method: context.method ?? 'GET',
+    status,
+    elapsedMs: context.elapsedMs,
+    timeoutMs: context.timeoutMs,
+    contentType: context.contentType,
+    body: context.userMessage ?? preview ?? DEFAULT_ERROR_MESSAGE,
+    bodyLength: bodyText.length,
+  });
 
   logLocalApiErrorDetails(path, status, bodyText, context);
 }

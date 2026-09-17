@@ -12976,6 +12976,10 @@ function ERubricaMobileScreen({
       Alert.alert('Comprobante no valido', 'Selecciona una imagen JPG o PNG de maximo 5MB.');
       return;
     }
+    if (!/\.(jpe?g|png)$/i.test(asset.fileName ?? '') && !/^image\/(jpeg|png)$/i.test(asset.mimeType ?? '')) {
+      Alert.alert('Comprobante no válido', 'Selecciona una imagen JPG o PNG.');
+      return;
+    }
     setTransferReceipt(asset);
   };
   const payERubricaRequest = async () => {
@@ -12998,13 +13002,26 @@ function ERubricaMobileScreen({
         Alert.alert('Transferencia incompleta', 'Completa los datos de pago y adjunta el comprobante.');
         return;
       }
+      if (!/^\d+$/.test(transferForm.cuenta.trim())) {
+        Alert.alert('Cuenta no válida', 'La cuenta de origen solo debe contener números.');
+        return;
+      }
+      if (!/^[a-zA-Z0-9]{1,50}$/.test(transferForm.comprobante.trim())) {
+        Alert.alert('Comprobante no válido', 'El número de comprobante debe ser alfanumérico y tener máximo 50 caracteres.');
+        return;
+      }
+      const nombresTitular = transferForm.titular.trim().split(/\s+/).filter((parte) => parte.length >= 3 && /^[a-záéíóúüñ]+$/i.test(parte));
+      if (nombresTitular.length < 2) {
+        Alert.alert('Titular no válido', 'Ingresa al menos un nombre y un apellido del titular de la cuenta.');
+        return;
+      }
       const form = new FormData();
       form.append('solicitudId', String(solicitudId));
       form.append('banco', transferForm.banco);
       form.append('titularCuenta', transferForm.titular.trim());
       form.append('cuentaOrigen', transferForm.cuenta.trim());
       form.append('numeroComprobante', transferForm.comprobante.trim());
-      form.append('comprobante', { uri: transferReceipt.uri, name: transferReceipt.fileName || 'comprobante.jpg', type: transferReceipt.mimeType || 'image/jpeg' } as unknown as Blob);
+      appendERubricaFile(form, 'comprobante', { uri: transferReceipt.uri, name: transferReceipt.fileName || 'comprobante.jpg' });
       await enviarTransferenciaERubricaSolicitud(form);
       setPaymentModalOpen(false);
       Alert.alert('Transferencia enviada', 'Tu comprobante fue enviado para validación.');
