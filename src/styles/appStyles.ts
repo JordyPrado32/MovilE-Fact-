@@ -149,6 +149,8 @@ export const styles = StyleSheet.create({
   erubricaHistoryValidateText: { color: ERUBRICA_COLORS.text, fontSize: 10, fontWeight: '900' },
   erubricaPendingHeader: { alignItems: 'flex-start', backgroundColor: '#FFFFFF', borderColor: '#DCE8F1', borderRadius: 14, borderWidth: 1, flexDirection: 'row', gap: 10, justifyContent: 'space-between', padding: 14 },
   erubricaPendingLoadButton: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#A8E7C4', borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 5, minHeight: 36, paddingHorizontal: 10 },
+  erubricaPendingLoadButtonPrimary: { backgroundColor: ERUBRICA_COLORS.primary, borderColor: ERUBRICA_COLORS.primary },
+  erubricaPendingLoadTextPrimary: { color: '#FFFFFF' },
   erubricaPendingLoadText: { color: ERUBRICA_COLORS.text, fontSize: 10, fontWeight: '900' },
   erubricaHistoryMetrics: { gap: 10 },
   erubricaPendingMetrics: { gap: 10 },

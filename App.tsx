@@ -28,6 +28,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -82,7 +83,8 @@ import { InitialSequenceModal } from './src/components/documentos/InitialSequenc
 import { PuntosEmisionScreen } from './src/components/puntos/PuntosEmisionScreen';
 import { DirectoryTabButton, DropdownField, FormTopBar, ToggleRow } from './src/components/ui/FormShared';
 import { DashboardHomeScreen as ExtractedDashboardHomeScreen } from './src/components/dashboard/DashboardHomeScreen';
-import { ERubricaMobileScreen, getERubricaTabTitle, PdfDocumentPreview, type ERubricaTab } from './src/components/erubrica/ERubricaMobileScreen';
+import { DashboardActivityItem, DashboardChartCard, DashboardPrimaryAction, DashboardServiceRow } from './src/components/dashboard/DashboardWidgets';
+import { getERubricaTabTitle, SOLICITUD_FILES_INITIAL, SOLICITUD_FORM_INITIAL, type ERubricaTab, type SolicitudDocumentoKey } from './src/features/erubrica/erubricaTypes';
 import { EmptyState } from './src/components/ui/FeedbackStates';
 import { NuevaFacturaMobileScreen } from './src/components/facturacion/NuevaFacturaMobileScreen';
 import { ModuleCard, NavButton, PortalBottomNav, PortalHeaderAvatar } from './src/components/portal/PortalNavigation';
@@ -105,9 +107,43 @@ import { getFirmaFileName, hasFirmaConfigured } from './src/utils/emisorDisplay'
 import { getIvaOptionValue, getIvaOptions } from './src/utils/facturaOptions';
 import { parseDocumentNumber, validateDateRange, validateFiscalLine, validatePositiveTotal } from './src/utils/documentValidation';
 import { InvoiceHistoryMetric, getInvoiceStatusStyle, getInvoiceStatusTextStyle } from './src/components/documents/DocumentHistoryShared';
-import { CategoriaCard, ClienteCard, EmisorCard, FirmaCard, ProductoCard } from './src/components/directorios/DirectoryCards';
-import { CategoriaForm, EmisorForm, FirmaForm, ProductoForm, SubcategoriaForm } from './src/components/directorios/DirectoryForms';
 import type { CategoriaFormMode, CategoriaFormState, EmisorFormMode, EmisorFormState, ProductoFormMode, ProductoFormState, SubcategoriaFormState } from './src/types/directoryForms';
+
+const PDFJS_VIEWER_URI = Image.resolveAssetSource(require('./assets/pdfjs/pdf.min.pdf')).uri;
+const PDFJS_WORKER_URI = Image.resolveAssetSource(require('./assets/pdfjs/pdf.worker.min.pdf')).uri;
+const FALLBACK_TARIFAS_IVA = [
+  { idTarifa: 0, descripcion: '0% (0%)' },
+  { idTarifa: 13, descripcion: '13% (13%)' },
+  { idTarifa: 15, descripcion: '15% (15%)' },
+  { idTarifa: 5, descripcion: '5% (5%)' },
+  { idTarifa: 8, descripcion: '8% (8%)' },
+];
+
+function getDocumentAssetUrl(response: { url?: string | null } | string) {
+  const value = typeof response === 'string' ? response : response.url;
+  if (!value) return '';
+  return value.startsWith('http') ? value : `${API_BASE_URL.replace(/\/$/, '')}/${value.replace(/^\//, '')}`;
+}
+
+function usePdfJsSource(uri: string) {
+  const [source, setSource] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const value = uri.startsWith('file:') ? await FileSystem.readAsStringAsync(uri) : await (await fetch(uri)).text();
+        if (mounted) setSource(value);
+      } catch {
+        if (mounted) setSource('');
+      }
+    };
+    void load();
+    return () => { mounted = false; };
+  }, [uri]);
+
+  return source;
+}
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'change';
 
@@ -7051,13 +7087,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             onPreviewPdf={(file) => setPdfPreview({ uri: file.uri, name: file.name || 'Documento PDF' })}
             onPreviewRemotePdf={(urlOrPath, fileName) => openPdfPreview(async () => urlOrPath, fileName)}
             onDownloadRemotePdf={(urlOrPath, fileName) => downloadPdf(async () => urlOrPath, fileName)}
-<<<<<<< HEAD
-=======
             onOpenBot={() => setErubricaTabRequest('asistente')}
             onPdfPositionDragChange={setPdfPositionDragging}
             userName={portalFirstName}
             userId={userId}
->>>>>>> 6056aae (e-rubrica)
             onSync={async () => {
               try {
                 await sincronizarERubricaPendientes();
@@ -9718,6 +9751,7 @@ function ERubricaMobileScreen({
   const [validandoFirmaTemporal, setValidandoFirmaTemporal] = useState(false);
   const [savingConfiguredSignature, setSavingConfiguredSignature] = useState(false);
   const [signedDocumentsModalOpen, setSignedDocumentsModalOpen] = useState(false);
+  const [pendingDocumentsModalOpen, setPendingDocumentsModalOpen] = useState(false);
   const [loadingSignedDocument, setLoadingSignedDocument] = useState(false);
   const [historialQuery, setHistorialQuery] = useState('');
   const [historialDate, setHistorialDate] = useState('');
@@ -9750,10 +9784,11 @@ function ERubricaMobileScreen({
   const [assistantFeedback, setAssistantFeedback] = useState<BotFeedbackState>({});
   const selectTab = (nextTab: ERubricaTab) => {
     onPdfPositionDragChange(false);
-    if (tab === 'validar-firma' && nextTab !== 'validar-firma') {
+    if ((tab === 'firmar' || tab === 'validar-firma') && nextTab !== tab) {
       setPdfValidation(null);
       setPdfFile(null);
       setSignedDocumentsModalOpen(false);
+      setDocumentoPendienteSeleccionado(null);
     }
     if (nextTab === 'firmar' && !puedeFirmarPdf) {
       Alert.alert('Firma no disponible', 'Primero adquiere una firma de E-Rúbrica para usar Firmar PDF.');
@@ -9835,12 +9870,8 @@ function ERubricaMobileScreen({
     return !Number.isNaN(parsed.getTime()) && parsed.getMonth() === now.getMonth() && parsed.getFullYear() === now.getFullYear();
   }).length;
   const filteredFirmas = historialDocumentos.filter((item) => {
-    const content = JSON.stringify(item).toLowerCase();
-    const status = label(item, ['estado', 'status', 'estadoFirma', 'estadoSolicitud', 'EstadoSolicitud'], 'valido').toLowerCase();
-    const rawDate = itemValue(item, ['fechaFirma', 'solFechaSolicitud', 'SolFechaSolicitud', 'solFechaAprobacion', 'SolFechaAprobacion', 'fecha', 'fechaCreacion', 'createdAt', 'signedAt']).toLowerCase();
-    return (!historialQuery.trim() || content.includes(historialQuery.trim().toLowerCase()))
-      && (!historialDate.trim() || rawDate.includes(historialDate.trim().toLowerCase()))
-      && (!historialStatus.trim() || status.includes(historialStatus.trim().toLowerCase()));
+    const documentName = label(item, ['nombreDocumento', 'nombreArchivo', 'documento', 'archivo', 'fileName', 'nombre', 'descripcion'], '').toLowerCase();
+    return !historialQuery.trim() || documentName.includes(historialQuery.trim().toLowerCase());
   });
   const documentosPorFirmar = solicitudes.filter((item) => {
     const status = label(item, ['estado', 'status', 'solEstado', 'estadoSolicitud', 'EstadoSolicitud'], 'pendiente').toLowerCase();
@@ -10022,7 +10053,7 @@ function ERubricaMobileScreen({
     try {
       setLoadingDocumentosPendientes(true);
       const uploaded = await cargarERubricaDocumentoPendiente(file);
-      setDocumentosPendientes((current) => [uploaded, ...current]);
+      setDocumentosPendientes((current) => [{ ...uploaded, nombreDocumento: file.name || uploaded.nombreDocumento }, ...current]);
     } catch (error) {
       Alert.alert('No se pudo cargar el documento', error instanceof ApiError ? error.message : 'Intenta nuevamente.');
     } finally {
@@ -10497,12 +10528,10 @@ function ERubricaMobileScreen({
                 <Text style={styles.erubricaSignStep}>1. PDF a estampar</Text>
                 <Text style={styles.erubricaSignHint}>Selecciona el archivo PDF que recibirá el sello.</Text>
               </View>
-              {pdfFile ? (
-                <View style={styles.erubricaLoadedBadge}>
-                  <MaterialCommunityIcons name="folder-check-outline" size={14} color="#FFFFFF" />
-                  <Text style={styles.erubricaLoadedBadgeText}>Cargado</Text>
-                </View>
-              ) : null}
+              <Pressable style={styles.erubricaSignedDocsButton} onPress={() => { setPendingDocumentsModalOpen(true); void cargarDocumentosPendientes(); }}>
+                <MaterialCommunityIcons name="folder-open-outline" size={15} color="#FFFFFF" />
+                <Text style={styles.erubricaSignedDocsText}>Documentos cargados</Text>
+              </Pressable>
             </View>
             <Pressable style={styles.erubricaDropzone} onPress={pickPdfToSign}>
               <View style={styles.erubricaDropIcon}>
@@ -10584,7 +10613,7 @@ function ERubricaMobileScreen({
             <View style={styles.erubricaValidateHeader}>
               <View style={styles.erubricaValidateTitleRow}>
                 <MaterialCommunityIcons name="file-lock-outline" size={18} color={ERUBRICA_COLORS.text} />
-                <Text style={styles.erubricaSignStep}>Documento firmado en PDF</Text>
+                <Text style={styles.erubricaSignStep}>Documento</Text>
               </View>
               <Pressable style={styles.erubricaSignedDocsButton} onPress={() => setSignedDocumentsModalOpen(true)}>
                 <MaterialCommunityIcons name="folder-lock-outline" size={15} color="#FFFFFF" />
@@ -10633,18 +10662,6 @@ function ERubricaMobileScreen({
             <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Analizar firma digital" loading={validatingPdf} onPress={validatePdfSignature} />
           </View>
 
-          <View style={styles.erubricaAdviceCard}>
-            <View style={styles.erubricaAdviceHeader}>
-              <MaterialCommunityIcons name="shield-search" size={18} color={ERUBRICA_COLORS.primary} />
-              <Text style={styles.erubricaAdviceTitle}>Qué se verificará</Text>
-            </View>
-            {['Integridad del documento', 'Certificado digital', 'Revocación OCSP/CRL', 'Sello de tiempo RFC 3161', 'Validez legal'].map((item) => (
-              <View key={item} style={styles.erubricaAdviceRow}>
-                <MaterialCommunityIcons name="check-decagram-outline" size={16} color={ERUBRICA_COLORS.primary} />
-                <Text style={styles.erubricaAdviceText}>{item}</Text>
-              </View>
-            ))}
-          </View>
           {pdfValidation ? (() => {
             const unwrap = (input: unknown): Record<string, unknown> => {
               if (typeof input === 'string') { try { return unwrap(JSON.parse(input)); } catch { return {}; } }
@@ -10676,9 +10693,9 @@ function ERubricaMobileScreen({
               <Text style={styles.erubricaHistoryTitle}>Documentos por Firmar</Text>
               <Text style={styles.erubricaHistorySubtitle}>Administra los PDF subidos y elige el documento que vas a firmar.</Text>
             </View>
-            <Pressable style={styles.erubricaPendingLoadButton} onPress={() => void cargarNuevoDocumentoPendiente()}>
-              <MaterialCommunityIcons name="folder-upload-outline" size={15} color={ERUBRICA_COLORS.text} />
-              <Text style={styles.erubricaPendingLoadText}>{loadingDocumentosPendientes ? 'Cargando...' : 'Cargar documento'}</Text>
+            <Pressable style={[styles.erubricaPendingLoadButton, styles.erubricaPendingLoadButtonPrimary]} onPress={() => void cargarNuevoDocumentoPendiente()}>
+              <MaterialCommunityIcons name="folder-upload-outline" size={15} color="#FFFFFF" />
+              <Text style={[styles.erubricaPendingLoadText, styles.erubricaPendingLoadTextPrimary]}>{loadingDocumentosPendientes ? 'Cargando...' : 'Cargar documento'}</Text>
             </Pressable>
           </View>
 
@@ -10695,14 +10712,6 @@ function ERubricaMobileScreen({
                   style={styles.erubricaHistoryInput}
                 />
               </View>
-              <View style={styles.erubricaHistoryFilterRow}>
-                <TextInput value={historialDate} onChangeText={setHistorialDate} placeholder="mm/dd/yyyy" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
-                <TextInput value={historialStatus} onChangeText={setHistorialStatus} placeholder="Todos los estados" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
-              </View>
-              <Pressable style={styles.erubricaHistoryClearButton} onPress={() => { setHistorialQuery(''); setHistorialDate(''); setHistorialStatus(''); }}>
-                <MaterialCommunityIcons name="filter-remove-outline" size={15} color={ERUBRICA_COLORS.primary} />
-                <Text style={styles.erubricaHistoryClearText}>Limpiar filtros</Text>
-              </Pressable>
             </View>
             {documentosPendientes.length === 0 ? <EmptyState title="Sin documentos por firmar" text="Carga un PDF para prepararlo y firmarlo." /> : documentosPendientes.slice(0, 10).map((item, index) => {
               const documentName = item.nombreDocumento;
@@ -11450,6 +11459,41 @@ function ERubricaMobileScreen({
                   </View>
                 );
               })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      <Modal visible={pendingDocumentsModalOpen} transparent animationType="fade" onRequestClose={() => setPendingDocumentsModalOpen(false)}>
+        <View style={styles.erubricaPaymentOverlay}>
+          <View style={styles.erubricaPaymentModal}>
+            <View style={styles.erubricaPaymentHeader}>
+              <View style={styles.erubricaHistoryHeroCopy}>
+                <Text style={styles.erubricaHistoryEyebrow}>REPOSITORIO</Text>
+                <Text style={styles.erubricaPaymentTitle}>Documentos cargados</Text>
+                <Text style={styles.erubricaHistorySubtitle}>Selecciona un documento por firmar o carga uno nuevo.</Text>
+              </View>
+              <Pressable style={styles.erubricaPaymentClose} onPress={() => setPendingDocumentsModalOpen(false)}>
+                <MaterialCommunityIcons name="close" size={20} color="#1787D5" />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.portalStack} keyboardShouldPersistTaps="handled">
+              <Pressable style={[styles.erubricaPendingLoadButton, styles.erubricaPendingLoadButtonPrimary]} onPress={() => void cargarNuevoDocumentoPendiente()}>
+                <MaterialCommunityIcons name="cloud-upload-outline" size={18} color="#FFFFFF" />
+                <Text style={[styles.erubricaPendingLoadText, styles.erubricaPendingLoadTextPrimary]}>Subir documento para firmar</Text>
+              </Pressable>
+              {loadingDocumentosPendientes ? <ActivityIndicator color={ERUBRICA_COLORS.primary} /> : null}
+              {!loadingDocumentosPendientes && documentosPendientes.length === 0 ? <EmptyState title="Sin documentos cargados" text="Carga un PDF y se conservará su nombre original." /> : documentosPendientes.map((item, index) => (
+                <View key={`firmar-pendiente-${item.nombreArchivo}-${index}`} style={styles.erubricaHistoryRow}>
+                  <View style={styles.erubricaHistoryDocIcon}><MaterialCommunityIcons name="file-pdf-box" size={19} color="#5C748A" /></View>
+                  <View style={styles.erubricaHistoryDocCopy}>
+                    <Text style={styles.erubricaHistoryDocName} numberOfLines={2}>{item.nombreDocumento}</Text>
+                    <Text style={styles.erubricaHistoryDetailText}>{formatDocumentDate(item.fecha)}</Text>
+                  </View>
+                  <Pressable style={styles.erubricaSignedDocsButton} onPress={() => { setPendingDocumentsModalOpen(false); void usarDocumentoPendiente(item); }}>
+                    <Text style={styles.erubricaSignedDocsText}>Usar</Text>
+                  </Pressable>
+                </View>
+              ))}
             </ScrollView>
           </View>
         </View>

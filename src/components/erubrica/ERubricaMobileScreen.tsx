@@ -69,6 +69,7 @@ function usePdfJsSource(uri: string) {
 
 export type ERubricaTab =
   | 'inicio'
+  | 'asistente'
   | 'solicitudes'
   | 'firmas'
   | 'documentos-por-firmar'
@@ -88,7 +89,7 @@ export type ERubricaTab =
 
 export function getERubricaTabTitle(tab: ERubricaTab) {
   const titles: Record<ERubricaTab, string> = {
-    inicio: 'Inicio', solicitudes: 'Solicitudes', firmas: 'Firmas', 'documentos-por-firmar': 'Documentos por firmar',
+    inicio: 'Inicio', asistente: 'Númi', solicitudes: 'Solicitudes', firmas: 'Firmas', 'documentos-por-firmar': 'Documentos por firmar',
     'historial-documentos': 'Historial documentos', 'validar-firma': 'Validar firma', firmar: 'Firmar PDF', validar: 'Validar documento',
     'nueva-solicitud': 'Solicitar firma', 'historial-solicitudes': 'Historial de solicitudes', 'ver-mis-firmas': 'Mis firmas',
     'plan-disponible': 'Plan disponible', 'firma-config': 'Configurar firma', renovacion: 'Renovación', proveedor: 'Proveedor',
