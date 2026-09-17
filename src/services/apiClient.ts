@@ -223,7 +223,7 @@ function getBodyErrorMessage(body: unknown): string {
   if (!body || typeof body !== 'object') return '';
 
   const errorBody = body as Record<string, unknown>;
-  const directMessage = [errorBody.message, errorBody.title, errorBody.detail, errorBody.error]
+  const directMessage = [errorBody.mensaje, errorBody.message, errorBody.title, errorBody.detail, errorBody.error]
     .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
   if (directMessage) return sanitizeUserMessage(directMessage, '');
 
@@ -259,7 +259,17 @@ function logApiError(
 ) {
   const bodyText = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
   const preview = sanitizeDiagnosticBody(bodyText);
-  console.error('[API ERROR]', context.userMessage ?? preview ?? DEFAULT_ERROR_MESSAGE);
+  console.error('[API ERROR]', {
+    baseUrl: API_BASE_URL,
+    path,
+    method: context.method ?? 'GET',
+    status,
+    elapsedMs: context.elapsedMs,
+    timeoutMs: context.timeoutMs,
+    contentType: context.contentType,
+    body: context.userMessage ?? preview ?? DEFAULT_ERROR_MESSAGE,
+    bodyLength: bodyText.length,
+  });
 
   logLocalApiErrorDetails(path, status, bodyText, context);
 }
@@ -268,8 +278,8 @@ function sanitizeDiagnosticBody(bodyText: string) {
   if (!bodyText.trim()) return undefined;
   const message = safeParseJson(bodyText);
   if (message && typeof message === 'object') {
-    const value = message as { message?: unknown; title?: unknown; detail?: unknown };
-    return sanitizeUserMessage(String(value.message ?? value.title ?? value.detail ?? ''));
+    const value = message as { mensaje?: unknown; message?: unknown; title?: unknown; detail?: unknown; error?: unknown };
+    return sanitizeUserMessage(String(value.mensaje ?? value.message ?? value.title ?? value.detail ?? value.error ?? ''));
   }
 
   return sanitizeUserMessage(bodyText);
