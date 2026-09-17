@@ -17,7 +17,8 @@ export type ERubricaTab =
   | 'renovacion'
   | 'proveedor'
   | 'catalogos'
-  | 'soporte';
+  | 'soporte'
+  | 'asistente';
 
 export type SolicitudDocumentoKey =
   | 'cedulaFrontal'
@@ -38,7 +39,7 @@ export const getERubricaTabTitle = (tab: ERubricaTab) => {
     'historial-documentos': 'Historial documentos', 'validar-firma': 'Validar firma', firmar: 'Firmar PDF', validar: 'Validar documento',
     'nueva-solicitud': 'Solicitar firma', 'historial-solicitudes': 'Historial de solicitudes', 'ver-mis-firmas': 'Mis firmas',
     'plan-disponible': 'Plan disponible', 'firma-config': 'Configurar firma', renovacion: 'Renovación', proveedor: 'Proveedor',
-    catalogos: 'Catálogos', soporte: 'Soporte',
+    catalogos: 'Catálogos', soporte: 'Soporte', asistente: 'Númi',
   };
   return titles[tab];
 };

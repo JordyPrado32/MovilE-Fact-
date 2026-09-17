@@ -238,7 +238,8 @@ type ERubricaTab =
   | 'renovacion'
   | 'proveedor'
   | 'catalogos'
-  | 'soporte';
+  | 'soporte'
+  | 'asistente';
 
 function getERubricaTabTitle(tab: ERubricaTab) {
   const titles: Record<ERubricaTab, string> = {
@@ -246,7 +247,7 @@ function getERubricaTabTitle(tab: ERubricaTab) {
     'historial-documentos': 'Historial documentos', 'validar-firma': 'Validar firma', firmar: 'Firmar PDF', validar: 'Validar documento',
     'nueva-solicitud': 'Solicitar firma', 'historial-solicitudes': 'Historial de solicitudes', 'ver-mis-firmas': 'Mis firmas',
     'plan-disponible': 'Plan disponible', 'firma-config': 'Configurar firma', renovacion: 'Renovación', proveedor: 'Proveedor',
-    catalogos: 'Catálogos', soporte: 'Soporte',
+    catalogos: 'Catálogos', soporte: 'Soporte', asistente: 'Númi',
   };
   return titles[tab];
 }
@@ -7148,7 +7149,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       <View style={styles.workspaceChrome}>
         <GlobalWorkspaceHeader
           title={activeView === 'e-rubrica' ? getERubricaTabTitle(erubricaTabRequest ?? 'inicio') : getWorkspaceTitle(activeView)}
-          subtitle={activeView === 'firma' ? 'Gestiona tu firma y certificados' : activeView === 'portal' ? 'Selecciona tu servicio' : activeView === 'e-rubrica' ? 'E-Rúbrica' : activeView === 'perfil-e-rubrica' ? 'Mi cuenta de firma electronica' : ''}
+          subtitle={activeView === 'firma' ? 'Gestiona tu firma y certificados' : activeView === 'portal' ? 'Selecciona tu servicio' : activeView === 'perfil-e-rubrica' ? 'Mi cuenta de firma electronica' : ''}
           unreadNotifications={unreadNotifications}
           documentPlan={documentPlan}
           firmaSummary={firmaResumenVisible}
@@ -7271,6 +7272,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             onPreviewPdf={(file) => setPdfPreview({ uri: file.uri, name: file.name || 'Documento PDF' })}
             onPreviewRemotePdf={(urlOrPath, fileName) => openPdfPreview(async () => urlOrPath, fileName)}
             onDownloadRemotePdf={(urlOrPath, fileName) => downloadPdf(async () => urlOrPath, fileName)}
+            onOpenBot={() => setErubricaTabRequest('asistente')}
+            userName={portalFirstName}
+            userId={userId}
             onSync={async () => {
               try {
                 await sincronizarERubricaPendientes();
@@ -12333,6 +12337,9 @@ function ERubricaMobileScreen({
   onPreviewRemotePdf,
   onDownloadRemotePdf,
   onSync,
+  onOpenBot,
+  userName,
+  userId,
 }: {
   data: ERubricaDashboard | null;
   puedeFirmarSinPlan: boolean;
@@ -12346,6 +12353,9 @@ function ERubricaMobileScreen({
   onPreviewRemotePdf: (urlOrPath: string, fileName: string) => void;
   onDownloadRemotePdf: (urlOrPath: string, fileName: string) => void;
   onSync: () => Promise<void>;
+  onOpenBot: () => void;
+  userName: string;
+  userId: number;
 }) {
   const [tab, setTab] = useState<ERubricaTab>('inicio');
   const [qrInput, setQrInput] = useState('');
@@ -12402,6 +12412,9 @@ function ERubricaMobileScreen({
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [transferForm, setTransferForm] = useState({ banco: '', titular: '', cuenta: '', comprobante: '' });
   const [transferReceipt, setTransferReceipt] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [assistantMessages, setAssistantMessages] = useState<BotMessage[]>([]);
+  const [assistantDraft, setAssistantDraft] = useState('');
+  const [assistantFeedback, setAssistantFeedback] = useState<BotFeedbackState>({});
   const selectTab = (nextTab: ERubricaTab) => {
     if (tab === 'validar-firma' && nextTab !== 'validar-firma') {
       setPdfValidation(null);
@@ -12528,6 +12541,12 @@ function ERubricaMobileScreen({
     const status = label(item, ['estadoPago', 'pago', 'estado', 'status', 'estadoSolicitud', 'EstadoSolicitud'], 'pendiente').toLowerCase();
     return status.includes('pend');
   }).length;
+  const { width } = useWindowDimensions();
+  const inicioCompacto = width < 390;
+  const pagoInicio = solicitudesPagadas > 0 ? 'Pagado' : solicitudesPendientes > 0 ? 'Pendiente' : 'Sin solicitudes';
+  const uanatacaInicio = label(activeFirma, ['estadoUanataca', 'SolUanatacaStatusText', 'uanatacaStatus', 'estado'], 'No enviado');
+  const recientesInicio = historialDocumentos.slice(0, 3);
+  const porFirmarInicio = documentosPendientes.length || documentosPorFirmar.length;
   const totalHistorialSolicitudesPages = Math.max(1, Math.ceil(filteredHistorialSolicitudes.length / 10));
   const paginaHistorialSolicitudes = Math.min(historialSolicitudesPage, totalHistorialSolicitudesPages);
   const historialSolicitudesPagina = filteredHistorialSolicitudes.slice((paginaHistorialSolicitudes - 1) * 10, paginaHistorialSolicitudes * 10);
@@ -12568,7 +12587,7 @@ function ERubricaMobileScreen({
     }
   };
   useEffect(() => {
-    if (tab === 'historial-documentos' || tab === 'validar-firma') void cargarDocumentosFirmados();
+    if (tab === 'inicio' || tab === 'historial-documentos' || tab === 'validar-firma') void cargarDocumentosFirmados();
   }, [tab]);
   const cargarDocumentosPendientes = async () => {
     try {
@@ -12581,7 +12600,7 @@ function ERubricaMobileScreen({
     }
   };
   useEffect(() => {
-    if (tab === 'documentos-por-firmar') void cargarDocumentosPendientes();
+    if (tab === 'inicio' || tab === 'documentos-por-firmar') void cargarDocumentosPendientes();
   }, [tab]);
   const useSignedDocumentForValidation = async (item: unknown) => {
     const documentName = label(item, ['nombreDocumento', 'documento', 'archivo', 'fileName'], 'Documento firmado.pdf');
@@ -13037,10 +13056,98 @@ function ERubricaMobileScreen({
       {message ? <MessageBox message={message} /> : null}
 
       {tab === 'inicio' ? (
-        <View style={styles.clientCard}>
-          <Text style={styles.clientDetailLabel}>Resumen de E-Rúbrica</Text>
-          <Text style={styles.clientMeta}>Abre el menú hamburguesa para ingresar a cada módulo de E-Rúbrica.</Text>
+        <View style={styles.erubricaHomeStack}>
+          <Pressable style={styles.erubricaNumiPanel} onPress={onOpenBot}>
+            <View style={styles.erubricaNumiAccentPanel} />
+            <View style={styles.erubricaNumiConfettiDotLarge} />
+            <View style={styles.erubricaNumiConfettiDotSmall} />
+            <View style={styles.erubricaNumiConfettiRing} />
+            <View style={styles.erubricaNumiHeader}>
+              <View style={styles.erubricaNumiCopy}>
+                <Text style={styles.erubricaNumiName}>Númi</Text>
+                <Text style={styles.erubricaNumiSubtitle}>Tu asistente de E-Rúbrica</Text>
+                <View style={styles.erubricaNumiBubble}>
+                  <Text style={styles.erubricaNumiBubbleText}>Te ayudo a firmar, validar y gestionar tus documentos.</Text>
+                </View>
+              </View>
+              <Image source={require('./assets/numi-home.png')} style={styles.erubricaNumiImage} resizeMode="contain" />
+            </View>
+            <View style={styles.erubricaNumiActions}>
+              <View style={styles.erubricaNumiAction}>
+                <MaterialCommunityIcons name="message-processing-outline" size={22} color="#BDF5CD" />
+                <View style={styles.erubricaNumiActionCopy}><Text style={styles.erubricaNumiActionTitle}>Consultas</Text><Text style={styles.erubricaNumiActionText}>Haz tus preguntas</Text></View>
+              </View>
+              <View style={styles.erubricaNumiAction}>
+                <MaterialCommunityIcons name="file-sign" size={22} color="#BDF5CD" />
+                <View style={styles.erubricaNumiActionCopy}><Text style={styles.erubricaNumiActionTitle}>Firmas</Text><Text style={styles.erubricaNumiActionText}>Guías y pasos</Text></View>
+              </View>
+            </View>
+          </Pressable>
+
+          <View style={styles.erubricaHomeStateCard}>
+            <View style={styles.erubricaHomeSectionHeader}><Text style={styles.erubricaHomeSectionTitle}>Estado de la firma</Text><Text style={styles.erubricaHomeSectionHint}>Solicitud más reciente</Text></View>
+            <View style={styles.erubricaHomeStateGrid}>
+              <View style={styles.erubricaHomeStateItem}><View style={styles.erubricaHomeStateIcon}><MaterialCommunityIcons name="cash-check" size={18} color="#079349" /></View><View><Text style={styles.erubricaHomeStateLabel}>Estado de pago</Text><Text style={styles.erubricaHomeStateValue}>{pagoInicio}</Text></View></View>
+              <View style={styles.erubricaHomeStateItem}><View style={[styles.erubricaHomeStateIcon, styles.erubricaHomeStateIconBlue]}><MaterialCommunityIcons name="send-outline" size={18} color="#2563B8" /></View><View><Text style={styles.erubricaHomeStateLabel}>Estado Uanataca</Text><Text style={styles.erubricaHomeStateValue}>{uanatacaInicio}</Text></View></View>
+            </View>
+          </View>
+
+          <View style={styles.erubricaHomeQuickGrid}>
+            {[
+              ['file-sign', 'Firmar documento', 'Firma tus documentos en pocos pasos', 'firmar'],
+              ['cart-outline', 'Comprar / Renovar firma', 'Adquiere o renueva tu firma electrónica', 'plan-disponible'],
+              ['folder-open-outline', 'Mis documentos', 'Accede a tus documentos firmados', 'historial-documentos'],
+              ['shield-check-outline', 'Validar firma', 'Verifica documentos firmados', 'validar-firma'],
+            ].map(([icon, title, description, destination], index) => (
+              <Pressable key={destination} style={[styles.erubricaHomeQuickCard, index === 0 && styles.erubricaHomeQuickCardPrimary]} onPress={() => selectTab(destination as ERubricaTab)}>
+                <View style={styles.erubricaHomeQuickIcon}><MaterialCommunityIcons name={icon as keyof typeof MaterialCommunityIcons.glyphMap} size={22} color={index === 0 ? '#FFFFFF' : ERUBRICA_COLORS.primary} /></View>
+                <View style={styles.erubricaHomeQuickCopy}><Text style={[styles.erubricaHomeQuickTitle, index === 0 && styles.erubricaHomeQuickTitlePrimary]}>{title}</Text><Text style={[styles.erubricaHomeQuickText, index === 0 && styles.erubricaHomeQuickTextPrimary]}>{description}</Text></View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={index === 0 ? '#FFFFFF' : '#607887'} />
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.erubricaHomeOverviewCard}>
+            <Text style={styles.erubricaHomeSectionTitle}>Resumen de firmas y documentos</Text>
+            <View style={styles.erubricaHomeOverviewContent}>
+              <View style={styles.erubricaHomeRing}><Text style={styles.erubricaHomeRingValue}>{solicitudHistoryItems.length}</Text><Text style={styles.erubricaHomeRingLabel}>TOTAL</Text></View>
+              <View style={styles.erubricaHomeLegend}><Text style={styles.erubricaHomeLegendText}>● Pendientes: {solicitudesPendientes}</Text><Text style={styles.erubricaHomeLegendText}>● Pagadas: {solicitudesPagadas}</Text><Text style={styles.erubricaHomeLegendText}>● Firmados: {historialDocumentos.length}</Text></View>
+            </View>
+            <View style={styles.erubricaHomeMetricsGrid}>
+              {[[porFirmarInicio, 'Por firmar'], [historialDocumentos.length, 'Firmados'], [signedMonthCount, 'Firmas del mes']].map(([value, title]) => <View key={String(title)} style={[styles.erubricaHomeMetric, inicioCompacto && styles.erubricaHomeMetricCompact]}><Text style={styles.erubricaHomeMetricValue}>{value}</Text><Text style={styles.erubricaHomeMetricLabel}>{title}</Text></View>)}
+            </View>
+          </View>
+
+          <View style={styles.erubricaHomeRecentCard}>
+            <View style={styles.erubricaHomeSectionHeader}><Text style={styles.erubricaHomeSectionTitle}>Documentos recientes</Text><Pressable onPress={() => selectTab('historial-documentos')}><Text style={styles.erubricaHomeLink}>Ver todos</Text></Pressable></View>
+            {recientesInicio.length ? recientesInicio.map((item, index) => {
+              const fecha = formatSignedDate(item);
+              return <Pressable key={`${itemValue(item, ['id', 'nombre', 'fileName'])}-${index}`} style={styles.erubricaHomeRecentRow} onPress={() => selectTab('historial-documentos')}><View style={styles.erubricaHomeRecentIcon}><MaterialCommunityIcons name="file-pdf-box" size={20} color="#F04444" /></View><View style={styles.erubricaHomeRecentCopy}><Text style={styles.erubricaHomeRecentName} numberOfLines={1}>{label(item, ['nombreDocumento', 'nombreArchivo', 'fileName', 'nombre'], 'Documento firmado')}</Text><Text style={styles.erubricaHomeRecentMeta}>PDF firmado desde e-rúbrica · {fecha.date}</Text></View><View style={styles.erubricaHomeValidPill}><Text style={styles.erubricaHomeValidText}>VÁLIDO</Text></View></Pressable>;
+            }) : <Text style={styles.erubricaHomeEmpty}>Todavía no tienes documentos firmados.</Text>}
+          </View>
         </View>
+      ) : null}
+
+      {tab === 'asistente' ? (
+        <EfactBotScreen
+          userName={userName}
+          userId={userId}
+          messages={assistantMessages}
+          setMessages={setAssistantMessages}
+          draft={assistantDraft}
+          setDraft={setAssistantDraft}
+          feedbackByMessage={assistantFeedback}
+          setFeedbackByMessage={setAssistantFeedback}
+          welcomeText={`Hola ${userName || ''}. Soy Númi, tu asistente de E-Rúbrica. Puedo ayudarte con firmas, solicitudes, pagos y validación de documentos.`}
+          assistantContext="asistente de E-Rúbrica. Ayuda únicamente con firma electrónica: crear y seguir solicitudes, requisitos de persona natural o representante legal, pagos, Uanataca, configurar certificado .p12, firmar PDF, ubicar la firma, documentos firmados y validar firmas. No ofrezcas crear facturas ni acciones de E-FACT. Usa únicamente información real disponible y no inventes datos."
+          quickActions={[
+            { label: 'Estado de mi firma', command: '¿Cuál es el estado de mi firma electrónica?' },
+            { label: 'Solicitar firma', command: '¿Qué necesito para solicitar una firma electrónica?' },
+            { label: 'Firmar PDF', command: '¿Cómo firmo un PDF?' },
+            { label: 'Validar firma', command: '¿Cómo valido la firma de un documento?' },
+          ]}
+          theme="erubrica"
+        />
       ) : null}
 
       {loading ? <View style={styles.directoryLoading}><ActivityIndicator color={ERUBRICA_COLORS.primary} /><Text style={styles.mutedText}>Cargando E-Rúbrica...</Text></View> : null}

@@ -50,6 +50,10 @@ export function EfactBotScreen({
   setDraft,
   feedbackByMessage,
   setFeedbackByMessage,
+  assistantContext,
+  welcomeText,
+  quickActions,
+  theme = 'efact',
 }: {
   userName: string;
   userId: number;
@@ -62,7 +66,12 @@ export function EfactBotScreen({
   setDraft: Dispatch<SetStateAction<string>>;
   feedbackByMessage: BotFeedbackState;
   setFeedbackByMessage: Dispatch<SetStateAction<BotFeedbackState>>;
+  assistantContext?: string;
+  welcomeText?: string;
+  quickActions?: Array<{ label: string; command: string }>;
+  theme?: 'efact' | 'erubrica';
 }) {
+  const erubricaTheme = theme === 'erubrica';
   const [sending, setSending] = useState(false);
   const [thinkingRequest, setThinkingRequest] = useState('');
   const [error, setError] = useState('');
@@ -323,9 +332,9 @@ export function EfactBotScreen({
 
   useEffect(() => {
     if (messages.length === 0) {
-      setMessages([{ id: 'welcome', role: 'assistant', text: `Hola ${userName || ''}. Soy Númi, tu asistente de E-FACT. ¿En qué te ayudo hoy?` }]);
+      setMessages([{ id: 'welcome', role: 'assistant', text: welcomeText ?? `Hola ${userName || ''}. Soy Númi, tu asistente de E-FACT. ¿En qué te ayudo hoy?` }]);
     }
-  }, [messages.length, setMessages, userName]);
+  }, [messages.length, setMessages, userName, welcomeText]);
 
   const send = async (preset?: string, modo: 'texto' | 'voz' = 'texto') => {
     const text = (preset ?? draft).trim();
@@ -347,7 +356,7 @@ export function EfactBotScreen({
         userId,
         requestId: `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
         modo,
-        contexto: 'asistente de facturación: ayuda a crear facturas, buscar clientes y productos, completar datos faltantes, revisar subtotal, IVA y total, confirmar o cancelar la emisión. Usa datos reales del usuario y no inventes información.',
+        contexto: assistantContext ?? 'asistente de facturación: ayuda a crear facturas, buscar clientes y productos, completar datos faltantes, revisar subtotal, IVA y total, confirmar o cancelar la emisión. Usa datos reales del usuario y no inventes información.',
       });
       const presentationAnswer = botResult.draft?.cliente || botResult.draft?.items?.length
         ? buildVoiceResponse(botResult.answer, botResult.draft ?? null, botResult.missing)
@@ -456,7 +465,13 @@ export function EfactBotScreen({
     }
   };
 
-  const contextualActions = pendingOperation || requiresConfirmation
+  const contextualActions = assistantContext
+    ? [
+      { label: 'Estado de mi firma', command: '¿Cuál es el estado de mi firma electrónica?', icon: 'shield-check-outline' as const },
+      { label: 'Validar documento', command: '¿Cómo valido una firma electrónica?', icon: 'file-check-outline' as const },
+      { label: 'Nueva solicitud', command: '¿Qué necesito para solicitar una firma electrónica?', icon: 'file-plus-outline' as const },
+    ]
+    : pendingOperation || requiresConfirmation
     ? [
       { label: pendingOperation ? 'Confirmar operación' : 'Emitir factura', command: pendingOperation ? 'confirmar' : 'emitir', icon: 'check' as const },
       { label: pendingOperation ? 'Cancelar operación' : 'Cancelar emisión', command: 'cancelar', icon: 'close' as const },
@@ -632,14 +647,14 @@ export function EfactBotScreen({
   }
 
   return (
-    <View ref={botContainerRef} onLayout={measureChatTop} style={[styles.botScreen, keyboardVisible && styles.botScreenKeyboard, keyboardVisible && keyboardTop !== null && chatTop !== null ? { height: Math.max(1, keyboardTop - chatTop - 36) } : null]}>
+    <View ref={botContainerRef} onLayout={measureChatTop} style={[styles.botScreen, erubricaTheme && styles.erubricaBotScreen, keyboardVisible && styles.botScreenKeyboard, keyboardVisible && keyboardTop !== null && chatTop !== null ? { height: Math.max(1, keyboardTop - chatTop - 36) } : null]}>
       <KeyboardAvoidingView style={styles.botScreenInner} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
-      <View style={styles.botWidgetHeader}>
+      <View style={[styles.botWidgetHeader, erubricaTheme && styles.erubricaBotWidgetHeader]}>
         <Image source={require('../../../assets/numi-chat-avatar.jpg')} style={styles.botWidgetAvatar} />
         <View style={styles.botWidgetCopy}>
-          <Text style={styles.botWidgetKicker}>Chat con</Text>
+          <Text style={[styles.botWidgetKicker, erubricaTheme && styles.erubricaBotWidgetKicker]}>Chat con</Text>
           <Text style={styles.botWidgetTitle}>Númi</Text>
-          <Text style={styles.botWidgetStatus}>Estamos en línea</Text>
+          <Text style={[styles.botWidgetStatus, erubricaTheme && styles.erubricaBotWidgetStatus]}>Estamos en línea</Text>
         </View>
         <View style={styles.botWidgetHeaderActions}>
           <Pressable accessibilityLabel="Iniciar nueva conversación" onPress={() => void startNewConversation()} hitSlop={8}>
@@ -660,8 +675,8 @@ export function EfactBotScreen({
       >
         {messages.map((message) => (
           <View key={message.id} style={message.role === 'user' ? styles.botUserRow : styles.botAssistantRow}>
-            {message.role === 'assistant' ? <Image source={require('../../../assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} /> : null}
-            <View style={[styles.botBubble, message.role === 'user' ? styles.botUserBubble : styles.botAssistantBubble]}>
+            {message.role === 'assistant' ? <Image source={require('../../../assets/numi-chat-avatar.jpg')} style={[styles.botMessageAvatar, erubricaTheme && styles.erubricaBotMessageAvatar]} /> : null}
+            <View style={[styles.botBubble, message.role === 'user' ? styles.botUserBubble : styles.botAssistantBubble, erubricaTheme && message.role === 'user' && styles.erubricaBotUserBubble]}>
               <View style={styles.botMessageRow}>
                 <Text style={[styles.botBubbleText, message.role === 'user' && styles.botUserBubbleText]}>{message.text}</Text>
                 {message.role === 'assistant' ? <Pressable style={styles.botAudioButton} onPress={() => void speakBotText(message.text)} hitSlop={8}><MaterialCommunityIcons name="volume-high" size={16} color="#0878C9" /></Pressable> : null}
@@ -690,17 +705,17 @@ export function EfactBotScreen({
           </View>
         ))}
         {messages.length === 1 && messages[0]?.id === 'welcome' ? (
-          <View style={styles.botQuickActions}>
-            <Text style={styles.botQuickActionsTitle}>Puedes comenzar con:</Text>
+          <View style={[styles.botQuickActions, erubricaTheme && styles.erubricaBotQuickActions]}>
+            <Text style={[styles.botQuickActionsTitle, erubricaTheme && styles.erubricaBotQuickActionsTitle]}>Puedes comenzar con:</Text>
             <View style={styles.botQuickActionsGrid}>
-              {[
+              {(quickActions ?? [
                 { label: 'Crear factura', command: 'Quiero crear una factura' },
                 { label: 'Consultar facturas', command: 'Muéstrame mis facturas' },
                 { label: 'Ver cartera', command: 'Muéstrame mis cuentas por cobrar' },
                 { label: 'Qué puedes hacer', command: '¿Qué puedes hacer?' },
-              ].map((action) => (
-                <Pressable accessibilityRole="button" accessibilityLabel={action.label} key={action.label} style={styles.botQuickAction} onPress={() => void send(action.command)} disabled={sending}>
-                  <Text style={styles.botQuickActionText}>{action.label}</Text>
+              ]).map((action) => (
+                <Pressable accessibilityRole="button" accessibilityLabel={action.label} key={action.label} style={[styles.botQuickAction, erubricaTheme && styles.erubricaBotQuickAction]} onPress={() => void send(action.command)} disabled={sending}>
+                  <Text style={[styles.botQuickActionText, erubricaTheme && styles.erubricaBotQuickActionText]}>{action.label}</Text>
                 </Pressable>
               ))}
             </View>
