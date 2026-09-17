@@ -1,4 +1,5 @@
 import { Image, Pressable, Text, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { EFACT_THEME, ERUBRICA_COLORS } from '../../styles/theme';
 import { styles } from '../../styles/appStyles';
@@ -45,10 +46,10 @@ export function PortalServiceCard({
   return (
     <Pressable
       disabled={!enabled}
-      style={[styles.portalServiceCard, { borderColor: visual.accent }, !enabled && styles.portalServiceCardDisabled]}
+      style={[styles.portalServiceCard, { backgroundColor: visual.surface, borderColor: visual.accent }, !enabled && styles.portalServiceCardDisabled]}
       onPress={onPress}
     >
-      <View style={[styles.portalServiceIcon, { backgroundColor: visual.surface, borderColor: visual.accent }]}>
+      <View style={styles.portalServiceLogoPlate}>
         {visual.kind === 'efact' ? <Image source={require('../../../assets/logo-numerica.png')} style={styles.portalServiceLogo} /> : null}
         {visual.kind === 'orange' ? <Image source={require('../../../assets/logo-numerica-naranja.png')} style={styles.portalServiceLogo} /> : null}
         {visual.kind === 'green' ? <Image source={require('../../../assets/logo-numerica-verde.png')} style={styles.portalServiceLogo} /> : null}
@@ -59,13 +60,9 @@ export function PortalServiceCard({
       <View style={styles.portalServiceCopy}>
         <Text style={styles.portalServiceTitle}>{title}</Text>
         <Text style={styles.portalServiceDescription}>{description}</Text>
-      </View>
-      <View style={styles.portalServiceActionWrap}>
-        <Text style={[styles.portalServicePill, { borderColor: visual.accent, color: visual.accent }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62}>
-          {enabled ? 'ABRIR' : 'PRÓXIMAMENTE'}
-        </Text>
-        <View style={[styles.portalServiceArrow, { borderColor: visual.accent }]}>
-          <Text style={[styles.portalServiceArrowText, { color: visual.accent }]}>›</Text>
+        <View style={[styles.portalServiceButton, { backgroundColor: enabled ? visual.surface : '#EEF3F7' }]}>
+          <Text style={[styles.portalServiceButtonText, { color: enabled ? visual.accent : '#7A8A99' }]}>{enabled ? 'Ingresar' : 'No disponible'}</Text>
+          <MaterialCommunityIcons name="chevron-right" size={22} color={enabled ? visual.accent : '#7A8A99'} />
         </View>
       </View>
     </Pressable>
@@ -83,11 +80,31 @@ function PortalServiceGlyph({ kind }: { kind: string }) {
       </View>
     );
   }
+
   if (kind === 'pencil') {
-    return <View style={styles.portalGlyphPencilWrap}><Text style={styles.portalGlyphPencil}>✎</Text><View style={styles.portalGlyphPencilLine} /></View>;
+    return (
+      <View style={styles.portalGlyphPencilWrap}>
+        <Text style={styles.portalGlyphPencil}>✎</Text>
+        <View style={styles.portalGlyphPencilLine} />
+      </View>
+    );
   }
+
   if (kind === 'briefcase') {
-    return <View style={styles.portalGlyphBriefcase}><View style={styles.portalGlyphBriefcaseHandle} /><View style={styles.portalGlyphBriefcaseBody} /></View>;
+    return (
+      <View style={styles.portalGlyphBriefcase}>
+        <View style={styles.portalGlyphBriefcaseHandle} />
+        <View style={styles.portalGlyphBriefcaseBody} />
+      </View>
+    );
   }
-  return <View style={styles.portalGlyphDocument}><View style={styles.portalGlyphDocumentFold} /><View style={styles.portalGlyphDocumentLine} /><View style={styles.portalGlyphDocumentLine} /><Text style={styles.portalGlyphDocumentMoney}>$</Text></View>;
+
+  return (
+    <View style={styles.portalGlyphDocument}>
+      <View style={styles.portalGlyphDocumentFold} />
+      <View style={styles.portalGlyphDocumentLine} />
+      <View style={styles.portalGlyphDocumentLine} />
+      <Text style={styles.portalGlyphDocumentMoney}>$</Text>
+    </View>
+  );
 }
