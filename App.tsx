@@ -2258,6 +2258,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [botMessages, setBotMessages] = useState<BotMessage[]>([]);
   const [botDraft, setBotDraft] = useState('');
   const [botFeedbackByMessage, setBotFeedbackByMessage] = useState<BotFeedbackState>({});
+  const [pdfPositionDragging, setPdfPositionDragging] = useState(false);
   const botHistoryReadyRef = useRef(false);
   const [portalServiceQuery, setPortalServiceQuery] = useState('');
 
@@ -6945,6 +6946,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         <View style={styles.workspaceBodyFrame}>
         <ScrollView
           style={styles.workspaceBodyScroll}
+          scrollEnabled={!pdfPositionDragging}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.workspaceCanvasWithBottomNav, activeView === 'dashboard' && styles.efactHomeWorkspaceCanvas, { paddingBottom: activeView === 'portal' ? 20 + insets.bottom : 88 + insets.bottom }]}
           keyboardShouldPersistTaps="handled"
@@ -7049,6 +7051,13 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
             onPreviewPdf={(file) => setPdfPreview({ uri: file.uri, name: file.name || 'Documento PDF' })}
             onPreviewRemotePdf={(urlOrPath, fileName) => openPdfPreview(async () => urlOrPath, fileName)}
             onDownloadRemotePdf={(urlOrPath, fileName) => downloadPdf(async () => urlOrPath, fileName)}
+<<<<<<< HEAD
+=======
+            onOpenBot={() => setErubricaTabRequest('asistente')}
+            onPdfPositionDragChange={setPdfPositionDragging}
+            userName={portalFirstName}
+            userId={userId}
+>>>>>>> 6056aae (e-rubrica)
             onSync={async () => {
               try {
                 await sincronizarERubricaPendientes();
@@ -9578,7 +9587,21 @@ function PdfSignaturePositionPicker({
   );
 }
 
-function PdfDocumentPreview({ uri }: { uri: string }) {
+function PdfDocumentPreview({
+  uri,
+  selectable = false,
+  position = { x: 0.68, y: 0.82 },
+  onPositionChange,
+  onPageSizeChange,
+  onDragChange,
+}: {
+  uri: string;
+  selectable?: boolean;
+  position?: { x: number; y: number };
+  onPositionChange?: (position: { x: number; y: number }) => void;
+  onPageSizeChange?: (size: { widthMm: number; heightMm: number }) => void;
+  onDragChange?: (dragging: boolean) => void;
+}) {
   const [base64, setBase64] = useState<string | null>(null);
   const pdfJsViewerSource = usePdfJsSource(PDFJS_VIEWER_URI);
   const pdfJsWorkerSource = usePdfJsSource(PDFJS_WORKER_URI);
@@ -9592,8 +9615,17 @@ function PdfDocumentPreview({ uri }: { uri: string }) {
     return () => { mounted = false; };
   }, [uri]);
 
-  const html = base64 && pdfJsSource ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>html,body{margin:0;background:#eef3f7}#canvas{display:block;margin:12px auto;background:#fff;max-width:calc(100% - 24px);box-shadow:0 2px 8px #63758755}</style></head><body><canvas id="canvas"></canvas><script>${pdfJsSource}</script><script>try{const r=atob('${base64}'),b=new Uint8Array(r.length);for(let i=0;i<r.length;i++)b[i]=r.charCodeAt(i);pdfjsLib.getDocument({data:b,disableWorker:true}).promise.then(p=>p.getPage(1)).then(p=>{const v=p.getViewport({scale:1}),s=Math.min((innerWidth-24)/v.width,1.5),q=p.getViewport({scale:s}),c=document.getElementById('canvas');c.width=q.width;c.height=q.height;p.render({canvasContext:c.getContext('2d'),viewport:q})}).catch(()=>document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>')}catch(e){document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>'}</script></body></html>` : '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">Cargando PDF…</p>';
-  return <WebView originWhitelist={['*']} source={{ html }} javaScriptEnabled style={styles.pdfDocumentWebView} />;
+  const marker = selectable ? `<div id="marker" style="left:${(position.x * 100).toFixed(2)}%;top:${(position.y * 100).toFixed(2)}%">FIRMA</div>` : '';
+  const clickHandler = selectable ? `let dragging=false;const marker=document.getElementById('marker');const moveMarker=e=>{const r=c.getBoundingClientRect(),x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y=Math.max(0,Math.min(1,(e.clientY-r.top)/r.height));marker.style.left=(x*100)+'%';marker.style.top=(y*100)+'%';return{x,y}};c.addEventListener('pointerdown',e=>{dragging=true;c.setPointerCapture&&c.setPointerCapture(e.pointerId);window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:true}));moveMarker(e)});c.addEventListener('pointermove',e=>{if(dragging)moveMarker(e)});const finish=e=>{if(!dragging)return;dragging=false;const p=moveMarker(e);window.ReactNativeWebView.postMessage(JSON.stringify({type:'position',x:p.x,y:p.y}));window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:false}))};c.addEventListener('pointerup',finish);c.addEventListener('pointercancel',finish);` : '';
+  const sizeHandler = selectable ? `window.ReactNativeWebView.postMessage(JSON.stringify({type:'size',widthMm:v.width*25.4/72,heightMm:v.height*25.4/72}));` : '';
+  const html = base64 && pdfJsSource ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>html,body{margin:0;background:#eef3f7}#stage{text-align:center;padding:12px;box-sizing:border-box}#viewer{display:inline-block;position:relative}#canvas{display:block;background:#fff;max-width:100%;box-shadow:0 2px 8px #63758755}#marker{position:absolute;transform:translate(-50%,-50%);width:84px;height:36px;border:2px solid #087c3a;background:#e5f8ebdd;color:#087c3a;font:700 11px Arial;border-radius:4px;display:flex;align-items:center;justify-content:center;pointer-events:none;box-sizing:border-box}</style></head><body><div id="stage"><div id="viewer"><canvas id="canvas"></canvas>${marker}</div></div><script>${pdfJsSource}</script><script>try{const r=atob('${base64}'),b=new Uint8Array(r.length);for(let i=0;i<r.length;i++)b[i]=r.charCodeAt(i);pdfjsLib.getDocument({data:b,disableWorker:true}).promise.then(p=>p.getPage(1)).then(p=>{const v=p.getViewport({scale:1}),s=Math.min((innerWidth-24)/v.width,1.5),q=p.getViewport({scale:s}),c=document.getElementById('canvas');c.width=q.width;c.height=q.height;${sizeHandler}return p.render({canvasContext:c.getContext('2d'),viewport:q}).promise.then(()=>{${clickHandler}})}).catch(()=>document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>')}catch(e){document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>'}</script></body></html>` : '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">Cargando PDF…</p>';
+  const preview = <WebView originWhitelist={['*']} source={{ html }} javaScriptEnabled style={styles.pdfDocumentWebView} onMessage={(event) => { try { const result = JSON.parse(event.nativeEvent.data) as { type?: string; dragging?: boolean; x?: number; y?: number; widthMm?: number; heightMm?: number }; if (result.type === 'drag' && typeof result.dragging === 'boolean') onDragChange?.(result.dragging); if (result.type === 'position' && typeof result.x === 'number' && typeof result.y === 'number') onPositionChange?.({ x: result.x, y: result.y }); if (result.type === 'size' && typeof result.widthMm === 'number' && typeof result.heightMm === 'number') onPageSizeChange?.({ widthMm: result.widthMm, heightMm: result.heightMm }); } catch { /* ignore viewer messages */ } }} />;
+  if (!selectable) return preview;
+  return <View style={styles.pdfPositionCard}>
+    <View style={styles.pdfPositionHeader}><View style={styles.pdfPositionCopy}><Text style={styles.clientDetailLabel}>Ubicación de la firma</Text><Text style={styles.clientMeta}>Toca el PDF para elegir dónde se colocará la firma.</Text></View><View style={styles.pdfPositionBadge}><MaterialCommunityIcons name="gesture-tap" size={16} color={ERUBRICA_COLORS.primary} /><Text style={styles.pdfPositionBadgeText}>TÁCTIL</Text></View></View>
+    {preview}
+    <View style={styles.pdfPositionInfo}><MaterialCommunityIcons name="information-outline" size={18} color={ERUBRICA_COLORS.primary} /><Text style={styles.pdfPositionInfoText}>Posición horizontal {Math.round(position.x * 100)}% · vertical {Math.round(position.y * 100)}%</Text></View>
+  </View>;
 }
 
 const SOLICITUD_UBICACIONES_ECUADOR = [
@@ -9637,6 +9669,7 @@ function ERubricaMobileScreen({
   onDownloadRemotePdf,
   onSync,
   onOpenBot,
+  onPdfPositionDragChange,
   userName,
   userId,
 }: {
@@ -9653,6 +9686,7 @@ function ERubricaMobileScreen({
   onDownloadRemotePdf: (urlOrPath: string, fileName: string) => void;
   onSync: () => Promise<void>;
   onOpenBot: () => void;
+  onPdfPositionDragChange: (dragging: boolean) => void;
   userName: string;
   userId: number;
 }) {
@@ -9715,6 +9749,7 @@ function ERubricaMobileScreen({
   const [assistantDraft, setAssistantDraft] = useState('');
   const [assistantFeedback, setAssistantFeedback] = useState<BotFeedbackState>({});
   const selectTab = (nextTab: ERubricaTab) => {
+    onPdfPositionDragChange(false);
     if (tab === 'validar-firma' && nextTab !== 'validar-firma') {
       setPdfValidation(null);
       setPdfFile(null);
@@ -10091,8 +10126,12 @@ function ERubricaMobileScreen({
       form.append('pagina', String(signaturePage));
       const signatureWidthMm = 60;
       const signatureHeightMm = 35;
-      const xMm = Math.min(Math.max(0, signaturePageSize.widthMm - signatureWidthMm), Math.max(0, signaturePosition.x * signaturePageSize.widthMm - signatureWidthMm / 2));
-      const yMm = Math.min(Math.max(0, signaturePageSize.heightMm - signatureHeightMm), Math.max(0, signaturePosition.y * signaturePageSize.heightMm - signatureHeightMm / 2));
+      const pageWidthMm = Number.isFinite(signaturePageSize.widthMm) && signaturePageSize.widthMm > 0 ? signaturePageSize.widthMm : 210;
+      const pageHeightMm = Number.isFinite(signaturePageSize.heightMm) && signaturePageSize.heightMm > 0 ? signaturePageSize.heightMm : 297;
+      const positionX = Number.isFinite(signaturePosition.x) ? Math.min(1, Math.max(0, signaturePosition.x)) : 0.68;
+      const positionY = Number.isFinite(signaturePosition.y) ? Math.min(1, Math.max(0, signaturePosition.y)) : 0.82;
+      const xMm = Math.min(Math.max(0, pageWidthMm - signatureWidthMm), Math.max(0, positionX * pageWidthMm - signatureWidthMm / 2));
+      const yMm = Math.min(Math.max(0, pageHeightMm - signatureHeightMm), Math.max(0, positionY * pageHeightMm - signatureHeightMm / 2));
       form.append('xMm', xMm.toFixed(2));
       form.append('yMm', yMm.toFixed(2));
       form.append('anchoMm', '60');
@@ -10487,7 +10526,14 @@ function ERubricaMobileScreen({
               </View>
             </View>
             {pdfFile ? (
-              <PdfDocumentPreview uri={pdfFile.uri} />
+              <PdfDocumentPreview
+                uri={pdfFile.uri}
+                selectable
+                position={signaturePosition}
+                onPositionChange={setSignaturePosition}
+                onPageSizeChange={setSignaturePageSize}
+                onDragChange={onPdfPositionDragChange}
+              />
             ) : (
               <View style={styles.erubricaEmptyPreview}>
                 <View style={styles.erubricaPreviewCenter}>
