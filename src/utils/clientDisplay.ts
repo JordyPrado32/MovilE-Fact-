@@ -30,6 +30,17 @@ export function getClienteKey(cliente: Cliente, index: number) {
   return String(cliente.codcliente || row.Codcliente || row.CodCliente || getClienteIdentification(cliente) || `${getClienteDisplayName(cliente)}-${index}`);
 }
 
+export function isConsumidorFinal(cliente: Cliente) {
+  const identificacion = (cliente.numeroidentificacion ?? '').trim();
+  if (identificacion === '9999999999999') return true;
+
+  const nombres = (cliente.nombres ?? '').trim().toLowerCase();
+  const apellidos = (cliente.apellidos ?? '').trim().toLowerCase();
+  const correo = (cliente.correo ?? '').trim().toLowerCase();
+
+  return nombres === 'consumidor' && apellidos === 'final' && correo === 'consumidorfinal@numerica';
+}
+
 export function getFacturaProductoKey(producto: FacturaProducto, index: number, prefix = 'factura-producto') {
   const identity = producto.codproducto || producto.codprincipal || producto.descripcion || 'sin-codigo';
   return `${prefix}-${String(identity).trim().replace(/\s+/g, '-').slice(0, 80)}-${index}`;
