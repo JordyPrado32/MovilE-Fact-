@@ -33,6 +33,10 @@ export type ClienteFormState = {
   creditoTributarioProveedor: string;
   codigoProveedor: string;
   esSujetoRetencionProveedor: boolean;
+  registraInformacionBancariaProveedor: boolean;
+  bancoProveedor: string;
+  tipoCuentaProveedor: string;
+  numeroCuentaProveedor: string;
 };
 
 export function ClienteForm({

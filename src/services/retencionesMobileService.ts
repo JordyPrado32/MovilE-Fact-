@@ -305,7 +305,7 @@ function booleanValue(value: unknown) {
   if (typeof value === 'number') return value === 1;
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
-    if (['true', '1', 'si', 'sí', 's', 'a', 'autorizado'].includes(normalized)) return true;
+    if (['true', '1', 'si', 'sí', 's', 'a', 't', 'autorizado'].includes(normalized)) return true;
     if (['false', '0', 'no', 'n', 'pendiente', 'no autorizado', 'inactivo'].includes(normalized)) return false;
   }
   return null;

@@ -651,7 +651,7 @@ function getAccountStatementText(item: OperationalMobileItem, keys: string[]) {
   return value === null || value === undefined ? '' : String(value);
 }
 
-function getAccountStatementNumber(item: OperationalMobileItem, keys: string[], fallback: number) {
+export function getAccountStatementNumber(item: OperationalMobileItem, keys: string[], fallback: number) {
   const value = getAccountStatementRawValue(item, keys);
   const numberValue = parseAccountStatementNumber(value);
   return Number.isFinite(numberValue) ? numberValue : fallback;

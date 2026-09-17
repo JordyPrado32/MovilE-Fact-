@@ -1,4 +1,8 @@
-import { ApiError, apiRequest } from './apiClient';
+import { apiRequest } from './apiClient';
+import * as SecureStore from 'expo-secure-store';
+
+const DISMISSED_KEY_PREFIX = 'efact_dismissed_notifications_';
+const dismissedWrites = new Map<number, Promise<void>>();
 
 export type NotificacionItem = {
   id: string;
@@ -17,69 +21,43 @@ type ApiRow = Record<string, unknown>;
 export async function getNotificaciones(userId: number, top = 20) {
   if (userId <= 0) return [];
 
-  const params = new URLSearchParams({ top: String(top) });
-  const endpoints = [
-    `/api/notificaciones?${params.toString()}`,
-    `/api/notificaciones/mobile?${params.toString()}`,
-    `/api/notifications?${params.toString()}`,
-    `/api/usuarios/${userId}/notificaciones?top=${top}`,
-  ];
+  const response = await apiRequest<ApiRow[] | ApiRow>(`/api/notificaciones?top=${Math.max(1, Math.min(50, top))}`);
+  return deduplicateNotifications(
+    normalizeNotificationRows(response)
+      .filter((row) => belongsToUser(row, userId))
+      .map(toNotificationItem),
+  );
+}
 
-  const errors: unknown[] = [];
+export async function getDismissedNotificationIds(userId: number) {
+  if (userId <= 0) return new Set<string>();
 
-  for (const endpoint of endpoints) {
-    try {
-      const response = await apiRequest<ApiRow[] | ApiRow>(endpoint);
-      return normalizeNotificationRows(response).map(toNotificationItem);
-    } catch (error) {
-      errors.push(error);
-      if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 0)) throw error;
-    }
+  try {
+    const raw = await SecureStore.getItemAsync(`${DISMISSED_KEY_PREFIX}${userId}`);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+  } catch {
+    return new Set<string>();
   }
-
-  const non404Error = errors.find((error) => !(error instanceof ApiError && error.status === 404));
-  if (non404Error) throw non404Error;
-
-  throw new ApiError(404, 'No existe una ruta de notificaciones configurada en el backend.');
 }
 
-export async function dismissNotificacion(userId: number, notificationId: string) {
-  const id = encodeURIComponent(notificationId);
-  return requestFirst([
-    { path: `/api/notificaciones/${id}/descartar?idUsuario=${userId}`, method: 'PUT' },
-    { path: `/api/notificaciones/${id}?idUsuario=${userId}`, method: 'DELETE' },
-    { path: `/api/notificaciones/descartar?idUsuario=${userId}`, method: 'POST', body: JSON.stringify({ id: notificationId }) },
-    { path: `/api/notifications/${id}/dismiss?userId=${userId}`, method: 'PUT' },
-    { path: `/api/usuarios/${userId}/notificaciones/${id}`, method: 'DELETE' },
-  ]);
-}
+export async function rememberDismissedNotificationIds(userId: number, ids: Iterable<string>) {
+  if (userId <= 0) return;
 
-export async function clearNotificaciones(userId: number) {
-  return requestFirst([
-    { path: `/api/notificaciones/descartar-todas?idUsuario=${userId}`, method: 'PUT' },
-    { path: `/api/notificaciones?idUsuario=${userId}`, method: 'DELETE' },
-    { path: `/api/notificaciones/clear?idUsuario=${userId}`, method: 'POST' },
-    { path: `/api/notifications/clear?userId=${userId}`, method: 'POST' },
-    { path: `/api/usuarios/${userId}/notificaciones`, method: 'DELETE' },
-  ]);
-}
-
-async function requestFirst(requests: { path: string; method: string; body?: string }[]) {
-  const errors: unknown[] = [];
-  for (const request of requests) {
-    try {
-      await apiRequest<void>(request.path, {
-        method: request.method,
-        body: request.body,
-      });
-      return;
-    } catch (error) {
-      errors.push(error);
-      if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 405 && error.status !== 0)) throw error;
-    }
+  const previousWrite = dismissedWrites.get(userId) ?? Promise.resolve();
+  const write = previousWrite.catch(() => undefined).then(async () => {
+    const dismissed = await getDismissedNotificationIds(userId);
+    for (const id of ids) dismissed.add(String(id));
+    await SecureStore.setItemAsync(`${DISMISSED_KEY_PREFIX}${userId}`, JSON.stringify(Array.from(dismissed).slice(-500)));
+  });
+  dismissedWrites.set(userId, write);
+  try {
+    await write;
+  } catch {
+    // La bandeja del backend sigue siendo la fuente principal si SecureStore no esta disponible.
+  } finally {
+    if (dismissedWrites.get(userId) === write) dismissedWrites.delete(userId);
   }
-
-  throw errors.find((error) => error instanceof ApiError) ?? new ApiError(404, 'No existe una ruta para actualizar notificaciones en el backend.');
 }
 
 function normalizeNotificationRows(response: ApiRow[] | ApiRow): ApiRow[] {
@@ -131,6 +109,22 @@ function toNotificationItem(row: ApiRow): NotificacionItem {
     view: text(pickValue(row, ['vista', 'Vista', 'view', 'View', 'pantalla', 'Pantalla'])) || null,
     module: text(pickValue(row, ['modulo', 'Modulo', 'module', 'Module', 'servicio', 'Servicio'])) || null,
   };
+}
+
+function belongsToUser(row: ApiRow, userId: number) {
+  const owner = pickValue(row, ['idUsuario', 'IdUsuario', 'userId', 'UserId', 'usuarioId', 'UsuarioId']);
+  if (owner === null || owner === undefined || owner === '') return true;
+  return String(owner) === String(userId);
+}
+
+function deduplicateNotifications(items: NotificacionItem[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.id}|${item.title}|${item.text}|${item.date ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function pickValue(row: ApiRow, keys: string[]) {

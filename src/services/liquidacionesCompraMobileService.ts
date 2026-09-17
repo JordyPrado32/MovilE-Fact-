@@ -265,14 +265,16 @@ function toLiquidacionListItem(row: ApiRow): LiquidacionCompraListItem {
   const numero = text(pickValue(row, ['numero', 'Numero', 'numLiquidacion', 'NumLiquidacion', 'secuencial', 'Secuencial']));
   const numeroCompleto = text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento']));
   const numeroRetencion = text(pickValue(row, ['numeroRetencion', 'NumeroRetencion', 'numRetencion', 'NumRetencion']));
+  const autorizado = booleanValue(pickValue(row, ['autorizado', 'Autorizado']));
+  const estadoSri = text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estado', 'Estado']));
   return {
     codLiquidacion: numberValue(pickValue(row, ['codLiquidacion', 'CodLiquidacion', 'codliquidacion', 'codFactura', 'CodFactura', 'codfactura', 'secLiquidacion', 'SecLiquidacion', 'sec', 'Sec', 'idLiquidacion', 'IdLiquidacion', 'id', 'Id'])) ?? 0,
     numero: numeroCompleto || [serie, numero].filter(Boolean).join('-') || numero || null,
     fecha: text(pickValue(row, ['fecha', 'Fecha', 'fechaEmision', 'FechaEmision', 'fechaemision', 'Fechaemision', 'fechaDocumento', 'FechaDocumento', 'fechaSustento', 'FechaSustento', 'fechaCompra', 'FechaCompra', 'fechaCreacion', 'FechaCreacion', 'fechaAutorizacion', 'FechaAutorizacion'])) || null,
     proveedor: text(pickValue(row, ['proveedor', 'Proveedor', 'nombreProveedor', 'NombreProveedor', 'razonSocial', 'RazonSocial'])) || null,
     identificacionProveedor: text(pickValue(row, ['identificacionProveedor', 'IdentificacionProveedor', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc'])) || null,
-    estadoSri: text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estado', 'Estado'])) || null,
-    autorizado: booleanValue(pickValue(row, ['autorizado', 'Autorizado'])),
+    estadoSri: normalizeLiquidacionEstado(estadoSri, autorizado),
+    autorizado,
     numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'numAutorizacion', 'NumAutorizacion', 'claveAcceso', 'ClaveAcceso'])) || null,
     mensajeSri: text(pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje', 'errorSri', 'ErrorSri', 'observacion', 'Observacion'])) || null,
     retencionDisponible: booleanValue(pickValue(row, ['retencionDisponible', 'RetencionDisponible', 'tieneRetencion', 'TieneRetencion'])) === true || Boolean(numeroRetencion),
@@ -281,6 +283,16 @@ function toLiquidacionListItem(row: ApiRow): LiquidacionCompraListItem {
     iva: numberValue(pickValue(row, ['iva', 'Iva', 'IVA', 'valorIva', 'ValorIva', 'valorIVA', 'ValorIVA', 'totalIva', 'TotalIva', 'totalIVA', 'TotalIVA', 'importeIva', 'ImporteIva'])),
     total: numberValue(pickValue(row, ['total', 'Total', 'valortotal', 'ValorTotal', 'valorTotal', 'totalLiquidacion', 'TotalLiquidacion', 'totalComprobante', 'TotalComprobante', 'totalDocumento', 'TotalDocumento', 'montoTotal', 'MontoTotal', 'importeTotal', 'ImporteTotal', 'valorDocumento', 'ValorDocumento', 'totalGeneral', 'TotalGeneral', 'monto', 'Monto', 'importe', 'Importe', 'valor', 'Valor'])),
   };
+}
+
+function normalizeLiquidacionEstado(estadoSri: string, autorizado: boolean | null) {
+  const normalized = estadoSri.trim().toUpperCase();
+  if (autorizado === true || (normalized.includes('AUTORIZ') && !normalized.includes('NO AUTORIZ'))) return 'AUTORIZADO';
+  if (!normalized || normalized.length <= 2) return 'PENDIENTE';
+  if (normalized.includes('NO AUTORIZ') || normalized.includes('RECHAZ') || normalized.includes('DEVUELT') || normalized.includes('NEGAD') || normalized.includes('ERROR') || normalized.includes('ANULAD') || normalized.includes('CANCELAD')) {
+    return 'NO AUTORIZADO';
+  }
+  return estadoSri.trim();
 }
 
 function pickValue(row: ApiRow, keys: string[]) {
@@ -347,7 +359,7 @@ function booleanValue(value: unknown) {
   if (typeof value === 'number') return value === 1;
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
-    if (['true', '1', 'si', 'sí', 's', 'autorizado', 'activo', 'disponible'].includes(normalized)) return true;
+    if (['true', '1', 'si', 'sí', 's', 'a', 't', 'autorizado', 'activo', 'disponible'].includes(normalized)) return true;
     if (['false', '0', 'no', 'n', 'pendiente', 'no autorizado', 'inactivo', 'no disponible'].includes(normalized)) return false;
   }
   return null;

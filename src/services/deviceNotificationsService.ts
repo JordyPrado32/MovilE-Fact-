@@ -8,6 +8,7 @@ import { NotificacionItem } from './notificacionesService';
 const CHANNEL_ID = 'efact-activity';
 const DELIVERED_KEY_PREFIX = 'efact_delivered_notifications_';
 let notificationsModule: typeof ExpoNotifications | null = null;
+const activeSyncs = new Map<number, Promise<void>>();
 
 function isExpoGoRuntime() {
   return isRunningInExpoGo()
@@ -36,9 +37,22 @@ const canUseDeviceNotifications = Platform.OS !== 'web' && !isExpoGoRuntime();
 
 export async function syncDeviceNotifications(userId: number, items: NotificacionItem[]) {
   if (Platform.OS === 'web' || userId <= 0 || !items.length) return;
+  const activeSync = activeSyncs.get(userId);
+  if (activeSync) return activeSync;
+
+  const sync = syncDeviceNotificationsInternal(userId, items);
+  activeSyncs.set(userId, sync);
+  try {
+    await sync;
+  } finally {
+    if (activeSyncs.get(userId) === sync) activeSyncs.delete(userId);
+  }
+}
+
+async function syncDeviceNotificationsInternal(userId: number, items: NotificacionItem[]) {
   const Notifications = getNotificationsModule();
   if (!Notifications) return;
-  if (!canUseDeviceNotifications || userId <= 0 || !items.length) return;
+  if (!canUseDeviceNotifications) return;
 
   try {
     const granted = await ensureNotificationPermission(Notifications);
@@ -64,7 +78,7 @@ export async function syncDeviceNotifications(userId: number, items: Notificacio
       delivered.add(item.id);
     }
 
-    await SecureStore.setItemAsync(key, JSON.stringify(Array.from(delivered).slice(-80)));
+    await SecureStore.setItemAsync(key, JSON.stringify(Array.from(delivered).slice(-500)));
     await Notifications.setBadgeCountAsync(items.filter((item) => !item.read).length);
   } catch {
     // Expo Go Android no soporta push remoto; la bandeja interna sigue disponible.
