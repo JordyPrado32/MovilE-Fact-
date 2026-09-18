@@ -3,7 +3,6 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Picker } from '@react-native-picker/picker';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import {
@@ -107,6 +106,55 @@ export function PdfDocumentPreview({
     {preview}
     <View style={styles.pdfPositionInfo}><MaterialCommunityIcons name="information-outline" size={18} color={ERUBRICA_COLORS.primary} /><Text style={styles.pdfPositionInfoText}>Posición horizontal {Math.round(position.x * 100)}% · vertical {Math.round(position.y * 100)}%</Text></View>
   </View>;
+}
+
+type CompactSelectOption = { label: string; value: string };
+
+function CompactSelect({
+  title,
+  placeholder,
+  value,
+  options,
+  disabled = false,
+  onValueChange,
+}: {
+  title: string;
+  placeholder: string;
+  value: string;
+  options: CompactSelectOption[];
+  disabled?: boolean;
+  onValueChange: (value: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selected = options.find((option) => option.value === value);
+
+  return <>
+    <Pressable disabled={disabled} style={[styles.erubricaCompactSelect, disabled && styles.erubricaCompactSelectDisabled]} onPress={() => setIsOpen(true)}>
+      <Text numberOfLines={1} style={[styles.erubricaCompactSelectText, !selected && styles.erubricaCompactSelectPlaceholder]}>{selected?.label ?? placeholder}</Text>
+      <MaterialCommunityIcons name="chevron-down" size={20} color={disabled ? '#9AAABA' : ERUBRICA_COLORS.primary} />
+    </Pressable>
+    <Modal visible={isOpen} transparent animationType="fade" onRequestClose={() => setIsOpen(false)}>
+      <View style={styles.erubricaPaymentOverlay}>
+        <View style={styles.erubricaCompactSelectSheet}>
+          <View style={styles.erubricaCompactSelectHeader}>
+            <Text style={styles.erubricaPaymentTitle}>{title}</Text>
+            <Pressable style={styles.erubricaPaymentClose} onPress={() => setIsOpen(false)}>
+              <MaterialCommunityIcons name="close" size={20} color={ERUBRICA_COLORS.primary} />
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.erubricaCompactSelectOptions}>
+            {options.map((option) => {
+              const active = option.value === value;
+              return <Pressable key={option.value} style={[styles.erubricaCompactSelectOption, active && styles.erubricaCompactSelectOptionActive]} onPress={() => { onValueChange(option.value); setIsOpen(false); }}>
+                <Text style={[styles.erubricaCompactSelectOptionText, active && styles.erubricaCompactSelectOptionTextActive]}>{option.label}</Text>
+                {active ? <MaterialCommunityIcons name="check-circle" size={20} color={ERUBRICA_COLORS.primary} /> : null}
+              </Pressable>;
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  </>;
 }
 
 export function ERubricaMobileScreen({
@@ -481,6 +529,10 @@ export function ERubricaMobileScreen({
       setLoadingDocumentosPendientes(true);
       const uploaded = await cargarERubricaDocumentoPendiente(file);
       setDocumentosPendientes((current) => [{ ...uploaded, nombreDocumento: file.name || uploaded.nombreDocumento }, ...current]);
+      Alert.alert('Documento cargado', '¿Deseas seguir cargando documentos?', [
+        { text: 'No, terminar', style: 'cancel' },
+        { text: 'Sí, seguir cargando', onPress: () => void cargarNuevoDocumentoPendiente() },
+      ]);
     } catch (error) {
       Alert.alert('No se pudo cargar el documento', error instanceof ApiError ? error.message : 'Intenta nuevamente.');
     } finally {
@@ -1033,9 +1085,9 @@ export function ERubricaMobileScreen({
               <Text style={styles.erubricaHistoryTitle}>Documentos por Firmar</Text>
               <Text style={styles.erubricaHistorySubtitle}>Administra los PDF subidos y elige el documento que vas a firmar.</Text>
             </View>
-            <Pressable style={styles.erubricaPendingLoadButton} onPress={() => void cargarNuevoDocumentoPendiente()}>
-              <MaterialCommunityIcons name="folder-upload-outline" size={15} color={ERUBRICA_COLORS.text} />
-              <Text style={styles.erubricaPendingLoadText}>{loadingDocumentosPendientes ? 'Cargando...' : 'Cargar documento'}</Text>
+            <Pressable style={[styles.erubricaPendingLoadButton, styles.erubricaPendingLoadButtonPrimary]} onPress={() => void cargarNuevoDocumentoPendiente()}>
+              <MaterialCommunityIcons name="folder-upload-outline" size={15} color="#FFFFFF" />
+              <Text style={[styles.erubricaPendingLoadText, styles.erubricaPendingLoadTextPrimary]}>{loadingDocumentosPendientes ? 'Cargando...' : 'Cargar documento'}</Text>
             </Pressable>
           </View>
 
@@ -1164,13 +1216,7 @@ export function ERubricaMobileScreen({
             <Text style={styles.erubricaHistoryEyebrow}>DATOS PERSONALES</Text>
             <Text style={styles.erubricaSignStep}>Completa la información del solicitante</Text>
             <Text style={styles.clientDetailLabel}>Tipo de documento *</Text>
-            <View style={styles.erubricaHistorySearchBox}>
-              <Picker selectedValue={solicitudForm.tipoDocumento} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, tipoDocumento: String(value), identificacion: '', codigoDactilar: '' }))}>
-                <Picker.Item label="Selecciona un documento" value="" />
-                <Picker.Item label="Cédula" value="CEDULA" />
-                <Picker.Item label="Pasaporte" value="PASAPORTE" />
-              </Picker>
-            </View>
+            <CompactSelect title="Tipo de documento" placeholder="Selecciona un documento" value={solicitudForm.tipoDocumento} options={[{ label: 'Cédula', value: 'CEDULA' }, { label: 'Pasaporte', value: 'PASAPORTE' }]} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, tipoDocumento: value, identificacion: '', codigoDactilar: '' }))} />
             <Field label="Identificación *" value={solicitudForm.identificacion} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, identificacion: value }))} />
             {solicitudForm.tipoDocumento === 'CEDULA' ? <Field label="Código dactilar *" value={solicitudForm.codigoDactilar} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, codigoDactilar: value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10) }))} autoCapitalize="characters" /> : null}
             {solicitudPersona !== 'Persona natural con cédula' ? <>
@@ -1192,17 +1238,17 @@ export function ERubricaMobileScreen({
             <Pressable style={styles.erubricaHistorySearchBox} onPress={() => setShowSolicitudBirthDate(true)}><Text style={[styles.erubricaHistoryInput, !solicitudForm.fechaNacimiento && { color: '#8AA0B5' }]}>{solicitudForm.fechaNacimiento || 'Seleccionar fecha'}</Text><MaterialCommunityIcons name="calendar" size={19} color={ERUBRICA_COLORS.primary} /></Pressable>
             {showSolicitudBirthDate ? <DateTimePicker value={solicitudForm.fechaNacimiento ? new Date(`${solicitudForm.fechaNacimiento}T12:00:00`) : new Date(1990, 0, 1)} mode="date" maximumDate={new Date()} onValueChange={(_, date) => { if (Platform.OS !== 'ios') setShowSolicitudBirthDate(false); if (date) setSolicitudForm((current) => ({ ...current, fechaNacimiento: date.toISOString().slice(0, 10) })); }} onDismiss={() => setShowSolicitudBirthDate(false)} /> : null}
             <Text style={styles.clientDetailLabel}>Sexo *</Text>
-            <View style={styles.erubricaHistorySearchBox}><Picker selectedValue={solicitudForm.sexo} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, sexo: String(value) }))}><Picker.Item label="Selecciona" value="" /><Picker.Item label="Femenino" value="F" /><Picker.Item label="Masculino" value="M" /></Picker></View>
+            <CompactSelect title="Sexo" placeholder="Selecciona" value={solicitudForm.sexo} options={[{ label: 'Femenino', value: 'F' }, { label: 'Masculino', value: 'M' }]} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, sexo: value }))} />
             <Text style={styles.clientDetailLabel}>Nacionalidad *</Text>
-            <View style={styles.erubricaHistorySearchBox}><Picker selectedValue={solicitudForm.nacionalidad} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, nacionalidad: String(value) }))}>{solicitudCatalogos.nacionalidades.map((item) => <Picker.Item key={item} label={item} value={item} />)}</Picker></View>
+            <CompactSelect title="Nacionalidad" placeholder="Selecciona una nacionalidad" value={solicitudForm.nacionalidad} options={solicitudCatalogos.nacionalidades.map((item) => ({ label: item, value: item }))} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, nacionalidad: value }))} />
             <Field label="Celular *" value={solicitudForm.celular} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, celular: value }))} keyboardType="phone-pad" />
             <Field label="Correo principal *" value={solicitudForm.correo} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, correo: value }))} autoCapitalize="none" keyboardType="email-address" />
             <Field label="Teléfono secundario" value={solicitudForm.telefonoSecundario} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, telefonoSecundario: value }))} keyboardType="phone-pad" />
             <Field label="Correo secundario" value={solicitudForm.correoSecundario} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, correoSecundario: value }))} autoCapitalize="none" keyboardType="email-address" />
             <Text style={styles.clientDetailLabel}>Provincia *</Text>
-            <View style={styles.erubricaHistorySearchBox}><Picker selectedValue={solicitudForm.provincia} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, provincia: String(value), canton: '' }))}><Picker.Item label="Selecciona una provincia" value="" />{solicitudCatalogos.provincias.map((item) => <Picker.Item key={item.nombre} label={item.nombre} value={item.nombre} />)}</Picker></View>
+            <CompactSelect title="Provincia" placeholder="Selecciona una provincia" value={solicitudForm.provincia} options={solicitudCatalogos.provincias.map((item) => ({ label: item.nombre, value: item.nombre }))} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, provincia: value, canton: '' }))} />
             <Text style={styles.clientDetailLabel}>Cantón *</Text>
-            <View style={styles.erubricaHistorySearchBox}><Picker enabled={cantonesSolicitud.length > 0} selectedValue={solicitudForm.canton} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, canton: String(value) }))}><Picker.Item label={cantonesSolicitud.length ? 'Selecciona un cantón' : 'Selecciona una provincia'} value="" />{cantonesSolicitud.map((item) => <Picker.Item key={item} label={item} value={item} />)}</Picker></View>
+            <CompactSelect title="Cantón" placeholder={cantonesSolicitud.length ? 'Selecciona un cantón' : 'Selecciona una provincia'} value={solicitudForm.canton} options={cantonesSolicitud.map((item) => ({ label: item, value: item }))} disabled={cantonesSolicitud.length === 0} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, canton: value }))} />
             <Field label="Dirección *" value={solicitudForm.direccion} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, direccion: value }))} />
           </View>
 
