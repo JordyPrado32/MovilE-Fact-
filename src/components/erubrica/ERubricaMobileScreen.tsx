@@ -29,6 +29,7 @@ import { formatDocumentDate } from '../../utils/documentFormatting';
 import { arrayBufferToBase64, buildDeviceFileName } from '../../utils/fileUtils';
 import { EmptyState } from '../ui/FeedbackStates';
 import { Field, MessageBox, PrimaryButton, SecondaryButton } from '../ui/FormControls';
+import { ResultCollection } from '../data/ResultCollection';
 import { styles } from '../../styles/appStyles';
 import type { BotFeedbackState, BotMessage } from '../../types/bot';
 import { EfactBotScreen } from '../bot/EfactBotScreen';
@@ -225,7 +226,6 @@ export function ERubricaMobileScreen({
   const [historialQuery, setHistorialQuery] = useState('');
   const [historialDate, setHistorialDate] = useState('');
   const [historialStatus, setHistorialStatus] = useState('');
-  const [historialSolicitudesPage, setHistorialSolicitudesPage] = useState(1);
   const [syncingSolicitudId, setSyncingSolicitudId] = useState<number | null>(null);
   const [signaturePage, setSignaturePage] = useState(1);
   const [signaturePageCount, setSignaturePageCount] = useState(1);
@@ -312,6 +312,69 @@ export function ERubricaMobileScreen({
     const composed = `${itemValue(item, ['solNombres', 'SolNombres'])} ${itemValue(item, ['solPrimerApellido', 'SolPrimerApellido'])} ${itemValue(item, ['solSegundoApellido', 'SolSegundoApellido'])}`.trim();
     return composed || label(item, ['titular', 'nombreTitular', 'solicitante', 'nombres', 'nombre', 'cliente', 'razonSocial'], fallback);
   };
+  const recuperarSolicitudBorrador = (datosJson: string) => {
+    const datos = JSON.parse(datosJson) as Record<string, unknown>;
+    if (datos.solicitudForm && typeof datos.solicitudForm === 'object') {
+      return {
+        plan: datos.solicitudPlan as typeof solicitudPlan | undefined,
+        persona: typeof datos.solicitudPersona === 'string' ? datos.solicitudPersona : null,
+        form: datos.solicitudForm as typeof solicitudForm,
+      };
+    }
+
+    const get = (...keys: string[]) => {
+      const value = keys.map((key) => datos[key]).find((item) => item !== null && item !== undefined && String(item).trim());
+      return value === undefined ? '' : String(value);
+    };
+    const tieneRuc = get('SolTieneRuc', 'solTieneRuc').toLowerCase() === 'true';
+    const tipoPersona = get('SolTipoPersona', 'solTipoPersona').toUpperCase();
+    if (!tipoPersona) throw new Error('invalid-draft');
+    const vigencias: Record<string, typeof solicitudPlan> = {
+      '7 DIAS': { label: '7 días', price: 9 },
+      '30 DIAS': { label: '30 días', price: 12 },
+      '1 ANIO': { label: '1 año', price: 21 },
+      '2 ANIOS': { label: '2 años', price: 31 },
+      '3 ANIOS': { label: '3 años', price: 40 },
+      '4 ANIOS': { label: '4 años', price: 49 },
+      '5 ANIOS': { label: '5 años', price: 57 },
+    };
+    const vigencia = get('SolVigencia', 'solVigencia').toUpperCase();
+    return {
+      plan: vigencias[vigencia] ?? { label: '7 días', price: 9 },
+      persona: tipoPersona === 'JURIDICA'
+        ? 'Representante legal'
+        : tieneRuc ? 'Persona natural con RUC' : 'Persona natural con cédula',
+      form: {
+        ...SOLICITUD_FORM_INITIAL,
+        tipoDocumento: get('SolTipoIdentificacion', 'solTipoIdentificacion'),
+        identificacion: get('SolIdentificacion', 'solIdentificacion'),
+        codigoDactilar: get('SolCodigoDactilar', 'solCodigoDactilar'),
+        poseeRuc: tieneRuc,
+        ruc: get('SolNroRuc', 'solNroRuc'),
+        nombres: get('SolNombres', 'solNombres'),
+        primerApellido: get('SolPrimerApellido', 'solPrimerApellido'),
+        segundoApellido: get('SolSegundoApellido', 'solSegundoApellido'),
+        fechaNacimiento: get('SolFechaNacimiento', 'solFechaNacimiento').split('T')[0],
+        nacionalidad: get('SolNacionalidad', 'solNacionalidad') || SOLICITUD_FORM_INITIAL.nacionalidad,
+        sexo: get('SolSexo', 'solSexo'),
+        celular: get('SolTelefono1', 'solTelefono1'),
+        telefonoSecundario: get('SolTelefono2', 'solTelefono2'),
+        correo: get('SolCorreo1', 'solCorreo1'),
+        correoSecundario: get('SolCorreo2', 'solCorreo2'),
+        provincia: get('SolProvincia', 'solProvincia'),
+        canton: get('SolCanton', 'solCanton'),
+        direccion: get('SolDireccion', 'solDireccion'),
+        razonSocialEmpresa: get('SolCompanyName', 'solCompanyName'),
+        departamento: get('SolDepartment', 'solDepartment'),
+        cargo: get('SolPosition', 'solPosition'),
+        motivoFirma: get('SolReason', 'solReason'),
+        representanteTipoDocumento: get('SolIdentificationTypeManager', 'solIdentificationTypeManager'),
+        representanteIdentificacion: get('SolIdentificationManager', 'solIdentificationManager'),
+        representanteNombres: get('SolNamesManager', 'solNamesManager'),
+        representanteApellidos: get('SolLastNameManager', 'solLastNameManager'),
+      },
+    };
+  };
   const renovacionActual = planDisponible ?? renovacion ?? dashboardPayload?.renovacion ?? dashboardPayload?.Renovacion;
   const activeFirma = firmas[0] ?? null;
   const firmaEfact = firmaEmisores.find((item) => item.tieneCertificado && item.tieneClave) ?? null;
@@ -394,9 +457,6 @@ export function ERubricaMobileScreen({
   const uanatacaInicio = label(activeFirma, ['estadoUanataca', 'SolUanatacaStatusText', 'uanatacaStatus', 'estado'], 'No enviado');
   const recientesInicio = historialDocumentos.slice(0, 3);
   const porFirmarInicio = documentosPendientes.length || documentosPorFirmar.length;
-  const totalHistorialSolicitudesPages = Math.max(1, Math.ceil(filteredHistorialSolicitudes.length / 10));
-  const paginaHistorialSolicitudes = Math.min(historialSolicitudesPage, totalHistorialSolicitudesPages);
-  const historialSolicitudesPagina = filteredHistorialSolicitudes.slice((paginaHistorialSolicitudes - 1) * 10, paginaHistorialSolicitudes * 10);
   const cargarFirmaActiva = async (mostrarError = false) => {
     try {
       setLoadingFirmaDetalle(true);
@@ -824,11 +884,10 @@ export function ERubricaMobileScreen({
   };
   const usarSolicitudBorrador = (borrador: ERubricaSolicitudBorrador) => {
     try {
-      const datos = JSON.parse(borrador.datosJson) as { solicitudPlan?: typeof solicitudPlan; solicitudPersona?: string | null; solicitudForm?: typeof solicitudForm };
-      if (!datos.solicitudForm) throw new Error('invalid-draft');
-      setSolicitudPlan(datos.solicitudPlan ?? { label: '7 días', price: 9 });
-      setSolicitudPersona(datos.solicitudPersona ?? null);
-      setSolicitudForm({ ...SOLICITUD_FORM_INITIAL, ...datos.solicitudForm });
+      const datos = recuperarSolicitudBorrador(borrador.datosJson);
+      setSolicitudPlan(datos.plan ?? { label: '7 días', price: 9 });
+      setSolicitudPersona(datos.persona);
+      setSolicitudForm({ ...SOLICITUD_FORM_INITIAL, ...datos.form });
       setSolicitudFiles(SOLICITUD_FILES_INITIAL);
       setSolicitudId(null);
       setSolicitudStep(1);
@@ -1169,7 +1228,7 @@ export function ERubricaMobileScreen({
                 <MaterialCommunityIcons name="magnify" size={19} color="#5C748A" />
                 <TextInput
                   value={historialQuery}
-                  onChangeText={(value) => { setHistorialQuery(value); setHistorialSolicitudesPage(1); }}
+                  onChangeText={setHistorialQuery}
                   placeholder="Buscar por nombre de documento..."
                   placeholderTextColor="#8AA0B5"
                   style={styles.erubricaHistoryInput}
@@ -1410,20 +1469,26 @@ export function ERubricaMobileScreen({
                 <MaterialCommunityIcons name="magnify" size={19} color="#5C748A" />
                 <TextInput
                   value={historialQuery}
-                  onChangeText={setHistorialQuery}
+                  onChangeText={(value) => setHistorialQuery(value)}
                   placeholder="Buscar por titular o referencia..."
                   placeholderTextColor="#8AA0B5"
                   style={styles.erubricaHistoryInput}
                 />
               </View>
               <View style={styles.erubricaHistoryFilterRow}>
-                <TextInput value={historialStatus} onChangeText={(value) => { setHistorialStatus(value); setHistorialSolicitudesPage(1); }} placeholder="Pago: todos" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
-                <TextInput value={historialDate} onChangeText={(value) => { setHistorialDate(value); setHistorialSolicitudesPage(1); }} placeholder="Solicitud: todos" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
+                <TextInput value={historialStatus} onChangeText={setHistorialStatus} placeholder="Pago: todos" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
+                <TextInput value={historialDate} onChangeText={setHistorialDate} placeholder="Solicitud: todos" placeholderTextColor="#8AA0B5" style={styles.erubricaHistorySmallInput} />
               </View>
               <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Consultar estado" loading={false} onPress={onSync} />
             </View>
             <Text style={styles.erubricaHistoryFooter}>{filteredHistorialSolicitudes.length} resultado(s)</Text>
-            {filteredHistorialSolicitudes.length === 0 ? <EmptyState title="Sin historial" text="No hay solicitudes registradas con los filtros actuales." /> : historialSolicitudesPagina.map((item, index) => {
+            {filteredHistorialSolicitudes.length === 0 ? <EmptyState title="Sin historial" text="No hay solicitudes registradas con los filtros actuales." /> : <ResultCollection
+              items={filteredHistorialSolicitudes}
+              pageSize={5}
+              variant="plain"
+              resetKey={`${historialQuery}|${historialStatus}|${historialDate}`}
+              keyExtractor={(item, index) => `erubrica-historial-solicitud-${itemValue(item, ['solId', 'SolId', 'id']) || index}`}
+              renderItem={(item) => {
               const date = formatSignedDate(item);
               const titular = buildSolicitudTitular(item);
               const firma = label(item, ['firma', 'formato', 'solFormatoFirma', 'SolFormatoFirma', 'producto', 'descripcion'], 'Archivo .P12');
@@ -1432,14 +1497,19 @@ export function ERubricaMobileScreen({
               const subtotal = Number.isFinite(monto) ? `$${monto.toFixed(2).replace('.', ',')}` : '$0,00';
               const iva = label(item, ['iva', 'valorIva'], '$0,00');
               const total = Number.isFinite(monto) ? `$${monto.toFixed(2).replace('.', ',')}` : label(item, ['total', 'valorTotal', 'monto'], '$0,00');
-              const pago = label(item, ['estadoPago', 'pago', 'referenciaPago', 'solPagoExitoso', 'SolPagoExitoso'], 'Pendiente');
               const estadoSolicitud = label(item, ['estadoSolicitud', 'EstadoSolicitud', 'estado', 'status', 'solEstado'], 'Pendiente');
               const estadoUanataca = label(item, ['estadoUanataca', 'solUanatacaStatusText', 'SolUanatacaStatusText', 'uanataca', 'estadoProveedor'], 'Pendiente de pago');
               const soporte = label(item, ['soporte', 'ultimaNotificacion', 'UltimaNotificacion', 'observacion', 'mensaje'], 'Sin avisos');
               const solicitudId = Number(itemValue(item, ['solId', 'SolId', 'id']));
               const pagada = /^(true|1|si|sí)$/i.test(itemValue(item, ['solPagoExitoso', 'SolPagoExitoso', 'pagoExitoso']));
+              const estadoPagoRegistrado = label(item, ['estadoPago', 'pago', 'referenciaPago'], '');
+              const pago = pagada
+                ? 'Pago confirmado'
+                : /^(true|false|0|1)$/i.test(estadoPagoRegistrado) || !estadoPagoRegistrado
+                  ? 'Pendiente de pago'
+                  : estadoPagoRegistrado;
               return (
-                <View key={`erubrica-historial-solicitud-${index}`} style={styles.erubricaRequestHistoryRow}>
+                <View style={styles.erubricaRequestHistoryRow}>
                   <View style={styles.erubricaRequestHistoryRowTop}>
                     <View style={styles.erubricaPendingDocCopy}>
                       <Text style={styles.erubricaHistoryDocName} numberOfLines={2}>{titular}</Text>
@@ -1466,12 +1536,8 @@ export function ERubricaMobileScreen({
                   </View> : null}
                 </View>
               );
-            })}
-            <View style={styles.erubricaPendingActionRow}>
-              <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Anterior" onPress={() => setHistorialSolicitudesPage((page) => Math.max(1, page - 1))} />
-              <Text style={styles.erubricaHistoryFooter}>Página {paginaHistorialSolicitudes} de {totalHistorialSolicitudesPages}</Text>
-              <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Siguiente" onPress={() => setHistorialSolicitudesPage((page) => Math.min(totalHistorialSolicitudesPages, page + 1))} />
-            </View>
+            }}
+            />}
           </View>
         </View>
       ) : null}
