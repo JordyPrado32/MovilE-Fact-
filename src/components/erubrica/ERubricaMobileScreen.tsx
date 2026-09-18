@@ -882,6 +882,27 @@ export function ERubricaMobileScreen({
     }
     return true;
   };
+  const avanzarSolicitudPaso = () => {
+    if (solicitudStep === 2 && !solicitudPersona) {
+      Alert.alert('Selecciona el titular', 'Elige el tipo de persona para continuar.');
+      return;
+    }
+    if (solicitudStep === 3) {
+      const faltanDatos = !solicitudForm.tipoDocumento || !solicitudForm.identificacion || !solicitudForm.nombres || !solicitudForm.primerApellido || !solicitudForm.fechaNacimiento || !solicitudForm.sexo || !solicitudForm.celular || !solicitudForm.correo || !solicitudForm.provincia || !solicitudForm.canton || !solicitudForm.direccion;
+      if (faltanDatos) {
+        Alert.alert('Datos incompletos', 'Completa los datos obligatorios del solicitante antes de continuar.');
+        return;
+      }
+    }
+    if (solicitudStep === 4) {
+      const pendiente = solicitudDocumentoItems.find((item) => item.label.includes('*') && !solicitudFiles[item.key]);
+      if (pendiente) {
+        Alert.alert('Documento pendiente', `Adjunta: ${pendiente.label.replace(' *', '')}.`);
+        return;
+      }
+    }
+    setSolicitudStep((current) => Math.min(5, current + 1));
+  };
   const openPaymentSummary = async () => {
     if (!validateSolicitudBeforePayment()) return;
     setSolicitudSaving(true);
@@ -1202,10 +1223,10 @@ export function ERubricaMobileScreen({
           </View>
 
           <View style={styles.erubricaRequestSteps}>
-            {['Configuración', 'Titular', 'Información', 'Revisión', 'Confirmación'].map((step, index) => {
+            {['Configuración', 'Titular', 'Información', 'Documentos', 'Confirmación'].map((step, index) => {
               const active = solicitudStep >= index + 1;
               return (
-                <Pressable key={step} style={styles.erubricaRequestStep} onPress={() => setSolicitudStep(index + 1)}>
+                <Pressable key={step} style={styles.erubricaRequestStep} onPress={() => { if (index + 1 <= solicitudStep) setSolicitudStep(index + 1); }}>
                   <View style={[styles.erubricaRequestStepCircle, active && styles.erubricaRequestStepCircleActive]}>
                     <Text style={[styles.erubricaRequestStepNumber, active && styles.erubricaRequestStepNumberActive]}>{index + 1}</Text>
                   </View>
@@ -1215,7 +1236,7 @@ export function ERubricaMobileScreen({
             })}
           </View>
 
-          <View style={styles.erubricaRequestPanel}>
+          {solicitudStep === 1 ? <View style={styles.erubricaRequestPanel}>
             <Text style={styles.erubricaSignStep}>Configura tu firma electrónica</Text>
             <Text style={styles.erubricaSignHint}>Selecciona el formato y la vigencia antes de completar los datos del titular.</Text>
             <View style={styles.erubricaRequestOptionActive}>
@@ -1247,9 +1268,9 @@ export function ERubricaMobileScreen({
               })}
             </View>
             <Text style={styles.erubricaRequestTaxNote}>Precios sin IVA. El total final se mostrará en el pago con el IVA correspondiente.</Text>
-          </View>
+          </View> : null}
 
-          <View style={styles.erubricaRequestPersonGrid}>
+          {solicitudStep === 2 ? <View style={styles.erubricaRequestPersonGrid}>
             {['Persona natural con cédula', 'Persona natural con RUC', 'Representante legal'].map((option) => {
               const active = solicitudPersona === option;
               return (
@@ -1259,9 +1280,9 @@ export function ERubricaMobileScreen({
                 </Pressable>
               );
             })}
-          </View>
+          </View> : null}
 
-          {solicitudPersona ? <>
+          {solicitudStep === 3 && solicitudPersona ? <>
           <View style={styles.erubricaRequestPanel}>
             <Text style={styles.erubricaHistoryEyebrow}>DATOS PERSONALES</Text>
             <Text style={styles.erubricaSignStep}>Completa la información del solicitante</Text>
@@ -1323,7 +1344,9 @@ export function ERubricaMobileScreen({
             </>
           ) : null}
 
-          <View style={styles.erubricaRequestPanel}>
+          </> : null}
+
+          {solicitudStep === 4 && solicitudPersona ? <View style={styles.erubricaRequestPanel}>
             <Text style={styles.erubricaHistoryEyebrow}>DOCUMENTOS DE SOPORTE</Text>
             <Text style={styles.erubricaSignStep}>Adjunta los archivos requeridos</Text>
             {solicitudDocumentoItems.map((item) => {
@@ -1339,14 +1362,26 @@ export function ERubricaMobileScreen({
                 </Pressable>
               );
             })}
-          </View>
+          </View> : null}
 
-          <View style={styles.erubricaSignActions}>
-            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar formulario" onPress={() => { setSolicitudPersona(null); setSolicitudForm(SOLICITUD_FORM_INITIAL); setSolicitudFiles(SOLICITUD_FILES_INITIAL); setSolicitudId(null); }} />
+          {solicitudStep === 5 ? <>
+            <View style={styles.erubricaRequestPanel}>
+              <Text style={styles.erubricaHistoryEyebrow}>REVISIÓN</Text>
+              <Text style={styles.erubricaSignStep}>Confirma la información de la solicitud</Text>
+              <Text style={styles.erubricaSignHint}>{solicitudPlan.label} · {solicitudPersona}</Text>
+              <Text style={styles.erubricaRequestOptionTitle}>{[solicitudForm.nombres, solicitudForm.primerApellido, solicitudForm.segundoApellido].filter(Boolean).join(' ')}</Text>
+              <Text style={styles.erubricaRequestOptionText}>{solicitudForm.identificacion} · {solicitudForm.correo}</Text>
+            </View>
+            <View style={styles.erubricaSignActions}>
+              <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Anterior" onPress={() => setSolicitudStep(4)} />
+              <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Guardar solicitud" onPress={() => void guardarSolicitudBorrador()} />
+              <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Confirmar y pagar" loading={solicitudSaving} onPress={openPaymentSummary} />
+            </View>
+          </> : <View style={styles.erubricaSignActions}>
+            {solicitudStep > 1 ? <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Anterior" onPress={() => setSolicitudStep((current) => Math.max(1, current - 1))} /> : <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar formulario" onPress={() => { setSolicitudPersona(null); setSolicitudForm(SOLICITUD_FORM_INITIAL); setSolicitudFiles(SOLICITUD_FILES_INITIAL); setSolicitudId(null); }} />}
             <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Guardar solicitud" onPress={() => void guardarSolicitudBorrador()} />
-            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Siguiente" loading={solicitudSaving} onPress={openPaymentSummary} />
-          </View>
-          </> : <View style={styles.erubricaRequestPanel}><Text style={styles.erubricaSignStep}>Selecciona el tipo de solicitud</Text><Text style={styles.erubricaSignHint}>El formulario se habilitará cuando elijas una de las tres opciones.</Text></View>}
+            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Siguiente" loading={false} onPress={avanzarSolicitudPaso} />
+          </View>}
         </View>
       ) : null}
       {tab === 'historial-solicitudes' ? (
