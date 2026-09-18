@@ -203,13 +203,20 @@ export function ERubricaMobileScreen({
   const [assistantMessages, setAssistantMessages] = useState<BotMessage[]>([]);
   const [assistantDraft, setAssistantDraft] = useState('');
   const [assistantFeedback, setAssistantFeedback] = useState<BotFeedbackState>({});
+  const limpiarPdfTemporal = () => {
+    setPdfFile(null);
+    setPdfValidation(null);
+    setSignedFileUri(null);
+    setSignedDocumentsModalOpen(false);
+    setDocumentoPendienteSeleccionado(null);
+    setSignaturePage(1);
+    setSignaturePageCount(1);
+    setSignaturePosition({ x: 0.68, y: 0.82 });
+  };
   const selectTab = (nextTab: ERubricaTab) => {
     onPdfPositionDragChange(false);
     if ((tab === 'firmar' || tab === 'validar-firma') && nextTab !== tab) {
-      setPdfValidation(null);
-      setPdfFile(null);
-      setSignedDocumentsModalOpen(false);
-      setDocumentoPendienteSeleccionado(null);
+      limpiarPdfTemporal();
     }
     if (nextTab === 'firmar' && !puedeFirmarPdf) {
       Alert.alert('Firma no disponible', 'Primero adquiere una firma de E-Rúbrica para usar Firmar PDF.');
@@ -220,12 +227,15 @@ export function ERubricaMobileScreen({
   };
   useEffect(() => {
     if (initialPdf) {
-      setPdfFile(initialPdf);
       selectTab('firmar');
+      setPdfFile(initialPdf);
     }
   }, [initialPdf]);
   useEffect(() => {
-    setTab(requestedTab ?? 'inicio');
+    const nextTab = requestedTab ?? 'inicio';
+    if ((tab === 'firmar' || tab === 'validar-firma') && nextTab !== tab)
+      limpiarPdfTemporal();
+    setTab(nextTab);
   }, [requestedTab]);
   const dashboardRecord = data as (ERubricaDashboard & Record<string, unknown>) | null;
   const dashboardPayload = (dashboardRecord?.data ?? dashboardRecord?.Data ?? dashboardRecord) as (ERubricaDashboard & Record<string, unknown>) | null;
@@ -450,13 +460,9 @@ export function ERubricaMobileScreen({
       if (!url || !directory) throw new Error('missing-document');
       const cookie = getAuthSessionCookie();
       const download = await FileSystem.downloadAsync(url, `${directory}firmar-${Date.now()}-${buildDeviceFileName(documento.nombreDocumento, '.pdf')}`, cookie ? { headers: { Cookie: cookie } } : undefined);
+      selectTab('firmar');
       setPdfFile({ uri: download.uri, name: documento.nombreDocumento, mimeType: 'application/pdf' });
       setDocumentoPendienteSeleccionado(documento.nombreArchivo);
-      setSignedFileUri(null);
-      setSignaturePage(1);
-      setSignaturePageCount(1);
-      setSignaturePosition({ x: 0.68, y: 0.82 });
-      selectTab('firmar');
     } catch (error) {
       Alert.alert('No se pudo abrir el documento', error instanceof ApiError ? error.message : 'No se pudo descargar el PDF seleccionado.');
     } finally {
@@ -601,10 +607,11 @@ export function ERubricaMobileScreen({
       if (documentoPendienteSeleccionado) form.append('documentoPendiente', documentoPendienteSeleccionado);
       const result = await firmarERubricaDocumento(form);
       const base64 = arrayBufferToBase64(result.bytes);
-      const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}documento-firmado-${Date.now()}.pdf`;
+      const signedName = `${(pdfFile.name || 'documento.pdf').replace(/\.pdf$/i, '')}_firmado.pdf`;
+      const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}${signedName}`;
       await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
       if (preview) {
-        onPreviewPdf({ uri, name: `${pdfFile.name.replace(/\.pdf$/i, '')}-vista-previa-firmada.pdf`, mimeType: 'application/pdf' });
+        onPreviewPdf({ uri, name: signedName, mimeType: 'application/pdf' });
       } else {
         setSignedFileUri(uri);
         if (documentoPendienteSeleccionado) {
@@ -931,15 +938,9 @@ export function ERubricaMobileScreen({
 
           <View style={styles.erubricaSignActions}>
             <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar formulario" onPress={() => {
-              setPdfFile(null);
+              limpiarPdfTemporal();
               setCertificateFile(null);
               setCertificatePassword('');
-              setSignedFileUri(null);
-              setDocumentoPendienteSeleccionado(null);
-              setPdfValidation(null);
-              setSignaturePage(1);
-              setSignaturePageCount(1);
-              setSignaturePosition({ x: 0.68, y: 0.82 });
             }} />
             <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Estampar PDF" loading={signing} onPress={signPdfDocument} />
           </View>
@@ -952,7 +953,7 @@ export function ERubricaMobileScreen({
             <View style={styles.erubricaValidateHeader}>
               <View style={styles.erubricaValidateTitleRow}>
                 <MaterialCommunityIcons name="file-lock-outline" size={18} color={ERUBRICA_COLORS.text} />
-                <Text style={styles.erubricaSignStep}>Documento firmado en PDF</Text>
+                <Text style={styles.erubricaSignStep}>1. Documento</Text>
               </View>
               <Pressable style={styles.erubricaSignedDocsButton} onPress={() => setSignedDocumentsModalOpen(true)}>
                 <MaterialCommunityIcons name="folder-lock-outline" size={15} color="#FFFFFF" />
@@ -1001,18 +1002,6 @@ export function ERubricaMobileScreen({
             <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Analizar firma digital" loading={validatingPdf} onPress={validatePdfSignature} />
           </View>
 
-          <View style={styles.erubricaAdviceCard}>
-            <View style={styles.erubricaAdviceHeader}>
-              <MaterialCommunityIcons name="shield-search" size={18} color={ERUBRICA_COLORS.primary} />
-              <Text style={styles.erubricaAdviceTitle}>Qué se verificará</Text>
-            </View>
-            {['Integridad del documento', 'Certificado digital', 'Revocación OCSP/CRL', 'Sello de tiempo RFC 3161', 'Validez legal'].map((item) => (
-              <View key={item} style={styles.erubricaAdviceRow}>
-                <MaterialCommunityIcons name="check-decagram-outline" size={16} color={ERUBRICA_COLORS.primary} />
-                <Text style={styles.erubricaAdviceText}>{item}</Text>
-              </View>
-            ))}
-          </View>
           {pdfValidation ? (() => {
             const unwrap = (input: unknown): Record<string, unknown> => {
               if (typeof input === 'string') { try { return unwrap(JSON.parse(input)); } catch { return {}; } }
