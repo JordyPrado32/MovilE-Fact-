@@ -646,6 +646,7 @@ export function ERubricaMobileScreen({
       }
       const form = new FormData();
       appendERubricaFile(form, 'pdf', { uri: pdfFile.uri, name: pdfFile.name || 'documento.pdf' });
+      form.append('nombreOriginal', pdfFile.name || 'documento.pdf');
       form.append('idEmisor', String(emisorFirma.id));
       form.append('pagina', String(signaturePage));
       const signatureWidthMm = 60;
