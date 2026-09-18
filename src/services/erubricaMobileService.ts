@@ -105,6 +105,25 @@ export const configurarERubricaFirma = (id: number, certificado: { uri: string; 
 
 export const getERubricaSolicitudes = () => apiRequest<unknown[]>(`${ROOT}/solicitudes`);
 
+export type ERubricaSolicitudBorrador = {
+  id: string;
+  titulo: string;
+  fechaGuardado: string;
+  datosJson: string;
+};
+
+export const getERubricaSolicitudBorradores = () =>
+  apiRequest<ERubricaSolicitudBorrador[]>(`${ROOT}/solicitudes/borradores`);
+
+export const guardarERubricaSolicitudBorrador = (titulo: string, datosJson: string) =>
+  apiRequest<ERubricaSolicitudBorrador>(`${ROOT}/solicitudes/borradores`, {
+    method: 'POST',
+    body: JSON.stringify({ titulo, datosJson }),
+  });
+
+export const eliminarERubricaSolicitudBorrador = (id: string) =>
+  apiRequest<{ eliminado: boolean }>(`${ROOT}/solicitudes/borradores/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
 export const getERubricaFirmas = () => apiRequest<unknown[]>(`${ROOT}/firmas`);
 
 export type ERubricaDocumentoFirmado = {
@@ -136,6 +155,7 @@ export const getERubricaDocumentosPendientes = () =>
 export const cargarERubricaDocumentoPendiente = (pdf: { uri: string; name: string; mimeType?: string | null }) => {
   const form = new FormData();
   appendERubricaFile(form, 'pdf', { uri: pdf.uri, name: pdf.name || 'documento.pdf' });
+  form.append('nombreOriginal', pdf.name || 'documento.pdf');
   return apiRequest<ERubricaDocumentoPendiente>(`${ROOT}/documentos/pendientes`, { method: 'POST', body: form, timeoutMs: 60000 });
 };
 

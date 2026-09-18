@@ -23,7 +23,7 @@ import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../../config/api';
 import { ApiError, getAuthSessionCookie } from '../../services/apiClient';
-import { ERubricaDashboard, ERubricaDocumentoFirmado, ERubricaDocumentoPendiente, ERubricaEmisor, ERubricaFirmaEstado, appendERubricaFile, buscarERubricaSolicitudesProveedor, cargarERubricaDocumentoPendiente, configurarERubricaFirma, crearERubricaSolicitud, descargarERubricaFirmaP12, eliminarERubricaDocumentoPendiente, enviarTransferenciaERubricaSolicitud, firmarERubricaDocumento, getERubricaDocumentosFirmados, getERubricaDocumentosPendientes, getERubricaEmisores, getERubricaFirmaEstado, getERubricaPlan, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, iniciarPagoERubricaSolicitud, sincronizarERubricaSolicitud, validarERubricaFirmaPdf, validarERubricaFirmaTemporal, validarERubricaQr } from '../../services/erubricaMobileService';
+import { ERubricaDashboard, ERubricaDocumentoFirmado, ERubricaDocumentoPendiente, ERubricaEmisor, ERubricaFirmaEstado, ERubricaSolicitudBorrador, appendERubricaFile, buscarERubricaSolicitudesProveedor, cargarERubricaDocumentoPendiente, configurarERubricaFirma, crearERubricaSolicitud, descargarERubricaFirmaP12, eliminarERubricaDocumentoPendiente, eliminarERubricaSolicitudBorrador, enviarTransferenciaERubricaSolicitud, firmarERubricaDocumento, getERubricaDocumentosFirmados, getERubricaDocumentosPendientes, getERubricaEmisores, getERubricaFirmaEstado, getERubricaPlan, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, getERubricaSolicitudBorradores, guardarERubricaSolicitudBorrador, iniciarPagoERubricaSolicitud, sincronizarERubricaSolicitud, validarERubricaFirmaPdf, validarERubricaFirmaTemporal, validarERubricaQr } from '../../services/erubricaMobileService';
 import { EFACT_THEME, ERUBRICA_COLORS } from '../../styles/theme';
 import { formatDocumentDate } from '../../utils/documentFormatting';
 import { arrayBufferToBase64, buildDeviceFileName } from '../../utils/fileUtils';
@@ -243,6 +243,9 @@ export function ERubricaMobileScreen({
   const [solicitudFiles, setSolicitudFiles] = useState(SOLICITUD_FILES_INITIAL);
   const [solicitudId, setSolicitudId] = useState<number | null>(null);
   const [solicitudSaving, setSolicitudSaving] = useState(false);
+  const [solicitudBorradores, setSolicitudBorradores] = useState<ERubricaSolicitudBorrador[]>([]);
+  const [solicitudBorradoresOpen, setSolicitudBorradoresOpen] = useState(false);
+  const [loadingSolicitudBorradores, setLoadingSolicitudBorradores] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'deuna' | 'transferencia'>('deuna');
   const [paymentLoading, setPaymentLoading] = useState(false);
@@ -796,6 +799,52 @@ export function ERubricaMobileScreen({
     appendSolicitudFile(form, 'archivoAdicional', 'archivoAdicional');
     return form;
   };
+  const cargarSolicitudBorradores = async () => {
+    setLoadingSolicitudBorradores(true);
+    try {
+      setSolicitudBorradores(await getERubricaSolicitudBorradores());
+      setSolicitudBorradoresOpen(true);
+    } catch (error) {
+      Alert.alert('No se pudieron cargar los borradores', error instanceof ApiError ? error.message : 'Intenta nuevamente.');
+    } finally {
+      setLoadingSolicitudBorradores(false);
+    }
+  };
+  const guardarSolicitudBorrador = async () => {
+    const nombre = [solicitudForm.nombres, solicitudForm.primerApellido].filter(Boolean).join(' ').trim() || 'Solicitud de firma';
+    const titulo = `${nombre} · ${solicitudPlan.label}`;
+    try {
+      const borrador = await guardarERubricaSolicitudBorrador(titulo, JSON.stringify({ solicitudPlan, solicitudPersona, solicitudForm }));
+      setSolicitudBorradores((current) => [borrador, ...current.filter((item) => item.id !== borrador.id)].slice(0, 20));
+      Alert.alert('Solicitud guardada', 'Podrás continuarla desde Solicitudes de clientes en el móvil o en la web. Los documentos se adjuntan al enviarla.');
+    } catch (error) {
+      Alert.alert('No se pudo guardar', error instanceof ApiError ? error.message : 'Intenta nuevamente.');
+    }
+  };
+  const usarSolicitudBorrador = (borrador: ERubricaSolicitudBorrador) => {
+    try {
+      const datos = JSON.parse(borrador.datosJson) as { solicitudPlan?: typeof solicitudPlan; solicitudPersona?: string | null; solicitudForm?: typeof solicitudForm };
+      if (!datos.solicitudForm) throw new Error('invalid-draft');
+      setSolicitudPlan(datos.solicitudPlan ?? { label: '7 días', price: 9 });
+      setSolicitudPersona(datos.solicitudPersona ?? null);
+      setSolicitudForm({ ...SOLICITUD_FORM_INITIAL, ...datos.solicitudForm });
+      setSolicitudFiles(SOLICITUD_FILES_INITIAL);
+      setSolicitudId(null);
+      setSolicitudStep(1);
+      setSolicitudBorradoresOpen(false);
+      Alert.alert('Solicitud recuperada', 'Revisa los datos y vuelve a adjuntar los documentos antes de continuar.');
+    } catch {
+      Alert.alert('Borrador no disponible', 'No fue posible recuperar la información de esta solicitud.');
+    }
+  };
+  const eliminarSolicitudBorrador = async (borrador: ERubricaSolicitudBorrador) => {
+    try {
+      await eliminarERubricaSolicitudBorrador(borrador.id);
+      setSolicitudBorradores((current) => current.filter((item) => item.id !== borrador.id));
+    } catch (error) {
+      Alert.alert('No se pudo eliminar', error instanceof ApiError ? error.message : 'Intenta nuevamente.');
+    }
+  };
   const validateSolicitudBeforePayment = () => {
     if (!solicitudPersona) {
       Alert.alert('Selecciona el tipo de solicitud', 'Elige Persona natural con cédula, Persona natural con RUC o Representante legal.');
@@ -1145,9 +1194,9 @@ export function ERubricaMobileScreen({
               <Text style={styles.erubricaHistoryTitle}>Nueva solicitud de firma</Text>
               <Text style={styles.erubricaHistorySubtitle}>Completa la información para generar tu solicitud de firma electrónica.</Text>
             </View>
-            <Pressable style={styles.erubricaPendingLoadButton} onPress={() => selectTab('historial-solicitudes')}>
+            <Pressable style={styles.erubricaPendingLoadButton} disabled={loadingSolicitudBorradores} onPress={() => void cargarSolicitudBorradores()}>
               <MaterialCommunityIcons name="account-group-outline" size={15} color={ERUBRICA_COLORS.text} />
-              <Text style={styles.erubricaPendingLoadText}>Solicitudes de clientes</Text>
+              <Text style={styles.erubricaPendingLoadText}>{loadingSolicitudBorradores ? 'Cargando...' : 'Solicitudes de clientes'}</Text>
             </Pressable>
           </View>
 
@@ -1293,6 +1342,7 @@ export function ERubricaMobileScreen({
 
           <View style={styles.erubricaSignActions}>
             <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar formulario" onPress={() => { setSolicitudPersona(null); setSolicitudForm(SOLICITUD_FORM_INITIAL); setSolicitudFiles(SOLICITUD_FILES_INITIAL); setSolicitudId(null); }} />
+            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Guardar solicitud" onPress={() => void guardarSolicitudBorrador()} />
             <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Siguiente" loading={solicitudSaving} onPress={openPaymentSummary} />
           </View>
           </> : <View style={styles.erubricaRequestPanel}><Text style={styles.erubricaSignStep}>Selecciona el tipo de solicitud</Text><Text style={styles.erubricaSignHint}>El formulario se habilitará cuando elijas una de las tres opciones.</Text></View>}
@@ -1807,6 +1857,33 @@ export function ERubricaMobileScreen({
       ))}
 
       {['solicitudes', 'historial-solicitudes', 'proveedor'].includes(tab) ? <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Sincronizar solicitudes pendientes" loading={false} onPress={onSync} /> : null}
+      <Modal visible={solicitudBorradoresOpen} transparent animationType="fade" onRequestClose={() => setSolicitudBorradoresOpen(false)}>
+        <View style={styles.erubricaPaymentOverlay}>
+          <View style={styles.erubricaPaymentModal}>
+            <View style={styles.erubricaPaymentHeader}>
+              <View style={styles.erubricaHistoryHeroCopy}>
+                <Text style={styles.erubricaHistoryEyebrow}>SOLICITUDES DE CLIENTES</Text>
+                <Text style={styles.erubricaPaymentTitle}>Borradores guardados</Text>
+                <Text style={styles.erubricaHistorySubtitle}>Disponibles también en la web con esta misma cuenta.</Text>
+              </View>
+              <Pressable style={styles.erubricaPaymentClose} onPress={() => setSolicitudBorradoresOpen(false)}><MaterialCommunityIcons name="close" size={20} color="#1787D5" /></Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.portalStack}>
+              {solicitudBorradores.length === 0 ? <EmptyState title="Sin solicitudes guardadas" text="Guarda una solicitud para continuarla luego desde cualquier dispositivo." /> : solicitudBorradores.map((item) => (
+                <View key={item.id} style={styles.erubricaHistoryRow}>
+                  <View style={styles.erubricaHistoryDocIcon}><MaterialCommunityIcons name="file-document-edit-outline" size={19} color={ERUBRICA_COLORS.primary} /></View>
+                  <View style={styles.erubricaHistoryDocCopy}>
+                    <Text style={styles.erubricaHistoryDocName} numberOfLines={2}>{item.titulo}</Text>
+                    <Text style={styles.erubricaHistoryDetailText}>Guardada {formatDocumentDate(item.fechaGuardado)}</Text>
+                  </View>
+                  <Pressable style={styles.erubricaSignedDocsButton} onPress={() => usarSolicitudBorrador(item)}><Text style={styles.erubricaSignedDocsText}>Usar</Text></Pressable>
+                  <Pressable style={styles.erubricaPaymentClose} onPress={() => void eliminarSolicitudBorrador(item)}><MaterialCommunityIcons name="trash-can-outline" size={18} color="#B4232D" /></Pressable>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
       <Modal visible={signedDocumentsModalOpen} transparent animationType="fade" onRequestClose={() => setSignedDocumentsModalOpen(false)}>
         <View style={styles.erubricaPaymentOverlay}>
           <View style={styles.erubricaPaymentModal}>
