@@ -1550,10 +1550,10 @@ export function ERubricaMobileScreen({
                     <View style={styles.erubricaRequestHistoryUanatacaPill}><Text style={styles.erubricaRequestHistoryUanatacaText}>Uanataca: {estadoUanataca}</Text></View>
                     <Text style={styles.erubricaHistorySigner}>{soporte}</Text>
                   </View>
-                  {solicitudId > 0 ? <View style={styles.erubricaPendingActionRow}>
+                  {solicitudId > 0 && pagada ? <View style={styles.erubricaPendingActionRow}>
                     <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label={syncingSolicitudId === solicitudId ? 'Actualizando...' : 'Actualizar estado'} onPress={() => void sincronizarSolicitudHistorial(solicitudId)} />
-                    {pagada ? <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Descargar .p12" onPress={() => void descargarFirmaSolicitud(solicitudId)} /> : null}
-                  </View> : null}
+                    <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Descargar .p12" onPress={() => void descargarFirmaSolicitud(solicitudId)} />
+                  </View> : <Text style={styles.erubricaHistorySigner}>La actualización se habilita cuando el pago esté aprobado.</Text>}
                 </View>
               );
             }}
