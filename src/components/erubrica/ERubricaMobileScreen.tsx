@@ -316,7 +316,7 @@ export function ERubricaMobileScreen({
   const activeFirma = firmas[0] ?? null;
   const firmaEfact = firmaEmisores.find((item) => item.tieneCertificado && item.tieneClave) ?? null;
   const firmaEfactValida = Boolean(firmaDetalleActiva?.esValida ?? firmaEfact?.esValida);
-  const firmaTitular = firmaDetalleActiva?.nombreTitular || buildSolicitudTitular(activeFirma, 'Sin firma activa');
+  const firmaTitular = firmaDetalleActiva?.nombreTitular || 'Titular no disponible';
   const firmaIdentificacion = firmaDetalleActiva?.identificacion || label(activeFirma, ['identificacion', 'solIdentificacion', 'SolIdentificacion', 'ruc', 'cedula', 'documento'], 'Sin dato');
   const firmaEstado = firmaDetalleActiva?.estadoVigencia || label(activeFirma, ['estado', 'estadoVigencia', 'status'], firmaEfact ? 'Configurada' : 'Sin firma');
   const firmaEmision = firmaDetalleActiva?.fechaEmision ? formatDocumentDate(firmaDetalleActiva.fechaEmision) : label(activeFirma, ['fechaEmision', 'solFechaAprobacion', 'SolFechaAprobacion', 'emitida', 'fechaInicio'], 'Sin dato');
@@ -558,7 +558,7 @@ export function ERubricaMobileScreen({
     const emisorId = firmaEfact?.id ?? firmaEmisores[0]?.id;
     if (!certificateFile || !certificatePassword.trim()) {
       if (firmaEfact) {
-        Alert.alert(firmaEfactValida ? 'Firma vigente' : 'Firma configurada', firmaEfactValida ? 'Ya estás usando la firma configurada en E-Fact.' : 'La firma existente requiere revisión antes de usarla.');
+        Alert.alert(firmaEfactValida ? 'Firma vigente' : 'Firma configurada', firmaEfactValida ? 'Ya estás usando la firma configurada.' : 'La firma existente requiere revisión antes de usarla.');
         return;
       }
       Alert.alert('Datos incompletos', 'Selecciona el archivo .p12 e ingresa la clave.');
@@ -1582,7 +1582,7 @@ export function ERubricaMobileScreen({
       <View style={styles.erubricaConfigStatusCard}>
             <MaterialCommunityIcons name="shield-check-outline" size={19} color={ERUBRICA_COLORS.primary} />
             <View style={styles.erubricaPendingDocCopy}>
-              <Text style={styles.erubricaConfigStatusTitle}>{firmaEfactValida ? 'Firma vigente en E-Fact' : firmaEfact ? 'Firma configurada en E-Fact' : 'Firma pendiente'}</Text>
+              <Text style={styles.erubricaConfigStatusTitle}>{firmaEfactValida ? 'Firma vigente' : firmaEfact ? 'Firma configurada' : 'Firma pendiente'}</Text>
               <Text style={styles.erubricaConfigStatusText}>{firmaEfactValida ? `${firmaEfact?.diasRestantes ?? 'Sin dato'} días para renovar. Expira el ${firmaEfactExpira}.` : firmaEfact?.mensaje ?? 'Carga un certificado .p12 para habilitar la firma electrónica.'}</Text>
             </View>
           </View>
@@ -1592,7 +1592,7 @@ export function ERubricaMobileScreen({
               <View style={styles.erubricaConfigStepNumber}><Text style={styles.erubricaConfigStepNumberText}>1</Text></View>
               <View style={styles.erubricaPendingDocCopy}>
                 <Text style={styles.erubricaConfigStepTitle}>Certificado digital</Text>
-                <Text style={styles.erubricaConfigStepHint}>{firmaEfact ? 'Ya se detectó la firma configurada en E-Fact. Selecciona otro archivo solo para reemplazarla.' : 'Selecciona tu archivo de certificado digital en formato .p12'}</Text>
+                <Text style={styles.erubricaConfigStepHint}>{firmaEfact ? 'Ya se detectó una firma configurada. Selecciona otro archivo solo para reemplazarla.' : 'Selecciona tu archivo de certificado digital en formato .p12'}</Text>
               </View>
               <Pressable style={styles.erubricaConfigSelectButton} onPress={pickCertificate}>
                 <MaterialCommunityIcons name="file-upload-outline" size={15} color="#FFFFFF" />
@@ -1604,7 +1604,7 @@ export function ERubricaMobileScreen({
                 <MaterialCommunityIcons name="file-lock-outline" size={20} color={ERUBRICA_COLORS.primary} />
               </View>
               <View style={styles.erubricaPendingDocCopy}>
-                <Text style={styles.erubricaRequestHistoryValue} numberOfLines={1}>{certificateFile ? certificateFile.name : firmaEfact ? 'Certificado configurado en E-Fact' : 'Selecciona tu certificado .p12'}</Text>
+                <Text style={styles.erubricaRequestHistoryValue} numberOfLines={1}>{certificateFile ? certificateFile.name : firmaEfact ? 'Certificado configurado' : 'Selecciona tu certificado .p12'}</Text>
                 <Text style={styles.erubricaRequestOptionText}>{firmaEfact ? (firmaEfactValida ? 'Validado automáticamente' : 'Requiere validación') : 'Formato .p12'}</Text>
               </View>
               {certificateFile ? <MaterialCommunityIcons name="check-circle" size={18} color={ERUBRICA_COLORS.primary} /> : null}
@@ -1637,8 +1637,8 @@ export function ERubricaMobileScreen({
             <View style={styles.erubricaConfigSideCard}>
               <Text style={styles.erubricaConfigSideTitle}>Resumen de validación</Text>
               {[
-                ['file-check-outline', certificateFile || firmaEfact ? 'Archivo detectado' : 'Archivo pendiente', certificateFile?.name ?? (firmaEfact ? 'Certificado de E-Fact' : 'Selecciona el certificado .p12')],
-                ['check-circle-outline', certificateFile || firmaEfactValida ? 'Formato válido' : 'Formato por validar', firmaEfactValida ? 'Certificado validado en E-Fact' : 'Certificado .p12 reconocido'],
+                ['file-check-outline', certificateFile || firmaEfact ? 'Archivo detectado' : 'Archivo pendiente', certificateFile?.name ?? (firmaEfact ? 'Certificado configurado' : 'Selecciona el certificado .p12')],
+                ['check-circle-outline', certificateFile || firmaEfactValida ? 'Formato válido' : 'Formato por validar', firmaEfactValida ? 'Certificado validado' : 'Certificado .p12 reconocido'],
                 ['key-outline', certificatePassword.trim() || firmaEfact ? 'Clave configurada' : 'Clave pendiente', certificatePassword.trim() || firmaEfact ? 'Configurada' : 'Requerida para guardar'],
                 ['circle', certificateFile && certificatePassword.trim() || firmaEfactValida ? 'Lista para usar' : 'Pendiente de completar', firmaEfactValida ? 'Disponible para firmar' : 'Guarda para confirmar'],
               ].map(([icon, title, text]) => (
