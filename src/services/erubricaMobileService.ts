@@ -1,7 +1,7 @@
 import { apiRequest, apiRequestBinary } from './apiClient';
 import { FirmaEstado } from '../types/business';
 import { ERUBRICA_SOLICITUD_PAGO_PATH, ERUBRICA_SOLICITUD_PATH, ERUBRICA_SOLICITUD_TRANSFERENCIA_PATH } from '../config/api';
-import { File as ExpoFile } from 'expo-file-system';
+import { appendMobileFile } from './mobileFileUpload';
 
 export type ERubricaDashboard = {
   solicitudes?: unknown[];
@@ -54,7 +54,7 @@ export type ERubricaFirmaEstado = {
 const ROOT = '/api/mobile/e-rubrica';
 
 export const appendERubricaFile = (form: FormData, field: string, file: { uri: string; name: string }) => {
-  form.append(field, new ExpoFile(file.uri), file.name);
+  appendMobileFile(form, field, file);
 };
 
 export const getERubricaDashboard = (take = 8) =>

@@ -33,6 +33,8 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
+    "check": "npm run check:uploads && tsc --noEmit",
+    "check:uploads": "node scripts/check-mobile-uploads.mjs",
     "start": "expo start --go --lan",
     "start:tunnel": "expo start --go --tunnel",
     "android": "expo start --go --lan --android",

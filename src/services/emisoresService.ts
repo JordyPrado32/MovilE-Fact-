@@ -1,4 +1,5 @@
 import { apiRequest } from './apiClient';
+import { appendMobileFile } from './mobileFileUpload';
 import { Emisor, EmisorUpsert, FirmaEstado } from '../types/business';
 
 type EmisorApi = Emisor & {
@@ -145,11 +146,7 @@ export type FirmaArchivoUpload = {
 
 export async function uploadFirmaArchivo(userId: number, codigo: number, archivo: FirmaArchivoUpload) {
   const formData = new FormData();
-  formData.append('archivo', {
-    uri: archivo.uri,
-    name: archivo.name,
-    type: archivo.mimeType || 'application/x-pkcs12',
-  } as unknown as Blob);
+  appendMobileFile(formData, 'archivo', archivo);
 
   return apiRequest<{ pathCertificado: string; nombreArchivo?: string }>(`/api/emisores/${codigo}/firma/archivo?idUsuario=${userId}`, {
     method: 'POST',
