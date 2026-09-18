@@ -233,6 +233,7 @@ export const styles = StyleSheet.create({
   erubricaRequestDocumentAction: { color: ERUBRICA_COLORS.primary, fontSize: 11, fontWeight: '900' },
   erubricaPaymentOverlay: { backgroundColor: '#0B1A2B99', flex: 1, justifyContent: 'center', padding: 12 },
   erubricaPaymentModal: { backgroundColor: '#FFFFFF', borderColor: '#CFE0EF', borderRadius: 14, borderWidth: 1, maxHeight: '92%', overflow: 'hidden', padding: 14 },
+  erubricaPaymentContent: { gap: 0, paddingBottom: 8 },
   erubricaPaymentHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
   erubricaPaymentTitle: { color: '#10243D', fontSize: 21, fontWeight: '900', lineHeight: 25 },
   erubricaPaymentClose: { alignItems: 'center', borderColor: '#B9DCFA', borderRadius: 10, borderWidth: 1, height: 36, justifyContent: 'center', width: 36 },

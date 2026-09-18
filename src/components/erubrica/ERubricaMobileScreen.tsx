@@ -834,7 +834,7 @@ export function ERubricaMobileScreen({
   const appendSolicitudFile = (form: FormData, key: SolicitudDocumentoKey, fieldName: string) => {
     const file = solicitudFiles[key];
     if (!file) return;
-    form.append(fieldName, { uri: file.uri, name: file.name || `${fieldName}.jpg`, type: file.mimeType || 'application/octet-stream' } as unknown as Blob);
+    appendERubricaFile(form, fieldName, { uri: file.uri, name: file.name || `${fieldName}.jpg` });
   };
   const buildSolicitudFormData = () => {
     const form = new FormData();
@@ -1032,7 +1032,7 @@ export function ERubricaMobileScreen({
       form.append('titularCuenta', transferForm.titular.trim());
       form.append('cuentaOrigen', transferForm.cuenta.trim());
       form.append('numeroComprobante', transferForm.comprobante.trim());
-      form.append('comprobante', { uri: transferReceipt.uri, name: transferReceipt.fileName || 'comprobante.jpg', type: transferReceipt.mimeType || 'image/jpeg' } as unknown as Blob);
+      appendERubricaFile(form, 'comprobante', { uri: transferReceipt.uri, name: transferReceipt.fileName || 'comprobante.jpg' });
       await enviarTransferenciaERubricaSolicitud(form);
       setPaymentModalOpen(false);
       Alert.alert('Transferencia enviada', 'Tu comprobante fue enviado para validación.');
@@ -2076,6 +2076,7 @@ export function ERubricaMobileScreen({
                 <MaterialCommunityIcons name="close" size={20} color="#1787D5" />
               </Pressable>
             </View>
+            <ScrollView contentContainerStyle={styles.erubricaPaymentContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
             <View style={styles.erubricaPaymentSummaryGrid}>
               <View style={styles.erubricaPaymentSummaryBox}><Text style={styles.erubricaHistoryMetricLabel}>SERVICIO</Text><Text style={styles.erubricaPaymentSummaryValue}>e-Rúbrica</Text></View>
               <View style={styles.erubricaPaymentSummaryBox}><Text style={styles.erubricaHistoryMetricLabel}>SUBTOTAL</Text><Text style={styles.erubricaPaymentSummaryValue}>USD {solicitudSubtotal.toFixed(2)}</Text></View>
@@ -2124,6 +2125,7 @@ export function ERubricaMobileScreen({
               <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Cancelar" onPress={() => setPaymentModalOpen(false)} />
               <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label={paymentMethod === 'deuna' ? 'Pagar con DeUna' : 'Enviar transferencia'} loading={paymentLoading} onPress={payERubricaRequest} />
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
