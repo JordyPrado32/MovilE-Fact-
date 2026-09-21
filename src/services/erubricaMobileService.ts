@@ -1,7 +1,7 @@
 import { apiRequest, apiRequestBinary } from './apiClient';
 import { FirmaEstado } from '../types/business';
 import { ERUBRICA_SOLICITUD_PAGO_PATH, ERUBRICA_SOLICITUD_PATH, ERUBRICA_SOLICITUD_TRANSFERENCIA_PATH } from '../config/api';
-import { File as ExpoFile } from 'expo-file-system';
+import { appendMobileFile } from './mobileFileUpload';
 
 export type ERubricaDashboard = {
   solicitudes?: unknown[];
@@ -54,7 +54,7 @@ export type ERubricaFirmaEstado = {
 const ROOT = '/api/mobile/e-rubrica';
 
 export const appendERubricaFile = (form: FormData, field: string, file: { uri: string; name: string }) => {
-  form.append(field, new ExpoFile(file.uri), file.name);
+  appendMobileFile(form, field, file);
 };
 
 export const getERubricaDashboard = (take = 8) =>
@@ -105,6 +105,25 @@ export const configurarERubricaFirma = (id: number, certificado: { uri: string; 
 
 export const getERubricaSolicitudes = () => apiRequest<unknown[]>(`${ROOT}/solicitudes`);
 
+export type ERubricaSolicitudBorrador = {
+  id: string;
+  titulo: string;
+  fechaGuardado: string;
+  datosJson: string;
+};
+
+export const getERubricaSolicitudBorradores = () =>
+  apiRequest<ERubricaSolicitudBorrador[]>(`${ROOT}/solicitudes/borradores`);
+
+export const guardarERubricaSolicitudBorrador = (titulo: string, datosJson: string) =>
+  apiRequest<ERubricaSolicitudBorrador>(`${ROOT}/solicitudes/borradores`, {
+    method: 'POST',
+    body: JSON.stringify({ titulo, datosJson }),
+  });
+
+export const eliminarERubricaSolicitudBorrador = (id: string) =>
+  apiRequest<{ eliminado: boolean }>(`${ROOT}/solicitudes/borradores/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
 export const getERubricaFirmas = () => apiRequest<unknown[]>(`${ROOT}/firmas`);
 
 export type ERubricaDocumentoFirmado = {
@@ -136,6 +155,7 @@ export const getERubricaDocumentosPendientes = () =>
 export const cargarERubricaDocumentoPendiente = (pdf: { uri: string; name: string; mimeType?: string | null }) => {
   const form = new FormData();
   appendERubricaFile(form, 'pdf', { uri: pdf.uri, name: pdf.name || 'documento.pdf' });
+  form.append('nombreOriginal', pdf.name || 'documento.pdf');
   return apiRequest<ERubricaDocumentoPendiente>(`${ROOT}/documentos/pendientes`, { method: 'POST', body: form, timeoutMs: 60000 });
 };
 

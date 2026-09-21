@@ -8,6 +8,7 @@ type ResultCollectionProps<T> = {
   resetKey?: string;
   pageSize?: number;
   variant?: 'default' | 'plain';
+  tone?: 'blue' | 'green';
 };
 
 export function ResultCollection<T>({
@@ -17,6 +18,7 @@ export function ResultCollection<T>({
   resetKey,
   pageSize = 6,
   variant = 'default',
+  tone = 'blue',
 }: ResultCollectionProps<T>) {
   const [page, setPage] = useState(1);
 
@@ -44,29 +46,29 @@ export function ResultCollection<T>({
           <View key={keyExtractor(item, start + index)}>{renderItem(item, start + index)}</View>
         ))}
       </View>
-      <View style={styles.pagination}>
+      <View style={[styles.pagination, tone === 'green' && styles.paginationGreen]}>
         <Pressable
           accessibilityLabel="Página anterior"
-          style={[styles.pageButton, safePage === 1 && styles.disabled]}
+          style={[styles.pageButton, tone === 'green' && styles.pageButtonGreen, safePage === 1 && styles.disabled]}
           disabled={safePage === 1}
           onPress={() => setPage((current) => Math.max(1, current - 1))}
         >
-          <Text style={styles.arrow}>‹</Text>
+          <Text style={[styles.arrow, tone === 'green' && styles.arrowGreen]}>‹</Text>
         </Pressable>
         <View style={styles.pages}>
           {pages.map((pageNumber) => (
-            <Pressable key={pageNumber} style={[styles.page, pageNumber === safePage && styles.activePage]} onPress={() => setPage(pageNumber)}>
+            <Pressable key={pageNumber} style={[styles.page, pageNumber === safePage && styles.activePage, pageNumber === safePage && tone === 'green' && styles.activePageGreen]} onPress={() => setPage(pageNumber)}>
               <Text style={[styles.pageText, pageNumber === safePage && styles.activePageText]}>{pageNumber}</Text>
             </Pressable>
           ))}
         </View>
         <Pressable
           accessibilityLabel="Página siguiente"
-          style={[styles.pageButton, safePage === totalPages && styles.disabled]}
+          style={[styles.pageButton, tone === 'green' && styles.pageButtonGreen, safePage === totalPages && styles.disabled]}
           disabled={safePage === totalPages}
           onPress={() => setPage((current) => Math.min(totalPages, current + 1))}
         >
-          <Text style={styles.arrow}>›</Text>
+          <Text style={[styles.arrow, tone === 'green' && styles.arrowGreen]}>›</Text>
         </Pressable>
       </View>
     </View>
@@ -123,12 +125,16 @@ const styles = StyleSheet.create({
   meta: { color: '#617A90', fontSize: 11, fontWeight: '800' },
   items: { gap: 12 },
   pagination: { alignItems: 'center', borderTopColor: '#DCE8F1', borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10 },
+  paginationGreen: { borderTopColor: '#CBE9D7' },
   pages: { alignItems: 'center', flexDirection: 'row', gap: 6 },
   pageButton: { alignItems: 'center', backgroundColor: '#EAF5FC', borderColor: '#B9D8EE', borderRadius: 9, borderWidth: 1, height: 34, justifyContent: 'center', width: 34 },
+  pageButtonGreen: { backgroundColor: '#EFFAF2', borderColor: '#B9E3C9' },
   disabled: { opacity: 0.4 },
   arrow: { color: '#00649D', fontSize: 22, fontWeight: '800', lineHeight: 24 },
+  arrowGreen: { color: '#087C3A' },
   page: { alignItems: 'center', borderRadius: 9, height: 32, justifyContent: 'center', width: 32 },
   activePage: { backgroundColor: '#0072BD' },
+  activePageGreen: { backgroundColor: '#087C3A' },
   pageText: { color: '#617A90', fontSize: 12, fontWeight: '900' },
   activePageText: { color: '#FFFFFF' },
   overlay: { flex: 1, justifyContent: 'center', padding: 20 },
