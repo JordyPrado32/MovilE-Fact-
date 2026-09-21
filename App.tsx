@@ -41,7 +41,7 @@ import { consultarEmisorSri, createEmisor, deleteEmisor, getEmisor, getEmisores,
 import { anularFactura, buscarFacturaClientes, buscarFacturaProductos, enviarFacturaCorreo, FacturaDetalle, FacturaListItem, FacturaPreparacion, FacturaProducto, getFacturaDetalle, getFacturaPdf, getFacturas, getFacturaPreparacion, getFacturaXml, guardarFactura, reintentarFacturaSri } from './src/services/facturasMobileService';
 import { anularGuiaRemision, buscarGuiaClientes, buscarGuiaFacturas, buscarGuiaProductos, buscarGuiaTransportistas, emitirGuiaRemision, enviarGuiaRemisionCorreo, getGuiaRemisionPdf, getGuiaRemisionPreparacion, getGuiaTransportista, getGuiasRemision, getGuiaRemisionXml, guardarGuiaRemision, GuiaRemisionDetalleInput, GuiaRemisionListItem } from './src/services/guiasRemisionMobileService';
 import { getMenusByRol, hasMenusByRolEndpoint } from './src/services/menuService';
-import { buscarLiquidacionProductos, buscarLiquidacionProveedores, emitirLiquidacionCompra, enviarLiquidacionCompraCorreo, getLiquidacionCompraPdf, getLiquidacionCompraPreparacion, getLiquidacionesCompra, getLiquidacionCompraXml, guardarLiquidacionCompra, getLiquidacionCodigoPorcentaje, LiquidacionCompraListItem } from './src/services/liquidacionesCompraMobileService';
+import { buscarLiquidacionProductos, buscarLiquidacionProveedores, emitirLiquidacionCompra, enviarLiquidacionCompraCorreo, getLiquidacionCompraPdf, getLiquidacionCompraPreparacion, getLiquidacionesCompra, getLiquidacionCompraRetencionBases, getLiquidacionCompraXml, guardarLiquidacionCompra, getLiquidacionCodigoPorcentaje, LiquidacionCompraListItem } from './src/services/liquidacionesCompraMobileService';
 import { anularNotaCredito, buscarNotaCreditoFacturas, emitirNotaCredito, emitirNotaCreditoAutomatica, enviarNotaCreditoCorreo, getNotaCreditoDetallesDisponibles, getNotaCreditoPdf, getNotaCreditoPreparacion, getNotasCredito, getNotaCreditoXml, guardarNotaCredito, NotaCreditoListItem } from './src/services/notasCreditoMobileService';
 import { anularNotaDebito, buscarNotaDebitoFacturas, emitirNotaDebito, enviarNotaDebitoCorreo, getNotaDebitoPdf, getNotaDebitoPreparacion, getNotasDebito, getNotaDebitoXml, guardarNotaDebito, NotaDebitoListItem } from './src/services/notasDebitoMobileService';
 import { getDismissedNotificationIds, getNotificaciones, rememberDismissedNotificationIds, NotificacionItem } from './src/services/notificacionesService';
@@ -4310,9 +4310,18 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setLiquidacionRetencion(liquidacion);
     setLoadingLiquidacionRetencion(true);
     try {
-      const [iva, renta] = await Promise.all([getRetencionCatalogo('IVA'), getRetencionCatalogo('RENTA')]);
+      const [iva, renta, bases] = await Promise.all([
+        getRetencionCatalogo('IVA'),
+        getRetencionCatalogo('RENTA'),
+        getLiquidacionCompraRetencionBases(catalogUserId, liquidacion.codLiquidacion),
+      ]);
       setRetencionesIvaCatalogo(iva);
       setRetencionesRentaCatalogo(renta);
+      setLiquidacionRetencion((current) => current ? {
+        ...current,
+        baseIva: bases.baseIva ?? current.iva,
+        baseRenta: bases.baseRenta ?? current.base,
+      } : current);
     } catch (error) {
       setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudieron cargar los catalogos de retencion.' });
     } finally {
@@ -4325,7 +4334,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     void prepararRetencionLiquidacion(liquidacion);
   };
 
-  const saveRetencionLiquidacion = async (retencion: LiquidacionRetencionInput) => {
+  const saveRetencionLiquidacion = async (retenciones: LiquidacionRetencionInput[]) => {
     if (!catalogUserId || !liquidacionRetencion) return;
     const prerequisitesError = await validateEmissionPrerequisites();
     if (prerequisitesError) {
@@ -4336,12 +4345,13 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setSavingLiquidacionRetencion(true);
     setDirectoryMessage(null);
     try {
-      const result = await crearRetencionDesdeLiquidacion(catalogUserId, liquidacionRetencion.codLiquidacion, retencion);
+      const liquidacionGuardada = liquidacionRetencion;
+      const result = await crearRetencionDesdeLiquidacion(catalogUserId, liquidacionGuardada.codLiquidacion, retenciones);
       const codRetencion = result.codRetencion;
       if (!codRetencion) throw new Error('No se encontro la retencion generada para emitirla al SRI.');
 
       setLiquidacionRetencion(null);
-      setDirectoryMessage({ type: 'info', text: 'Retencion generada. Enviandola al SRI...' });
+      setDirectoryMessage({ type: 'info', text: `Retencion ${result.numeroRetencion ?? 'generada'} de la liquidacion ${liquidacionGuardada.numero ?? liquidacionGuardada.codLiquidacion}. Enviandola al SRI...` });
       setReloadKey((value) => value + 1);
       await emitRetencionSri({ codRetencion });
     } catch (error) {

@@ -58,16 +58,19 @@ export function PuntosEmisionScreen({
 
   if (formMode) {
     return (
-      <PuntoEmisionForm
-        form={form}
-        mode={formMode}
-        saving={saving}
-        establecimiento={establecimiento}
-        onCancel={onCancelForm}
-        onChange={onChangeForm}
-        onReset={onResetForm}
-        onSave={onSaveForm}
-      />
+      <>
+        {message ? <MessageBox message={message} /> : null}
+        <PuntoEmisionForm
+          form={form}
+          mode={formMode}
+          saving={saving}
+          establecimiento={establecimiento}
+          onCancel={onCancelForm}
+          onChange={onChangeForm}
+          onReset={onResetForm}
+          onSave={onSaveForm}
+        />
+      </>
     );
   }
 

@@ -275,7 +275,7 @@ export function NuevaLiquidacionCompraMobileScreen({
   onClear: () => void;
   onHistory: () => void;
   onSave: () => void;
-  onSaveRetencion: (retencion: LiquidacionRetencionInput) => void;
+  onSaveRetencion: (retenciones: LiquidacionRetencionInput[]) => void;
   onCloseRetencion: () => void;
 }) {
   const toNumber = (value: string) => Number(value.replace(',', '.')) || 0;
@@ -295,6 +295,9 @@ export function NuevaLiquidacionCompraMobileScreen({
   const serieLabel = getSerieLabelFromOptions(serieOptions, effectiveSerie, getSerieLabel(preparacion, effectiveSerie, '001-002'));
   const optionLiquidacionNumber = getNextSequenceFromOptions(preparacion?.series ?? [], effectiveSerie, '') || getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
   const liquidacionNumber = effectiveSerie ? form.numeroFactura || optionLiquidacionNumber || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie)) : '';
+  const retencionSerieOptions = getDocumentSerieOptions(preparacion, puntosData, 'retencion');
+  const retencionSerie = getEffectiveDocumentSerie(retencionSerieOptions, retencionSerieOptions[0]?.serieRaw ?? '');
+  const retencionNumero = getNextSequenceFromOptions(retencionSerieOptions, retencionSerie, '');
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const handleClear = () => {
@@ -314,6 +317,23 @@ export function NuevaLiquidacionCompraMobileScreen({
       }
     })();
   };
+
+  if (retencionLiquidacion) {
+    return (
+      <RetencionLiquidacionMobileScreen
+        liquidacion={retencionLiquidacion}
+        ivaCatalogo={retencionesIva}
+        rentaCatalogo={retencionesRenta}
+        loading={loadingRetencion}
+        saving={savingRetencion}
+        message={message}
+        onSave={onSaveRetencion}
+        onClose={onCloseRetencion}
+        retencionSerie={retencionSerie}
+        retencionNumero={retencionNumero}
+      />
+    );
+  }
 
   return (
     <>
@@ -347,17 +367,6 @@ export function NuevaLiquidacionCompraMobileScreen({
           <ActivityIndicator color="#0072BD" />
           <Text style={styles.mutedText}>{saving ? 'Generando liquidacion y enviandola al SRI...' : 'Validando datos de la liquidacion...'}</Text>
         </View>
-      ) : null}
-      {retencionLiquidacion ? (
-        <RetencionLiquidacionMobileScreen
-          liquidacion={retencionLiquidacion}
-          ivaCatalogo={retencionesIva}
-          rentaCatalogo={retencionesRenta}
-          loading={loadingRetencion}
-          saving={savingRetencion}
-          onSave={onSaveRetencion}
-          onClose={onCloseRetencion}
-        />
       ) : null}
       {loading ? (
         <View style={styles.directoryLoading}>
@@ -474,65 +483,78 @@ export function RetencionLiquidacionMobileScreen({
   rentaCatalogo,
   loading,
   saving,
+  message,
   onSave,
   onClose,
+  retencionSerie,
+  retencionNumero,
 }: {
   liquidacion: LiquidacionCompraListItem;
   ivaCatalogo: RetencionCatalogItem[];
   rentaCatalogo: RetencionCatalogItem[];
   loading: boolean;
   saving: boolean;
-  onSave: (retencion: LiquidacionRetencionInput) => void | Promise<void>;
+  message?: MessageState;
+  onSave: (retenciones: LiquidacionRetencionInput[]) => void | Promise<void>;
   onClose: () => void;
+  retencionSerie: string;
+  retencionNumero: string;
 }) {
-  const [tipo, setTipo] = useState<'IVA' | 'RENTA'>('IVA');
-  const [codigoIndex, setCodigoIndex] = useState(0);
-  const [base, setBase] = useState(String(Number(liquidacion.iva ?? 0)));
+  const ivaOpciones = ivaCatalogo;
+  const rentaOpciones = rentaCatalogo;
+  const [ivaCodigoIndex, setIvaCodigoIndex] = useState(0);
+  const [rentaCodigoIndex, setRentaCodigoIndex] = useState(0);
+  const [baseIva, setBaseIva] = useState(String(Number(liquidacion.baseIva ?? liquidacion.iva ?? 0)));
+  const [baseRenta, setBaseRenta] = useState(String(Number(liquidacion.baseRenta ?? liquidacion.base ?? 0)));
   const [submitting, setSubmitting] = useState(false);
-  const catalogo = tipo === 'IVA' ? ivaCatalogo : rentaCatalogo;
-  const codigo = catalogo[codigoIndex - 1];
-  const porcentaje = Number(codigo?.valor ?? 0);
-  const baseNumerica = Number(base.replace(',', '.')) || 0;
-  const valorRetenido = Math.round((baseNumerica * porcentaje / 100 + Number.EPSILON) * 100) / 100;
+  const ivaCodigo = ivaOpciones[ivaCodigoIndex - 1];
+  const rentaCodigo = rentaOpciones[rentaCodigoIndex - 1];
+  const ivaPorcentaje = Number(ivaCodigo?.valor ?? 0);
+  const rentaPorcentaje = Number(rentaCodigo?.valor ?? 0);
+  const baseIvaNumerica = Number(baseIva.replace(',', '.')) || 0;
+  const baseRentaNumerica = Number(baseRenta.replace(',', '.')) || 0;
+  const ivaRetenido = Math.round((baseIvaNumerica * ivaPorcentaje / 100 + Number.EPSILON) * 100) / 100;
+  const rentaRetenida = Math.round((baseRentaNumerica * rentaPorcentaje / 100 + Number.EPSILON) * 100) / 100;
 
   useEffect(() => {
-    setCodigoIndex(catalogo.length ? 1 : 0);
-  }, [tipo, catalogo.length]);
+    setIvaCodigoIndex(ivaOpciones.length ? 1 : 0);
+  }, [ivaOpciones.length]);
 
-  const cambiarTipo = (value: number | null) => {
-    const nuevoTipo = value === 2 ? 'RENTA' : 'IVA';
-    setTipo(nuevoTipo);
-    setBase(String(Number(nuevoTipo === 'IVA' ? liquidacion.iva ?? 0 : liquidacion.base ?? 0)));
-  };
+  useEffect(() => {
+    setRentaCodigoIndex(rentaOpciones.length ? 1 : 0);
+  }, [rentaOpciones.length]);
+
+  useEffect(() => {
+    setBaseIva(String(Number(liquidacion.baseIva ?? liquidacion.iva ?? 0)));
+    setBaseRenta(String(Number(liquidacion.baseRenta ?? liquidacion.base ?? 0)));
+  }, [liquidacion.baseIva, liquidacion.iva, liquidacion.baseRenta, liquidacion.base]);
 
   const guardar = async () => {
     if (saving || submitting) return;
-    const idRet = Number(String(codigo?.codigo ?? '').replace(/\D/g, ''));
-    if (!codigo || idRet <= 0) {
-      Alert.alert('Codigo requerido', 'Selecciona un codigo de retencion valido.');
-      return;
+    const retenciones: LiquidacionRetencionInput[] = [];
+    if (ivaCodigo) {
+      const idRet = Number(String(ivaCodigo.codigo).replace(/\D/g, ''));
+      if (idRet <= 0 || baseIvaNumerica <= 0 || baseIvaNumerica > Number(liquidacion.baseIva ?? liquidacion.iva ?? 0)) {
+        Alert.alert('Base IVA no valida', `La base IVA debe estar entre cero y ${formatMoney(liquidacion.baseIva ?? liquidacion.iva)}.`);
+        return;
+      }
+      retenciones.push({ tipo: 'IVA', idRet, codigoRetencion: ivaCodigo.codigo, descripcionRet: ivaCodigo.descripcion, base: baseIvaNumerica, porcentajeRetencion: ivaPorcentaje, valorRetenido: ivaRetenido, valor: ivaPorcentaje });
     }
-    if (baseNumerica <= 0 || porcentaje <= 0) {
-      Alert.alert('Datos incompletos', 'La base y el porcentaje de retencion deben ser mayores que cero.');
-      return;
+    if (rentaCodigo) {
+      const idRet = Number(String(rentaCodigo.codigo).replace(/\D/g, ''));
+      if (idRet <= 0 || baseRentaNumerica <= 0 || baseRentaNumerica > Number(liquidacion.baseRenta ?? liquidacion.base ?? 0)) {
+        Alert.alert('Base Renta no valida', `La base Renta debe estar entre cero y ${formatMoney(liquidacion.baseRenta ?? liquidacion.base)}.`);
+        return;
+      }
+      retenciones.push({ tipo: 'RENTA', idRet, codigoRetencion: rentaCodigo.codigo, descripcionRet: rentaCodigo.descripcion, base: baseRentaNumerica, porcentajeRetencion: rentaPorcentaje, valorRetenido: rentaRetenida, valor: rentaPorcentaje });
     }
-    const baseMaxima = Number(tipo === 'IVA' ? liquidacion.iva ?? 0 : liquidacion.base ?? 0);
-    if (baseNumerica > baseMaxima) {
-      Alert.alert('Base no valida', `La base de retencion no puede superar ${tipo === 'IVA' ? 'el IVA' : 'el subtotal'} de la liquidacion (${formatMoney(baseMaxima)}).`);
+    if (!retenciones.length) {
+      Alert.alert('Retencion requerida', 'Selecciona al menos una retencion de IVA o Renta.');
       return;
     }
     setSubmitting(true);
     try {
-      await onSave({
-        tipo,
-        idRet,
-        codigoRetencion: codigo.codigo,
-        descripcionRet: codigo.descripcion,
-        base: baseNumerica,
-        porcentajeRetencion: porcentaje,
-        valorRetenido,
-        valor: porcentaje,
-      });
+      await onSave(retenciones);
     } catch (error) {
       Alert.alert('No se pudo generar la retencion', error instanceof Error && error.message ? error.message : 'Ocurrio un error inesperado. Intenta nuevamente.');
     } finally {
@@ -541,34 +563,59 @@ export function RetencionLiquidacionMobileScreen({
   };
 
   return (
-    <View style={[styles.formSectionBox, styles.invoicePanel]}>
-      <View style={styles.invoicePanelHeader}>
-        <View>
-          <Text style={styles.invoicePanelTitle}>Retencion de la liquidacion autorizada</Text>
-          <Text style={styles.invoiceSectionHelp}>Completa la retencion asociada a esta liquidacion sin salir de esta pantalla.</Text>
+    <>
+      <View style={[styles.adminHeroCard, styles.invoiceHeroCard]}>
+        <View style={styles.invoiceHeroText}>
+          <Text style={styles.heroEyebrow}>Documento de retencion</Text>
+          <Text style={styles.heroTitle}>Nueva retencion</Text>
+          <Text style={styles.heroText}>Completa las retenciones de IVA y Renta de la liquidacion autorizada.</Text>
         </View>
-        <SecondaryButton label="Cerrar" onPress={onClose} />
+        <View style={styles.invoiceHeaderActions}>
+          <View style={styles.invoiceHeaderBox}>
+            <Text style={styles.invoiceMiniLabel}>Retencion</Text>
+            <Text style={styles.invoiceHeaderValue}>{retencionSerie && retencionNumero ? `${retencionSerie}-${retencionNumero}` : 'Se asigna al guardar'}</Text>
+          </View>
+          <SecondaryButton label="Cerrar" onPress={onClose} />
+        </View>
       </View>
+      <SharedInvoiceProgressSteps labels={['Liquidacion', 'Retencion', 'Emision']} activeIndex={1} />
+      {message ? <MessageBox message={message} /> : null}
+      <View style={[styles.formSectionBox, styles.invoicePanel]}>
+        <View style={styles.invoicePanelHeader}>
+          <View style={styles.invoicePanelHeaderCopy}>
+            <Text style={styles.invoicePanelTitle}>Datos de la retencion</Text>
+            <Text style={styles.invoicePanelHeaderHelp}>IVA y Renta se emitiran juntas en un solo comprobante.</Text>
+          </View>
+        </View>
       <View style={styles.clientDetailGrid}>
-        <View style={styles.clientDetailItem}><Text style={styles.clientDetailLabel}>Liquidacion</Text><Text style={styles.clientDetailValue}>{liquidacion.numero ?? liquidacion.codLiquidacion}</Text></View>
+        <View style={styles.clientDetailItem}><Text style={styles.clientDetailLabel}>Liquidacion sustento</Text><Text style={styles.clientDetailValue}>{liquidacion.numero ?? liquidacion.codLiquidacion}</Text></View>
         <View style={styles.clientDetailItem}><Text style={styles.clientDetailLabel}>Proveedor</Text><Text style={styles.clientDetailValue}>{liquidacion.proveedor ?? 'Proveedor'}</Text></View>
+        <View style={styles.clientDetailItem}><Text style={styles.clientDetailLabel}>Proxima retencion</Text><Text style={styles.clientDetailValue}>{retencionSerie && retencionNumero ? `${retencionSerie}-${retencionNumero}` : 'Se asigna al guardar'}</Text></View>
         <View style={styles.clientDetailItem}><Text style={styles.clientDetailLabel}>Total</Text><Text style={styles.invoiceHistoryAmount}>{formatMoney(liquidacion.total)}</Text></View>
       </View>
       {loading ? (
         <View style={styles.directoryLoading}><ActivityIndicator color="#0072BD" /><Text style={styles.mutedText}>Cargando codigos de retencion...</Text></View>
       ) : (
         <>
-          <View style={styles.invoiceGrid}>
-            <DropdownField label="Tipo de retencion *" options={[{ label: 'IVA', value: 1 }, { label: 'Renta', value: 2 }]} value={tipo === 'IVA' ? 1 : 2} onChange={cambiarTipo} />
-            <DropdownField label="Codigo de retencion *" options={catalogo.map((item, index) => ({ label: `${item.codigo} · ${item.descripcion} (${Number(item.valor ?? 0).toFixed(2)}%)`, value: index + 1 }))} value={codigoIndex || null} onChange={(value) => setCodigoIndex(value ?? 0)} allowClear />
+          <View style={styles.invoiceHeaderBox}>
+            <Text style={styles.invoiceMiniLabel}>Retencion IVA</Text>
+            <Text style={styles.invoiceSectionHelp}>E-Fact calcula la base IVA con el IVA total de la liquidacion.</Text>
+            <DropdownField label="Codigo IVA" options={ivaOpciones.map((item, index) => ({ label: `${Number(item.valor ?? 0).toFixed(0)}%`, value: index + 1 }))} value={ivaCodigoIndex || null} onChange={(value) => setIvaCodigoIndex(value ?? 0)} allowClear />
+            <View style={styles.invoiceGrid}>
+              <Field label="Base imponible IVA" value={baseIva} onChangeText={setBaseIva} keyboardType="decimal-pad" />
+              <Field label="Porcentaje IVA" value={`${ivaPorcentaje.toFixed(2)}%`} onChangeText={() => undefined} />
+            </View>
+            <View style={styles.invoiceTotalRow}><Text style={styles.invoiceTotalLabel}>Valor retenido IVA</Text><Text style={styles.invoiceTotalValue}>{formatMoney(ivaRetenido)}</Text></View>
           </View>
-          <View style={styles.invoiceGrid}>
-            <Field label="Base imponible *" value={base} onChangeText={setBase} keyboardType="decimal-pad" />
-            <Field label="Porcentaje *" value={`${porcentaje.toFixed(2)}%`} onChangeText={() => undefined} />
-          </View>
-          <View style={styles.invoiceTotalRow}>
-            <Text style={styles.invoiceTotalLabel}>Valor retenido</Text>
-            <Text style={styles.invoiceTotalValue}>{formatMoney(valorRetenido)}</Text>
+          <View style={styles.invoiceHeaderBox}>
+            <Text style={styles.invoiceMiniLabel}>Retencion Renta</Text>
+            <Text style={styles.invoiceSectionHelp}>En liquidaciones integradas se usa el codigo 311 al 3%.</Text>
+            <DropdownField label="Codigo Renta" options={rentaOpciones.map((item, index) => ({ label: `${item.codigo} - ${item.descripcion}`.trim(), value: index + 1 }))} value={rentaCodigoIndex || null} onChange={(value) => setRentaCodigoIndex(value ?? 0)} allowClear />
+            <View style={styles.invoiceGrid}>
+              <Field label="Base imponible Renta" value={baseRenta} onChangeText={setBaseRenta} keyboardType="decimal-pad" />
+              <Field label="Porcentaje Renta" value={`${rentaPorcentaje.toFixed(2)}%`} onChangeText={() => undefined} />
+            </View>
+            <View style={styles.invoiceTotalRow}><Text style={styles.invoiceTotalLabel}>Valor retenido Renta</Text><Text style={styles.invoiceTotalValue}>{formatMoney(rentaRetenida)}</Text></View>
           </View>
           {submitting ? (
             <View style={styles.directoryLoading}>
@@ -582,7 +629,8 @@ export function RetencionLiquidacionMobileScreen({
           </View>
         </>
       )}
-    </View>
+      </View>
+    </>
   );
 }
 
@@ -1163,7 +1211,7 @@ export function MisRetencionesMobileScreen({
   const [selectedRetencion, setSelectedRetencion] = useState<RetencionListItem | null>(null);
   const visibleRetenciones = retenciones.filter((retencion) => {
     const term = filter.trim().toLowerCase();
-    const matchesText = !term || [retencion.numero, retencion.documentoSustento, retencion.proveedor, retencion.identificacionProveedor, retencion.estadoSri].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
+    const matchesText = !term || [retencion.numero, retencion.documentoSustento, retencion.proveedor, retencion.identificacionProveedor, retencion.tipoIdentificacionProveedor, retencion.numeroAutorizacion, retencion.claveAcceso, retencion.estadoSri].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
     const estado = normalizeSriState(retencion.estadoSri);
     const matchesStatus = statusFilter === 1
       || (statusFilter === 2 && estado === 'AUTORIZADO')
@@ -1195,7 +1243,9 @@ export function MisRetencionesMobileScreen({
             DocumentoSustento: retencion.documentoSustento ?? '',
             Proveedor: retencion.proveedor ?? '',
             Identificacion: retencion.identificacionProveedor ?? '',
+            TipoIdentificacion: retencion.tipoIdentificacionProveedor ?? '',
             Estado: normalizeSriState(retencion.estadoSri),
+            ClaveAcceso: retencion.claveAcceso ?? '',
             Base: formatMoney(retencion.base),
             Retenido: formatMoney(retencion.retenido),
           })))} />
@@ -1270,9 +1320,11 @@ export function MisRetencionesMobileScreen({
           `Documento sustento: ${selectedRetencion.documentoSustento ?? 'No disponible'}`,
           `Proveedor: ${selectedRetencion.proveedor ?? 'Proveedor'}`,
           `Identificacion: ${selectedRetencion.identificacionProveedor ?? 'Sin identificacion'}`,
+          selectedRetencion.tipoIdentificacionProveedor ? `Tipo de identificacion: ${selectedRetencion.tipoIdentificacionProveedor}` : '',
           `Fecha: ${formatDocumentDate(selectedRetencion.fecha)}`,
           `Estado SRI: ${normalizeSriState(selectedRetencion.estadoSri)}`,
           selectedRetencion.numeroAutorizacion ? `Autorización: ${selectedRetencion.numeroAutorizacion}` : '',
+          selectedRetencion.claveAcceso ? `Clave de acceso: ${selectedRetencion.claveAcceso}` : '',
           selectedRetencion.mensajeSri ? `Mensaje SRI: ${selectedRetencion.mensajeSri}` : '',
           `Base: ${formatMoney(selectedRetencion.base)}`,
           `Retenido: ${formatMoney(selectedRetencion.retenido)}`,

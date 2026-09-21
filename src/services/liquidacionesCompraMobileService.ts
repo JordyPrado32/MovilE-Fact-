@@ -20,6 +20,8 @@ export type LiquidacionCompraListItem = {
   base?: number | null;
   iva?: number | null;
   total?: number | null;
+  baseIva?: number | null;
+  baseRenta?: number | null;
 };
 
 export type LiquidacionCompraLineaInput = {
@@ -166,6 +168,22 @@ export function getLiquidacionCompraPdf(userId: number, codLiquidacion: number, 
 
 export function getLiquidacionCompraXml(userId: number, codLiquidacion: number) {
   return apiRequest<{ url: string }>(`/api/liquidaciones-compra/${codLiquidacion}/xml?idUsuario=${userId}`);
+}
+
+export async function getLiquidacionCompraRetencionBases(userId: number, codLiquidacion: number) {
+  const response = await apiRequest<ApiRow>(`/api/liquidaciones-compra/${codLiquidacion}?idUsuario=${userId}`);
+  const preview = isRecord(response.preview) ? response.preview : isRecord(response.Preview) ? response.Preview : response;
+  const detallesValue = pickValue(preview, ['detalles', 'Detalles']);
+  const detalles = Array.isArray(detallesValue) ? detallesValue.filter(isRecord) : [];
+
+  return {
+    baseIva: detalles.length
+      ? detalles.reduce((total, detalle) => total + (numberValue(pickValue(detalle, ['valorIva', 'ValorIva', 'valorIVA', 'ValorIVA'])) ?? 0), 0)
+      : numberValue(pickValue(preview, ['ivaTotal', 'IvaTotal', 'iva', 'Iva'])),
+    baseRenta: detalles.length
+      ? detalles.reduce((total, detalle) => total + (numberValue(pickValue(detalle, ['precioTotalSinImpuesto', 'PrecioTotalSinImpuesto'])) ?? 0), 0)
+      : numberValue(pickValue(preview, ['totalSinImpuestos', 'TotalSinImpuestos'])),
+  };
 }
 
 export function enviarLiquidacionCompraCorreo(userId: number, codLiquidacion: number) {

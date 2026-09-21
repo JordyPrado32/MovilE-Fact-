@@ -145,14 +145,17 @@ export function OperationalModuleScreen({
 
   if (formMode && view !== 'cuentas-cobrar') {
     return (
-      <ExtractedOperationalForm
-        title={formMode === 'edit' ? `Editar ${selectedTab}` : `Registrar ${selectedTab}`}
-        form={form}
-        saving={saving}
-        onCancel={onCancel}
-        onChange={onChange}
-        onSave={onSave}
-      />
+      <>
+        {message ? <MessageBox message={message} /> : null}
+        <ExtractedOperationalForm
+          title={formMode === 'edit' ? `Editar ${selectedTab}` : `Registrar ${selectedTab}`}
+          form={form}
+          saving={saving}
+          onCancel={onCancel}
+          onChange={onChange}
+          onSave={onSave}
+        />
+      </>
     );
   }
 

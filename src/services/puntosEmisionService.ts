@@ -119,6 +119,7 @@ function legacySequencePaths(documento: PuntoDocumentoKey, params: URLSearchPara
       `/api/guiasremision?${query}&top=0`,
     ];
   }
+  if (documento === 'retencion') return [`/api/retenciones?${query}`];
   return [];
 }
 
@@ -133,6 +134,7 @@ async function enrichPuntosEmisionSequences(userId: number, data: PuntosEmisionD
       { key: 'nota-debito', serie: punto.serieNotasDeb, secKey: 'secNotaDebito', initializedKey: 'secuenciaNotaDebitoInicializada' },
       { key: 'guia-remision', serie: punto.serieGuia, secKey: 'secGuia', initializedKey: 'secuenciaGuiaInicializada' },
       { key: 'liquidacion-compra', serie: punto.serieLiquidacion ?? punto.serieLiquidacionCompra, secKey: 'secLiquidacion', initializedKey: 'secuenciaLiquidacionInicializada' },
+      { key: 'retencion', serie: punto.serieLiquidacion ?? punto.serieLiquidacionCompra ?? punto.serieRetencion, secKey: 'secRetencion', initializedKey: 'secuenciaRetencionInicializada' },
     ];
 
     await Promise.all(documents.map(async (item) => {
@@ -178,7 +180,7 @@ function getNextSequenceFromLegacyRows(response: unknown, serie: string) {
     const rowSerie = String(row.serie ?? row.Serie ?? row.serieVisual ?? row.SerieVisual ?? row.numeroCompleto ?? row.numero ?? '').replace(/\D/g, '').slice(0, 6);
     if (serieDigits && rowSerie && rowSerie !== serieDigits) return;
 
-    const rawNumber = row.secuencial ?? row.Secuencial ?? row.numFactura ?? row.NumFactura ?? row.numeroFactura ?? row.NumeroFactura ?? row.numfactura ?? row.Numfactura ?? row.numero ?? row.Numero ?? row.numeroCompleto ?? row.NumeroCompleto;
+    const rawNumber = row.secuencial ?? row.Secuencial ?? row.numFactura ?? row.NumFactura ?? row.numeroFactura ?? row.NumeroFactura ?? row.numfactura ?? row.Numfactura ?? row.numRetencion ?? row.NumRetencion ?? row.numeroRetencion ?? row.NumeroRetencion ?? row.numero ?? row.Numero ?? row.numeroCompleto ?? row.NumeroCompleto;
     const sequence = extractSequence(rawNumber);
     if (sequence > max) max = sequence;
   });
@@ -190,7 +192,7 @@ function normalizeRows(response: unknown): Record<string, unknown>[] {
   if (Array.isArray(response)) return response.filter(isRecord);
   if (!isRecord(response)) return [];
 
-  const candidates = [response.data, response.items, response.resultados, response.liquidaciones, response.guias, response.notas, response.facturas];
+  const candidates = [response.data, response.items, response.resultados, response.retenciones, response.Retenciones, response.liquidaciones, response.guias, response.notas, response.facturas];
   const rows = candidates.find(Array.isArray);
   return Array.isArray(rows) ? rows.filter(isRecord) : [];
 }

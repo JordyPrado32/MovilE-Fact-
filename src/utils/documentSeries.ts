@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { FacturaPreparacion } from '../services/facturasMobileService';
 import { PuntoEmision, PuntosEmisionData } from '../types/business';
 
-export type DocumentSeriesKind = 'factura' | 'notaCredito' | 'notaDebito' | 'liquidacion' | 'guia';
+export type DocumentSeriesKind = 'factura' | 'notaCredito' | 'notaDebito' | 'liquidacion' | 'guia' | 'retencion';
 
 type FacturaSerieOption = NonNullable<FacturaPreparacion['series']>[number];
 type DocumentSerieOption = FacturaSerieOption & {
@@ -89,7 +89,7 @@ export function getPuntoDocumentSequences(punto: PuntoEmision) {
     { label: 'Nota credito', serie: punto.serieNotasCred || serie, secuencia: getPuntoSequenceForDocument(punto, 'notaCredito') },
     { label: 'Nota debito', serie: punto.serieNotasDeb || serie, secuencia: getPuntoSequenceForDocument(punto, 'notaDebito') },
     { label: 'Guia', serie: punto.serieGuia || serie, secuencia: getPuntoSequenceForDocument(punto, 'guia') },
-    { label: 'Retencion', serie: punto.serieRetencion || serie, secuencia: punto.secuenciaRetencionInicializada === false ? '-' : getPuntoSequenceValue(punto, ['secRetencion', 'secuencialRetencion', 'secuenciaRetencion', 'siguienteRetencion', 'proximoRetencion', 'numRetencion', 'numeroRetencion']) },
+    { label: 'Retencion', serie: punto.serieLiquidacion || punto.serieLiquidacionCompra || punto.serieRetencion || serie, secuencia: punto.secuenciaRetencionInicializada === false ? '-' : getPuntoSequenceValue(punto, ['secRetencion', 'secuencialRetencion', 'secuenciaRetencion', 'siguienteRetencion', 'proximoRetencion', 'numRetencion', 'numeroRetencion']) },
     { label: 'Liquidacion', serie: punto.serieLiquidacion || punto.serieLiquidacionCompra || serie, secuencia: getPuntoSequenceForDocument(punto, 'liquidacion') },
   ];
 }
@@ -160,6 +160,7 @@ function getPuntoSerieForDocument(punto: PuntoEmision, kind: DocumentSeriesKind)
     kind === 'notaDebito' ? punto.serieNotasDeb ?? row.serieNotaDebito :
     kind === 'liquidacion' ? punto.serieLiquidacion ?? punto.serieLiquidacionCompra ?? row.serieLiquidacionCompra :
     kind === 'guia' ? punto.serieGuia :
+    kind === 'retencion' ? punto.serieLiquidacion ?? punto.serieLiquidacionCompra ?? punto.serieRetencion :
     punto.serieFactura;
   return String(byKind || getPuntoSerie(punto) || '');
 }
@@ -169,6 +170,7 @@ function getPuntoSequenceInitialized(punto: PuntoEmision, kind: DocumentSeriesKi
   if (kind === 'notaDebito') return punto.secuenciaNotaDebitoInicializada;
   if (kind === 'liquidacion') return punto.secuenciaLiquidacionInicializada;
   if (kind === 'guia') return punto.secuenciaGuiaInicializada;
+  if (kind === 'retencion') return punto.secuenciaRetencionInicializada;
   return punto.secuenciaFacturaInicializada;
 }
 
@@ -180,6 +182,7 @@ function getPuntoSequenceForDocument(punto: PuntoEmision, kind: DocumentSeriesKi
   if (kind === 'notaDebito') return getPuntoSequenceValue(punto, ['secNotaDebito', 'secuencialNotaDebito', 'secuenciaNotaDebito', 'siguienteNotaDebito', 'proximoNotaDebito', 'secND', 'numNotaDebito', 'numeroNotaDebito']);
   if (kind === 'liquidacion') return getPuntoSequenceValue(punto, ['secLiquidacion', 'secuencialLiquidacion', 'secuenciaLiquidacion', 'siguienteLiquidacion', 'proximoLiquidacion', 'secLiquidacionCompra', 'numLiquidacion', 'numeroLiquidacion']);
   if (kind === 'guia') return getPuntoSequenceValue(punto, ['secGuia', 'secuencialGuia', 'secuenciaGuia', 'siguienteGuia', 'proximoGuia', 'numGuia', 'numeroGuia']);
+  if (kind === 'retencion') return getPuntoSequenceValue(punto, ['secRetencion', 'secuencialRetencion', 'secuenciaRetencion', 'siguienteRetencion', 'proximoRetencion', 'numRetencion', 'numeroRetencion']);
   return getPuntoSequenceValue(punto, ['secFactura', 'secuencialFactura', 'secuenciaFactura', 'siguienteFactura', 'proximoFactura', 'numFactura', 'numeroFactura']);
 }
 

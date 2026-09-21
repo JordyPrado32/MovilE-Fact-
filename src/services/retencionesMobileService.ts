@@ -102,10 +102,12 @@ export type RetencionListItem = {
   documentoSustento?: string | null;
   proveedor?: string | null;
   identificacionProveedor?: string | null;
+  tipoIdentificacionProveedor?: string | null;
   estadoSri?: string | null;
   autorizado?: boolean | null;
   base?: number | null;
   retenido?: number | null;
+  claveAcceso?: string | null;
   pdfUrl?: string | null;
   xmlUrl?: string | null;
   numeroAutorizacion?: string | null;
@@ -129,13 +131,16 @@ export type LiquidacionRetencionInput = {
   valor: number;
 };
 
+const EFACT_RETENCION_IVA_VALORES = new Set([20, 70, 100]);
+const EFACT_RETENCION_RENTA_CODIGO = '311';
+
 export async function getRetenciones(userId: number, top = 0) {
   const response = await apiRequest<ApiRow[] | Record<string, unknown>>(
     withQuery(RETENCIONES_GENERADAS_PATH, { idUsuario: userId, top }),
   );
   const rows = normalizeRows(response);
   const retenciones = rows.filter(isRetencionRow);
-  return (retenciones.length ? retenciones : rows).map(toRetencionListItem);
+  return deduplicateRetenciones((retenciones.length ? retenciones : rows).map(toRetencionListItem));
 }
 
 export function getRetencionPdf(userId: number, codRetencion: number, formato: DocumentPdfFormat = 'A4') {
@@ -147,33 +152,52 @@ export function getRetencionXml(userId: number, codRetencion: number) {
 }
 
 export function enviarRetencionCorreo(userId: number, codRetencion: number) {
-  return apiRequest<void>(`/api/retenciones/${codRetencion}/enviar-correo`, {
+  return apiRequest<void>(`/api/retenciones/${codRetencion}/enviar-correo?idUsuario=${userId}`, {
     method: 'POST',
     body: JSON.stringify({ idUsuario: userId, forzarReenvio: true, correosCopia: [] }),
   });
 }
 
 export function emitirRetencionSri(userId: number, codRetencion: number) {
-  return apiRequest<{ estado?: string; mensaje?: string; autorizacion?: string }>(`/api/retenciones/${codRetencion}/emitir?idUsuario=${userId}`, { method: 'POST' });
+  return apiRequest<ApiRow>(`/api/retenciones/${codRetencion}/emitir?idUsuario=${userId}`, { method: 'POST' }).then((response) => ({
+    estado: text(pickValue(response, ['estado', 'Estado'])),
+    mensaje: text(pickValue(response, ['mensaje', 'Mensaje', 'message', 'Message'])),
+    autorizacion: text(pickValue(response, ['autorizacion', 'Autorizacion', 'numeroAutorizacion', 'NumeroAutorizacion'])),
+  }));
 }
 
 export async function getRetencionCatalogo(tipo: 'IVA' | 'RENTA') {
   const response = await apiRequest<ApiRow[] | Record<string, unknown>>(`/api/retenciones-catalogo/${tipo.toLowerCase()}`);
-  return normalizeRows(response).map((row) => ({
-    codigo: text(pickValue(row, ['codigo', 'Codigo', 'id', 'Id'])),
+  const items = normalizeRows(response).map((row) => ({
+    codigo: text(pickValue(row, ['codigo', 'Codigo', 'id', 'Id'])).trim(),
     descripcion: text(pickValue(row, ['descripcion', 'Descripcion', 'nombre', 'Nombre'])) || 'Retencion',
     valor: numberValue(pickValue(row, ['valorFinal', 'ValorFinal', 'valor', 'Valor', 'porcentaje', 'Porcentaje'])),
   })).filter((item) => item.codigo);
+  const unique = new Map<string, RetencionCatalogItem>();
+  items.forEach((item) => unique.set(item.codigo, unique.get(item.codigo) ?? item));
+  const catalogo = Array.from(unique.values());
+  if (tipo === 'IVA') {
+    return catalogo.filter((item) => EFACT_RETENCION_IVA_VALORES.has(Number(item.valor ?? 0)));
+  }
+
+  return catalogo
+    .filter((item) => item.codigo.trim() === EFACT_RETENCION_RENTA_CODIGO)
+    .map((item) => ({ ...item, valor: 3 }));
 }
 
-export function crearRetencionDesdeLiquidacion(userId: number, codLiquidacion: number, retencion: LiquidacionRetencionInput) {
-  return apiRequest<{ codLiquidacion?: number; codRetencion?: number | null; numeroRetencion?: string }>(
+export async function crearRetencionDesdeLiquidacion(userId: number, codLiquidacion: number, retenciones: LiquidacionRetencionInput[]) {
+  const response = await apiRequest<ApiRow>(
     `/api/liquidaciones-compra/${codLiquidacion}/retencion?idUsuario=${userId}`,
     {
       method: 'POST',
-      body: JSON.stringify({ Retenciones: [retencion] }),
+      body: JSON.stringify({ Retenciones: retenciones }),
     },
   );
+  return {
+    codLiquidacion: numberValue(pickValue(response, ['codLiquidacion', 'CodLiquidacion'])),
+    codRetencion: numberValue(pickValue(response, ['codRetencion', 'CodRetencion', 'secRetencion', 'SecRetencion'])),
+    numeroRetencion: text(pickValue(response, ['numeroRetencion', 'NumeroRetencion', 'numRetencion', 'NumRetencion'])) || undefined,
+  };
 }
 
 function normalizeRows(response: ApiRow[] | Record<string, unknown>): ApiRow[] {
@@ -200,6 +224,7 @@ function withQuery(path: string, params: Record<string, string | number>) {
 function isRetencionRow(row: ApiRow) {
   const codDocumento = text(pickValue(row, ['coddocumento', 'CodDocumento', 'tipoDocumento', 'TipoDocumento', 'documentType', 'DocumentType']));
   if (['7', '07'].includes(codDocumento.trim())) return true;
+  if (['numeroRetencion', 'NumeroRetencion', 'numRetencion', 'NumRetencion', 'codRetencion', 'CodRetencion', 'secRetencion', 'SecRetencion'].some((key) => row[key] !== null && row[key] !== undefined)) return true;
 
   const values = [
     pickValue(row, ['tipo', 'Tipo', 'tipoComprobante', 'TipoComprobante', 'documento', 'Documento', 'descripcion', 'Descripcion']),
@@ -216,7 +241,7 @@ function toRetencionListItem(row: ApiRow): RetencionListItem {
   const serie = text(pickValue(row, ['serie', 'Serie']));
   const numero = text(pickValue(row, ['numero', 'Numero', 'numeroRetencion', 'NumeroRetencion', 'numRetencion', 'NumRetencion', 'secuencial', 'Secuencial']));
   const numeroCompleto = text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento']));
-  const base = numberValue(pickValue(row, RETENCION_BASE_KEYS)) ?? sumNestedNumbers(row, RETENCION_DETAIL_KEYS, RETENCION_BASE_KEYS);
+  const base = numberValue(pickValue(row, [...RETENCION_BASE_KEYS, 'baseTotal', 'BaseTotal'])) ?? sumNestedNumbers(row, RETENCION_DETAIL_KEYS, RETENCION_BASE_KEYS);
   const retenido = numberValue(pickValue(row, RETENIDO_KEYS)) ?? sumNestedNumbers(row, RETENCION_DETAIL_KEYS, RETENIDO_KEYS);
 
   const autorizado = booleanValue(pickValue(row, ['autorizado', 'Autorizado'])) === true;
@@ -228,15 +253,33 @@ function toRetencionListItem(row: ApiRow): RetencionListItem {
     documentoSustento: text(pickValue(row, ['documentoSustento', 'DocumentoSustento', 'sustento', 'Sustento', 'numeroSustento', 'NumeroSustento', 'factura', 'Factura'])) || null,
     proveedor: text(pickValue(row, ['proveedor', 'Proveedor', 'nombreProveedor', 'NombreProveedor', 'razonSocial', 'RazonSocial'])) || null,
     identificacionProveedor: text(pickValue(row, ['identificacionProveedor', 'IdentificacionProveedor', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc'])) || null,
+    tipoIdentificacionProveedor: text(pickValue(row, ['tipoIdentificacionProveedor', 'TipoIdentificacionProveedor'])) || null,
     estadoSri: normalizeRetencionState(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estado', 'Estado']), autorizado),
     autorizado,
     base,
     retenido,
+    claveAcceso: text(pickValue(row, ['claveAcceso', 'ClaveAcceso', 'clave', 'Clave'])) || null,
     pdfUrl: text(pickValue(row, ['pdfUrl', 'PdfUrl', 'urlPdf', 'UrlPdf'])) || null,
     xmlUrl: text(pickValue(row, ['xmlUrl', 'XmlUrl', 'urlXml', 'UrlXml'])) || null,
-    numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'numAutorizacion', 'NumAutorizacion', 'claveAcceso', 'ClaveAcceso'])) || null,
+    numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'numAutorizacion', 'NumAutorizacion'])) || null,
     mensajeSri: text(pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje', 'errorSri', 'ErrorSri', 'observacion', 'Observacion'])) || null,
   };
+}
+
+function deduplicateRetenciones(items: RetencionListItem[]) {
+  const unique = new Map<string, RetencionListItem>();
+  items.forEach((item) => {
+    const key = item.codRetencion > 0
+      ? `id:${item.codRetencion}`
+      : `doc:${[item.numero, item.documentoSustento, item.identificacionProveedor, item.fecha].map((value) => text(value).trim().toLowerCase()).join('|')}`;
+    const existing = unique.get(key);
+    unique.set(key, existing ? mergeRetencion(existing, item) : item);
+  });
+  return Array.from(unique.values());
+}
+
+function mergeRetencion(existing: RetencionListItem, incoming: RetencionListItem) {
+  return Object.fromEntries(Object.entries(existing).map(([key, value]) => [key, value ?? incoming[key as keyof RetencionListItem]])) as RetencionListItem;
 }
 
 function normalizeRetencionState(value: unknown, autorizado: boolean) {

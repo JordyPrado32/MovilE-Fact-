@@ -5060,6 +5060,17 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 9,
   },
+  invoicePanelHeaderCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  invoicePanelHeaderHelp: {
+    color: '#EAF7FF',
+    flexShrink: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
   invoicePanelTitle: {
     color: '#FFFFFF',
     fontSize: 14,
