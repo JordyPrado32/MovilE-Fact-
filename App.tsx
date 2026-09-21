@@ -39,7 +39,7 @@ import { createCategoria, createSubcategoria, deleteCategoria, deleteSubcategori
 import { createCliente, deleteCliente, getCiudades, getClienteLookups, getClientes, getProvincias, updateCliente } from './src/services/clientesService';
 import { consultarEmisorSri, createEmisor, deleteEmisor, getEmisor, getEmisores, getFirmaEstado, updateEmisor, uploadFirmaArchivo } from './src/services/emisoresService';
 import { anularFactura, buscarFacturaClientes, buscarFacturaProductos, enviarFacturaCorreo, FacturaDetalle, FacturaListItem, FacturaPreparacion, FacturaProducto, getFacturaDetalle, getFacturaPdf, getFacturas, getFacturaPreparacion, getFacturaXml, guardarFactura, reintentarFacturaSri } from './src/services/facturasMobileService';
-import { anularGuiaRemision, buscarGuiaClientes, buscarGuiaFacturas, buscarGuiaProductos, buscarGuiaTransportistas, emitirGuiaRemision, enviarGuiaRemisionCorreo, getGuiaRemisionPdf, getGuiaRemisionPreparacion, getGuiasRemision, getGuiaRemisionXml, guardarGuiaRemision, GuiaRemisionDetalleInput, GuiaRemisionListItem } from './src/services/guiasRemisionMobileService';
+import { anularGuiaRemision, buscarGuiaClientes, buscarGuiaFacturas, buscarGuiaProductos, buscarGuiaTransportistas, emitirGuiaRemision, enviarGuiaRemisionCorreo, getGuiaRemisionPdf, getGuiaRemisionPreparacion, getGuiaTransportista, getGuiasRemision, getGuiaRemisionXml, guardarGuiaRemision, GuiaRemisionDetalleInput, GuiaRemisionListItem } from './src/services/guiasRemisionMobileService';
 import { getMenusByRol, hasMenusByRolEndpoint } from './src/services/menuService';
 import { buscarLiquidacionProductos, buscarLiquidacionProveedores, emitirLiquidacionCompra, enviarLiquidacionCompraCorreo, getLiquidacionCompraPdf, getLiquidacionCompraPreparacion, getLiquidacionesCompra, getLiquidacionCompraXml, guardarLiquidacionCompra, getLiquidacionCodigoPorcentaje, LiquidacionCompraListItem } from './src/services/liquidacionesCompraMobileService';
 import { anularNotaCredito, buscarNotaCreditoFacturas, emitirNotaCredito, emitirNotaCreditoAutomatica, enviarNotaCreditoCorreo, getNotaCreditoDetallesDisponibles, getNotaCreditoPdf, getNotaCreditoPreparacion, getNotasCredito, getNotaCreditoXml, guardarNotaCredito, NotaCreditoListItem } from './src/services/notasCreditoMobileService';
@@ -689,6 +689,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const savingFacturaRef = useRef(false);
   const pendingFacturaRetryRef = useRef<{ startedAt: number; expectedTotal: number; identificacion: string } | null>(null);
   const pendingGuiaRetryRef = useRef<number | null>(null);
+  const [checkingGuia, setCheckingGuia] = useState(false);
+  const previousGuiaViewRef = useRef<WorkspaceView | null>(null);
   const pendingNotaDebitoRetryRef = useRef<number | null>(null);
   const pendingRetencionEmitRef = useRef<number | null>(null);
   const [facturaForm, setFacturaForm] = useState<NuevaFacturaFormState>(initialNuevaFacturaForm);
@@ -1224,7 +1226,9 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
     let mounted = true;
     setLoadingGuias(true);
-    setDirectoryMessage(null);
+    const enteredGuiaView = previousGuiaViewRef.current !== activeView;
+    previousGuiaViewRef.current = activeView;
+    if (enteredGuiaView) setDirectoryMessage(null);
 
     const request = activeView === 'nueva-guia-remision'
       ? getGuiaRemisionPreparacion(catalogUserId).then((data) => {
@@ -1301,7 +1305,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
           setNotaDebitoForm((current) => ({ ...current, serie }));
         })
       : getNotasDebito(catalogUserId, 0).then((data) => {
-          if (mounted) setNotasDebitoList(data ?? []);
+          if (mounted) setNotasDebitoList(Array.isArray(data) ? data : []);
         });
 
     request
@@ -3166,8 +3170,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const tryAuthorizeAfterSave = async (emit: () => Promise<{ estado?: string; mensaje?: string }>) => {
     try {
       return { sri: await emit(), failed: false };
-    } catch {
-      return { sri: null, failed: true };
+    } catch (error) {
+      return {
+        sri: null,
+        failed: true,
+        error: error instanceof ApiError || error instanceof Error ? error.message : 'No se pudo confirmar la respuesta del SRI.',
+      };
     }
   };
 
@@ -4587,18 +4595,37 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
   };
 
-  const selectGuiaTransportista = (transportista: Cliente) => {
-    setGuiaTransportista(transportista);
+  const selectGuiaTransportista = async (transportista: Cliente) => {
+    const applyTransportista = (selected: Cliente) => {
+      setGuiaTransportista(selected);
+      setGuiaForm((current) => ({
+        ...current,
+        transportistaBusqueda: getClienteDisplayName(selected),
+        tipoIdentificacion: getTipoIdentificacionLabel(selected.tipoidentificacion),
+        numeroIdentificacion: getClienteIdentification(selected),
+        direccion: selected.direccion ?? current.direccion,
+        telefono: selected.celular || selected.telefonoconvencional || current.telefono,
+        correoPrincipal: getClienteEmail(selected) || current.correoPrincipal,
+      }));
+    };
+
+    applyTransportista(transportista);
     setGuiaTransportistas([]);
-    setGuiaForm((current) => ({
-      ...current,
-      transportistaBusqueda: getClienteDisplayName(transportista),
-      tipoIdentificacion: getTipoIdentificacionLabel(transportista.tipoidentificacion),
-      numeroIdentificacion: getClienteIdentification(transportista),
-      direccion: transportista.direccion ?? current.direccion,
-      telefono: transportista.celular || transportista.telefonoconvencional || current.telefono,
-      correoPrincipal: getClienteEmail(transportista) || current.correoPrincipal,
-    }));
+    const identificacion = getClienteIdentification(transportista).trim();
+    if (!catalogUserId || !identificacion || transportista.direccion?.trim()) return;
+
+    try {
+      const detalle = await getGuiaTransportista(catalogUserId, identificacion);
+      if (detalle) applyTransportista({
+        ...transportista,
+        ...detalle,
+        nombrerazonsocial: detalle.nombrerazonsocial || transportista.nombrerazonsocial,
+        numeroidentificacion: detalle.numeroidentificacion || transportista.numeroidentificacion,
+        direccion: detalle.direccion || transportista.direccion,
+      });
+    } catch {
+      // La selección original se mantiene; la validación mostrará el dato faltante.
+    }
   };
 
   const selectGuiaCliente = (cliente: Cliente) => {
@@ -4712,7 +4739,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   };
 
   const saveNuevaGuia = async () => {
-    if (!catalogUserId || savingGuia) return;
+    if (!catalogUserId) {
+      setDirectoryMessage({ type: 'error', text: 'No se pudo identificar al usuario. Cierra sesión e ingresa nuevamente.' });
+      return;
+    }
+    if (savingGuia) return;
     if (pendingGuiaRetryRef.current) {
       Alert.alert(
         'Guia posiblemente guardada',
@@ -4735,7 +4766,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
     const identificacionTransportista = getClienteIdentification(guiaTransportista).trim();
     const identificacionDestinatario = getClienteIdentification(guiaCliente).trim();
-    if (!getClienteDisplayName(guiaTransportista).trim() || !identificacionTransportista || !guiaTransportista.direccion?.trim()) {
+    const direccionTransportista = (guiaTransportista.direccion?.trim() || guiaForm.direccion.trim()).trim();
+    if (!getClienteDisplayName(guiaTransportista).trim() || !identificacionTransportista || !direccionTransportista) {
       setDirectoryMessage({ type: 'error', text: 'Completa razon social, identificacion y direccion del transportista.' });
       return;
     }
@@ -4756,6 +4788,19 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       setDirectoryMessage({ type: 'error', text: 'Agrega al menos un detalle de traslado.' });
       return;
     }
+    if (guiaFactura && guiaFactura.codfactura <= 0) {
+      setDirectoryMessage({ type: 'error', text: 'La factura seleccionada no tiene un identificador valido. Vuelve a buscarla y selecciona el resultado nuevamente.' });
+      return;
+    }
+    const guiaCodemisor = getSerieCodemisorFromOptions(
+      getDocumentSerieOptions(guiaPreparacion, puntosData, 'guia'),
+      guiaForm.serie,
+      guiaPreparacion,
+    ) ?? emisores.find((emisor) => emisor.estado !== false)?.codigo ?? null;
+    if (!guiaCodemisor) {
+      setDirectoryMessage({ type: 'error', text: 'No hay un emisor activo asociado a la guia. Configura el emisor y vuelve a intentarlo.' });
+      return;
+    }
     const detalleKeys = new Set<string>();
     let detalles: GuiaRemisionDetalleInput[];
     try {
@@ -4773,22 +4818,17 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       setDirectoryMessage({ type: 'error', text: error instanceof Error ? error.message : 'Revisa los detalles de la guia.' });
       return;
     }
-    const prerequisitesError = await validateEmissionPrerequisites();
-    if (prerequisitesError) {
-      setDirectoryMessage({ type: 'error', text: prerequisitesError });
-      return;
-    }
     setSavingGuia(true);
-    setDirectoryMessage(null);
+    setDirectoryMessage({ type: 'info', text: 'Guardando la guia de remision...' });
     const saveStartedAt = Date.now();
     try {
       const result = await guardarGuiaRemision({
         idUsuario: catalogUserId,
-        transportista: guiaTransportista,
+        transportista: { ...guiaTransportista, direccion: direccionTransportista },
         destinatario: guiaCliente,
         factura: guiaFactura,
         serie: guiaForm.serie,
-        codemisor: getSerieCodemisorFromOptions(getDocumentSerieOptions(guiaPreparacion, puntosData, 'guia'), guiaForm.serie, guiaPreparacion),
+        codemisor: guiaCodemisor,
         placa: guiaForm.placa,
         contribuyenteEspecial: guiaForm.contribuyenteEspecial,
         obligadoContabilidad: guiaForm.transportistaObligadoContabilidad,
@@ -4801,14 +4841,16 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         detalles,
       });
       const secGuia = result.codGuia;
+      if (!secGuia) {
+        throw new ApiError(502, 'El servidor no devolvio el identificador de la guia guardada. Revisa Mis Guias antes de volver a intentarlo.');
+      }
       pendingGuiaRetryRef.current = null;
-      const sriResult = secGuia
-        ? await tryAuthorizeAfterSave(() => emitirGuiaRemision(catalogUserId, secGuia))
-        : { sri: null, failed: true };
+      setDirectoryMessage({ type: 'info', text: 'Guia guardada. Enviandola al SRI...' });
+      const sriResult = await tryAuthorizeAfterSave(() => emitirGuiaRemision(catalogUserId, secGuia));
       clearGuiaForm();
       setDirectoryMessage({
         type: getSriMessageType(sriResult.sri?.estado, sriResult.failed),
-        text: `${result.mensaje ?? 'Guia de remision guardada.'} ${getSriEmissionMessage('Guía de remisión', sriResult.sri?.estado, sriResult.failed)}`.trim(),
+        text: `${result.mensaje ?? 'Guia de remision guardada.'} ${sriResult.error ? `No se pudo autorizar la guia: ${sriResult.error}` : getSriEmissionMessage('Guía de remisión', sriResult.sri?.estado, sriResult.failed)}`.trim(),
       });
       setReloadKey((value) => value + 1);
       if (!sriResult.failed && sriResult.sri?.estado?.toUpperCase() === 'AUTORIZADO') {
@@ -5539,6 +5581,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       drawerProgress,
       emisorForm,
       emisorFormMode,
+      emisorToForm,
       emisores,
       emitGuiaSri,
       emitLiquidacionSri,
@@ -5585,10 +5628,16 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       getFacturaPdf,
       getFacturaXml,
       getFirmaDetailValues,
+      getLiquidacionCompraPdf,
+      getLiquidacionCompraXml,
       getGuiaRemisionPdf,
       getGuiaRemisionXml,
       getInitials,
       getNextPuntoCode,
+      getNotaCreditoPdf,
+      getNotaCreditoXml,
+      getNotaDebitoPdf,
+      getNotaDebitoXml,
       getNotificationTone,
       getNotificationView,
       getProductoDetailValues,
@@ -5790,6 +5839,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       savingEmisor,
       savingFactura,
       savingFacturaRef,
+      checkingGuia,
       savingGuia,
       savingLiquidacion,
       savingLiquidacionRetencion,

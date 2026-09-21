@@ -167,6 +167,14 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
   const drawerMenu = context.drawerMenu;
   const modules = context.modules;
   const getWorkspaceTitle = context.getWorkspaceTitle;
+  const checkingGuia = context.checkingGuia;
+  const emisorToForm = context.emisorToForm;
+  const getNotaCreditoPdf = context.getNotaCreditoPdf;
+  const getNotaCreditoXml = context.getNotaCreditoXml;
+  const getNotaDebitoPdf = context.getNotaDebitoPdf;
+  const getNotaDebitoXml = context.getNotaDebitoXml;
+  const getLiquidacionCompraPdf = context.getLiquidacionCompraPdf;
+  const getLiquidacionCompraXml = context.getLiquidacionCompraXml;
   const renderBusinessDrawerNode = (node: any, inset = false) => {
     const active = isDrawerNodeActive(node);
     const enabledChildren = node.children?.filter((child: any) => !child.disabled) ?? [];
@@ -560,13 +568,14 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
              clearNotaCreditoForm,
              saveNuevaNotaCredito,
              emitNotaCreditoSri,
-             confirmAnularNotaCredito,
-             notaDebitoForm,
-             notaDebitoPreparacion,
-             notaDebitoFactura,
-             notaDebitoFacturas,
-             notaDebitoLineas,
-             loadingNotasDebito,
+              confirmAnularNotaCredito,
+              notaDebitoForm,
+              notaDebitoPreparacion,
+              notaDebitoFactura,
+              notaDebitoFacturas,
+              notaDebitoLineas,
+              notasDebitoList,
+              loadingNotasDebito,
              savingNotaDebito,
              updateNotaDebitoForm,
              searchNotaDebitoFacturas,
@@ -640,6 +649,47 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
              openKnownDocumentAsset,
              sendRetencionCorreo,
              emitRetencionSri,
+             portalFirstName,
+             userId,
+             botVoiceControlsRef,
+             handleBotNavigate,
+             botMessages,
+             setBotMessages,
+             botDraft,
+             setBotDraft,
+             botFeedbackByMessage,
+             setBotFeedbackByMessage,
+             directoryMessage,
+             openNewCategoria,
+             openNewSubcategoria,
+             loadingCategorias,
+             setEmisorForm,
+             emisorToForm,
+             savingPunto,
+             setPuntoForm,
+             catalogUserId,
+             processingNotaCreditoAutomatica,
+             searchNotaCreditoClientes,
+             notaDebitoCliente,
+             getNotaCreditoPdf,
+             getNotaCreditoXml,
+             sendNotaCreditoCorreo,
+             getNotaDebitoPdf,
+             getNotaDebitoXml,
+             sendNotaDebitoCorreo,
+             setLiquidacionRetencion,
+             liquidacionesList,
+             getLiquidacionCompraPdf,
+             getLiquidacionCompraXml,
+             sendLiquidacionCorreo,
+             emitLiquidacionSri,
+             setActiveView,
+             adminItems,
+             loadingAdminItems,
+             adminTabByView,
+             setAdminTabByView,
+             showAdminItemDetail,
+             checkingGuia,
              setReloadKey,
            }} />
             {isOperationalMobileView(activeView) ? (

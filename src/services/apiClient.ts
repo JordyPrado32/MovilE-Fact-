@@ -56,6 +56,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       },
     });
   } catch (error) {
+    clearTimeout(timeout);
     if (!suppressErrorLog) logApiNetworkError(path, requestOptions.method, Date.now() - startedAt, requestTimeoutMs, error);
 
     if (error instanceof Error && error.name === 'AbortError') {
@@ -63,8 +64,6 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     }
 
     throw new ApiError(0, 'No se pudo conectar con el servidor.');
-  } finally {
-    clearTimeout(timeout);
   }
 
   const setCookie = response.headers.get('set-cookie');
@@ -72,7 +71,18 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   if (authCookie) authSessionCookie = authCookie;
 
   const contentType = response.headers.get('content-type') ?? '';
-  const text = await response.text();
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (error) {
+    clearTimeout(timeout);
+    if (!suppressErrorLog) logApiNetworkError(path, requestOptions.method, Date.now() - startedAt, requestTimeoutMs, error);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new ApiError(0, 'La conexion con el servidor tardo demasiado.');
+    }
+    throw new ApiError(0, 'No se pudo leer la respuesta del servidor.');
+  }
+  clearTimeout(timeout);
   const body = contentType.includes('application/json') && text ? safeParseJson(text) : text;
 
   if (!response.ok) {
@@ -117,12 +127,11 @@ export async function apiRequestBinary(path: string, options: RequestOptions = {
       },
     });
   } catch (error) {
+    clearTimeout(timeout);
     if (!suppressErrorLog) logApiNetworkError(path, requestOptions.method, Date.now() - startedAt, requestTimeoutMs, error);
 
     if (error instanceof Error && error.name === 'AbortError') throw new ApiError(0, 'La conexion con el servidor tardo demasiado.');
     throw new ApiError(0, 'No se pudo conectar con el servidor.');
-  } finally {
-    clearTimeout(timeout);
   }
 
   if (!response.ok) {
@@ -130,7 +139,12 @@ export async function apiRequestBinary(path: string, options: RequestOptions = {
       clearAuthSession();
       if (!path.startsWith('/api/auth/')) authFailureHandler?.();
     }
-    const text = await response.text();
+    let text: string;
+    try {
+      text = await response.text();
+    } finally {
+      clearTimeout(timeout);
+    }
     const message = getErrorMessage(response.status, text, path);
     if (!suppressErrorLog) {
       logApiError(path, response.status, text, {
@@ -144,7 +158,16 @@ export async function apiRequestBinary(path: string, options: RequestOptions = {
     throw new ApiError(response.status, message);
   }
 
-  return { bytes: await response.arrayBuffer(), contentType: response.headers.get('content-type') ?? 'application/pdf' };
+  try {
+    const bytes = await response.arrayBuffer();
+    clearTimeout(timeout);
+    return { bytes, contentType: response.headers.get('content-type') ?? 'application/pdf' };
+  } catch (error) {
+    clearTimeout(timeout);
+    if (!suppressErrorLog) logApiNetworkError(path, requestOptions.method, Date.now() - startedAt, requestTimeoutMs, error);
+    if (error instanceof Error && error.name === 'AbortError') throw new ApiError(0, 'La conexion con el servidor tardo demasiado.');
+    throw new ApiError(0, 'No se pudo leer la respuesta del servidor.');
+  }
 }
 
 function safeParseJson(text: string) {
@@ -180,7 +203,7 @@ function getErrorMessage(status: number, body: unknown, path: string) {
   }
 
   if (status >= 500) {
-    return 'El servidor no pudo completar la operación. Intenta nuevamente.';
+    return bodyMessage || 'El servidor no pudo completar la operación. Intenta nuevamente.';
   }
 
   if (status === 401) {

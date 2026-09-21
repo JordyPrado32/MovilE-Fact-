@@ -196,7 +196,7 @@ export function PerfilForm<T extends PerfilFormData>({
       </View>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>{erubrica ? 'Cuenta E-Rubrica' : 'Cuenta'}</Text>
-        <Field label="Correo Electronico" value={form.email} onChangeText={(value) => onChange('email', value)} autoCapitalize="none" keyboardType="email-address" />
+        <Field label="Correo Electronico (opcional)" value={form.email} onChangeText={(value) => onChange('email', value)} autoCapitalize="none" keyboardType="email-address" />
         <DropdownField
           label="Tipo de cliente *"
           options={tiposCliente.map((tipo) => ({ label: getTipoClienteLabel(tipo.tclCodigo), value: tipo.tclCodigo }))}
@@ -228,7 +228,7 @@ export function PerfilForm<T extends PerfilFormData>({
       </View>
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Contacto</Text>
-        <Field label="Celular" value={form.celular} onChangeText={(value) => onChange('celular', value)} keyboardType="phone-pad" />
+        <Field label="Celular (opcional)" value={form.celular} onChangeText={(value) => onChange('celular', value)} keyboardType="phone-pad" />
         <Field label="Direccion *" value={form.direccionEmpresa} onChangeText={(value) => onChange('direccionEmpresa', value)} />
       </View>
       <View style={styles.formSectionBox}>
@@ -257,8 +257,8 @@ export function PerfilForm<T extends PerfilFormData>({
         </View>
         {form.cambiarClave ? (
           <>
-            <Field label="Nueva clave" value={form.nuevaPassword} onChangeText={(value) => onChange('nuevaPassword', value)} secureTextEntry />
-            <Field label="Confirmar clave" value={form.confirmarPassword} onChangeText={(value) => onChange('confirmarPassword', value)} secureTextEntry />
+            <Field label="Nueva clave *" value={form.nuevaPassword} onChangeText={(value) => onChange('nuevaPassword', value)} secureTextEntry />
+            <Field label="Confirmar clave *" value={form.confirmarPassword} onChangeText={(value) => onChange('confirmarPassword', value)} secureTextEntry />
           </>
         ) : (
           <View style={styles.securityNoChangeBox}>

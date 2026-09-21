@@ -441,9 +441,11 @@ export function normalizeText(value?: string | null) {
 
 export function normalizeSriState(value?: string | null) {
   const normalized = (value ?? '').trim().toUpperCase().replace(/-/g, '_');
-  if (normalized === 'AUTORIZADO' || normalized === 'AUTHORIZED') return 'AUTORIZADO';
+  if (normalized === 'A' || normalized === 'AUTORIZADO' || normalized === 'AUTHORIZED') return 'AUTORIZADO';
+  if (normalized === 'P') return 'PENDIENTE';
   if (normalized === 'I' || normalized === 'ENVIADO') return 'PENDIENTE';
-  if (normalized === 'ANULADO' || normalized === 'CANCELADO') return 'ANULADO';
+  if (normalized === 'ANULADA' || normalized === 'ANULADO' || normalized === 'CANCELADO') return 'ANULADO';
+  if (normalized === 'N') return 'RECHAZADO';
   if (normalized === 'ERROR' || normalized === 'FALLIDO' || normalized === 'FAILED') return 'ERROR';
   if (['RECHAZADO', 'DEVUELTA', 'NO_AUTORIZADO', 'NO AUTORIZADO', 'REJECTED'].includes(normalized)) return 'RECHAZADO';
   return normalized === 'PENDIENTE' ? 'PENDIENTE' : normalized;
@@ -1000,8 +1002,8 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
             />
             {message ? <MessageBox message={message} /> : null}
             {loginMethod === 'password' ? <View style={styles.form}>
-              <Field label="Usuario / Correo" value={username} onChangeText={setUsername} autoCapitalize="none" />
-              <Field label="Contraseña" value={password} onChangeText={setPassword} secureTextEntry />
+              <Field label="Usuario / Correo *" value={username} onChangeText={setUsername} autoCapitalize="none" />
+              <Field label="Contraseña *" value={password} onChangeText={setPassword} secureTextEntry />
               <View style={styles.rowBetween}>
                 <Pressable style={styles.checkRow} onPress={() => setRecordarme((value) => !value)}>
                   <View style={[styles.checkbox, recordarme && styles.checkboxChecked]}>
@@ -1092,15 +1094,15 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
                   </View>
                 </View>
                 {registerForm.tipoCliente === 2 ? (
-                  <Field label="Razon social" value={registerForm.razonSocial} onChangeText={(value) => updateRegister('razonSocial', value)} />
+                  <Field label="Razon social *" value={registerForm.razonSocial} onChangeText={(value) => updateRegister('razonSocial', value)} />
                 ) : (
                   <>
-                    <Field label="Nombres" value={registerForm.nombres} onChangeText={(value) => updateRegister('nombres', value)} />
-                    <Field label="Apellidos" value={registerForm.apellidos} onChangeText={(value) => updateRegister('apellidos', value)} />
+                    <Field label="Nombres *" value={registerForm.nombres} onChangeText={(value) => updateRegister('nombres', value)} />
+                    <Field label="Apellidos *" value={registerForm.apellidos} onChangeText={(value) => updateRegister('apellidos', value)} />
                   </>
                 )}
                 <Field
-                  label="Identificacion"
+                  label="Identificacion *"
                   value={registerForm.identificacion}
                   onChangeText={(value) => updateRegister('identificacion', sanitizeIdentificacion(registerForm.tipoDocumento, value))}
                   autoCapitalize="characters"
@@ -1112,9 +1114,9 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>¿Cómo te contactamos?</Text>
                 <Text style={styles.sectionHint}>Usaremos estos datos para avisarte sobre tus documentos y cuenta.</Text>
-                <Field label="Celular" value={registerForm.celular} onChangeText={(value) => updateRegister('celular', value)} keyboardType="phone-pad" />
-                <Field label="Email" value={registerForm.email} onChangeText={(value) => updateRegister('email', value)} autoCapitalize="none" keyboardType="email-address" />
-                <Field label="Direccion" value={registerForm.direccion} onChangeText={(value) => updateRegister('direccion', value)} />
+                <Field label="Celular *" value={registerForm.celular} onChangeText={(value) => updateRegister('celular', value)} keyboardType="phone-pad" />
+                <Field label="Email *" value={registerForm.email} onChangeText={(value) => updateRegister('email', value)} autoCapitalize="none" keyboardType="email-address" />
+                <Field label="Direccion *" value={registerForm.direccion} onChangeText={(value) => updateRegister('direccion', value)} />
               </View>
             ) : null}
 
@@ -1127,7 +1129,7 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
                   <Text style={styles.registerReviewValue}>{registerForm.tipoCliente === 2 ? registerForm.razonSocial : `${registerForm.nombres} ${registerForm.apellidos}`}</Text>
                   <Text style={styles.registerReviewMeta}>{registerForm.email} · {registerForm.identificacion}</Text>
                 </View>
-                <Field label="Contraseña segura" value={registerForm.password} onChangeText={(value) => updateRegister('password', value)} secureTextEntry />
+                <Field label="Contraseña segura *" value={registerForm.password} onChangeText={(value) => updateRegister('password', value)} secureTextEntry />
                 <Text style={styles.passwordHint}>Mínimo 8 caracteres: mayúscula, minúscula, número y símbolo.</Text>
                 <Pressable accessibilityLabel="Abrir galería de avatares" style={styles.avatarPreview} onPress={() => setAvatarGalleryOpen(true)}>
                   {isInitialsAvatar(registerForm.avatarUrl) ? (
@@ -1212,7 +1214,7 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
               <Text style={styles.recoveryInfoText}>Usa el correo registrado en e-fact. Revisa también tu carpeta de spam.</Text>
             </View>
             <View style={styles.form}>
-              <Field label="Correo electrónico registrado" value={recoverEmail} onChangeText={setRecoverEmail} autoCapitalize="none" keyboardType="email-address" />
+              <Field label="Correo electrónico registrado *" value={recoverEmail} onChangeText={setRecoverEmail} autoCapitalize="none" keyboardType="email-address" />
               <PrimaryButton label="Enviar instrucciones" loading={loading} onPress={submitRecover} />
             </View>
             <InlineSwitch muted="¿Recordaste tu contraseña?" action="Volver al inicio de sesión" onPress={() => setMode('login')} />
@@ -1238,10 +1240,10 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
               <View style={styles.changeFieldsCard}>
                 <Text style={styles.changeFieldsEyebrow}>DATOS DE ACCESO</Text>
                 <Text style={styles.changeFieldsHint}>Completa los datos para definir tu nueva clave.</Text>
-                <Field label="Id usuario" value={changeForm.idUsuario ? String(changeForm.idUsuario) : ''} onChangeText={(value) => updateChange('idUsuario', Number(value.replace(/\D/g, '')))} keyboardType="number-pad" />
-                <Field label="Codigo o clave temporal" value={changeForm.claveActual} onChangeText={(value) => updateChange('claveActual', value)} secureTextEntry />
-                <Field label="Nueva clave" value={changeForm.nuevaClave} onChangeText={(value) => updateChange('nuevaClave', value)} secureTextEntry />
-                <Field label="Confirmar clave" value={changeForm.confirmarClave} onChangeText={(value) => updateChange('confirmarClave', value)} secureTextEntry />
+                <Field label="Id usuario *" value={changeForm.idUsuario ? String(changeForm.idUsuario) : ''} onChangeText={(value) => updateChange('idUsuario', Number(value.replace(/\D/g, '')))} keyboardType="number-pad" />
+                <Field label="Codigo o clave temporal *" value={changeForm.claveActual} onChangeText={(value) => updateChange('claveActual', value)} secureTextEntry />
+                <Field label="Nueva clave *" value={changeForm.nuevaClave} onChangeText={(value) => updateChange('nuevaClave', value)} secureTextEntry />
+                <Field label="Confirmar clave *" value={changeForm.confirmarClave} onChangeText={(value) => updateChange('confirmarClave', value)} secureTextEntry />
                 <Text style={styles.changePasswordHint}>Mínimo 10 caracteres: mayúscula, minúscula, número y símbolo.</Text>
               </View>
               <PrimaryButton label="Actualizar clave" loading={loading} onPress={submitChangePassword} />

@@ -31,8 +31,10 @@ function normalizeText(value?: string | null) {
 
 function normalizeSriState(value?: string | null) {
   const state = normalizeText(value);
-  if (state.includes('autoriz')) return 'AUTORIZADO';
-  if (state.includes('rechaz') || state.includes('no autoriz')) return 'NO AUTORIZADO';
+  if (state === 'a' || state.includes('autoriz')) return 'AUTORIZADO';
+  if (state === 'p' || state === 'i' || state === 'enviado' || state === 'pendiente') return 'PENDIENTE';
+  if (state === 'n' || state.includes('rechaz') || state.includes('no autoriz')) return 'RECHAZADO';
+  if (state === 'anulada' || state === 'anulado' || state === 'cancelado') return 'ANULADO';
   return value?.trim() || 'PENDIENTE';
 }
 
@@ -294,9 +296,23 @@ export function NuevaLiquidacionCompraMobileScreen({
   const optionLiquidacionNumber = getNextSequenceFromOptions(preparacion?.series ?? [], effectiveSerie, '') || getNextSequenceFromOptions(serieOptions, effectiveSerie, '');
   const liquidacionNumber = effectiveSerie ? form.numeroFactura || optionLiquidacionNumber || (puntosData?.cajas?.length ? '' : getNextSequence(preparacion, effectiveSerie)) : '';
   const [step, setStep] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
   const handleClear = () => {
     onClear();
     setStep(0);
+  };
+  const handleSave = () => {
+    if (saving || submitting) return;
+    setSubmitting(true);
+    void (async () => {
+      try {
+        await onSave();
+      } catch (error) {
+        Alert.alert('No se pudo generar la liquidacion', error instanceof Error && error.message ? error.message : 'Ocurrio un error inesperado. Intenta nuevamente.');
+      } finally {
+        setSubmitting(false);
+      }
+    })();
   };
 
   return (
@@ -326,6 +342,12 @@ export function NuevaLiquidacionCompraMobileScreen({
       </View>
       <SharedInvoiceProgressSteps labels={['Proveedor', 'Detalle', 'Revision']} activeIndex={step} />
       {message ? <MessageBox message={message} /> : null}
+      {submitting ? (
+        <View style={styles.directoryLoading}>
+          <ActivityIndicator color="#0072BD" />
+          <Text style={styles.mutedText}>{saving ? 'Generando liquidacion y enviandola al SRI...' : 'Validando datos de la liquidacion...'}</Text>
+        </View>
+      ) : null}
       {retencionLiquidacion ? (
         <RetencionLiquidacionMobileScreen
           liquidacion={retencionLiquidacion}
@@ -347,7 +369,7 @@ export function NuevaLiquidacionCompraMobileScreen({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Buscador de proveedor</Text>
         <Text style={styles.invoiceSectionHelp}>Encuentra o completa el proveedor de la liquidacion</Text>
-        <SearchField label="Encontrar proveedor" placeholder="Identificacion o nombre" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} resultCount={proveedores.length} onSubmit={onSearchProveedores} predictive suggestions={proveedores.slice(0, 5).map((item, index) => ({ id: `liquidacion-proveedor-${getClienteKey(item, index)}`, title: getClienteDisplayName(item), subtitle: getClienteIdentification(item) || 'Sin identificacion' }))} onSelectSuggestion={(suggestion) => { const item = proveedores.find((candidate, index) => `liquidacion-proveedor-${getClienteKey(candidate, index)}` === suggestion.id); if (item) onSelectProveedor(item); }} />
+        <SearchField label="Encontrar proveedor *" placeholder="Identificacion o nombre" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} resultCount={proveedores.length} onSubmit={onSearchProveedores} predictive suggestions={proveedores.slice(0, 5).map((item, index) => ({ id: `liquidacion-proveedor-${getClienteKey(item, index)}`, title: getClienteDisplayName(item), subtitle: getClienteIdentification(item) || 'Sin identificacion' }))} onSelectSuggestion={(suggestion) => { const item = proveedores.find((candidate, index) => `liquidacion-proveedor-${getClienteKey(candidate, index)}` === suggestion.id); if (item) onSelectProveedor(item); }} />
       </View>
       <View style={styles.formActions}>
         <PrimaryButton label="Continuar con datos" loading={false} onPress={() => proveedor ? setStep(1) : Alert.alert('Proveedor requerido', 'Selecciona primero un proveedor.')} />
@@ -361,23 +383,23 @@ export function NuevaLiquidacionCompraMobileScreen({
         </View>
         <View style={styles.invoiceGrid}>
           <Field label="Identificacion" value={proveedor?.numeroidentificacion ?? ''} onChangeText={() => undefined} />
-          <Field label="Nombre proveedor" value={proveedor ? getClienteDisplayName(proveedor) : form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} />
-          <Field label="Telefono" value={form.telefono} onChangeText={(value) => onChange('telefono', value)} keyboardType="phone-pad" />
+          <Field label="Nombre proveedor *" value={proveedor ? getClienteDisplayName(proveedor) : form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} />
+          <Field label="Telefono (opcional)" value={form.telefono} onChangeText={(value) => onChange('telefono', value)} keyboardType="phone-pad" />
         </View>
         <View style={styles.invoiceGrid}>
-          <Field label="Correo electronico principal" value={form.correoPrincipal} onChangeText={(value) => onChange('correoPrincipal', value)} autoCapitalize="none" keyboardType="email-address" />
-          <Field label="Direccion" value={form.direccion} onChangeText={(value) => onChange('direccion', value)} />
+          <Field label="Correo electronico principal (opcional)" value={form.correoPrincipal} onChangeText={(value) => onChange('correoPrincipal', value)} autoCapitalize="none" keyboardType="email-address" />
+          <Field label="Direccion *" value={form.direccion} onChangeText={(value) => onChange('direccion', value)} />
         </View>
         <SecondaryButton label="Agregar correo" onPress={() => onChange('correoAdicional', form.correoPrincipal)} />
         <View style={styles.invoiceGrid}>
           <DropdownField
-            label="Forma de pago"
+            label="Forma de pago *"
             options={formaPagoOptions.map((item, index) => ({ label: String(item.descripcionSri || item.descripcion || item.codigo || `Forma ${index + 1}`), value: index + 1 }))}
             value={Math.max(formaPagoOptions.findIndex((item) => String(item.codigo ?? '') === form.formaPago) + 1, 0) || null}
             onChange={(value) => onChange('formaPago', value ? String(formaPagoOptions[value - 1]?.codigo ?? '') : '')}
             allowClear
           />
-          <Field label="Dias de credito" value={form.diasCredito} onChangeText={(value) => onChange('diasCredito', value.replace(/[^\d]/g, ''))} keyboardType="number-pad" />
+          <Field label="Dias de credito (opcional)" value={form.diasCredito} onChangeText={(value) => onChange('diasCredito', value.replace(/[^\d]/g, ''))} keyboardType="number-pad" />
         </View>
       </View>
       <View style={styles.formActions}>
@@ -391,7 +413,7 @@ export function NuevaLiquidacionCompraMobileScreen({
           <Text style={styles.invoicePanelTitle}>Detalle de la Liquidacion</Text>
           <Text style={styles.invoicePanelPill}>Registra los productos o servicios adquiridos.</Text>
         </View>
-        <SearchField label="Encontrar producto o servicio" placeholder="Codigo, nombre o descripcion" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} resultCount={productos.length} onSubmit={onSearchProductos} predictive suggestions={productos.slice(0, 5).map((item) => ({ id: `liquidacion-producto-${item.codproducto}`, title: item.descripcion ?? item.codprincipal ?? 'Producto', subtitle: item.codprincipal ?? 'Sin codigo' }))} onSelectSuggestion={(suggestion) => { const item = productos.find((candidate) => `liquidacion-producto-${candidate.codproducto}` === suggestion.id); if (item) onAddProducto(item); }} />
+        <SearchField label="Encontrar producto o servicio *" placeholder="Codigo, nombre o descripcion" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} resultCount={productos.length} onSubmit={onSearchProductos} predictive suggestions={productos.slice(0, 5).map((item) => ({ id: `liquidacion-producto-${item.codproducto}`, title: item.descripcion ?? item.codprincipal ?? 'Producto', subtitle: item.codprincipal ?? 'Sin codigo' }))} onSelectSuggestion={(suggestion) => { const item = productos.find((candidate) => `liquidacion-producto-${candidate.codproducto}` === suggestion.id); if (item) onAddProducto(item); }} />
         {lineas.length === 0 ? <EmptyState title="Sin detalle" text="Agrega al menos un producto o servicio para emitir la liquidacion." /> : null}
         {lineas.map((linea, index) => {
           const base = Math.max(toNumber(linea.cantidad) * toNumber(linea.precio) - toNumber(linea.descuento), 0);
@@ -405,18 +427,18 @@ export function NuevaLiquidacionCompraMobileScreen({
                 </View>
                 <Text style={styles.invoiceLineTotal}>{formatMoney(total)}</Text>
               </View>
-              <Field label="Detalle adicional o concepto extendido" value={form.detalleLinea} onChangeText={(value) => onChange('detalleLinea', value)} />
+              <Field label="Detalle adicional o concepto extendido (opcional)" value={form.detalleLinea} onChangeText={(value) => onChange('detalleLinea', value)} />
               <View style={styles.invoiceLineFieldsGrid}>
-                <View style={styles.invoiceLineField}><Field label="Cantidad" value={linea.cantidad} onChangeText={(value) => onUpdateLinea(index, 'cantidad', value)} keyboardType="decimal-pad" /></View>
-                <View style={styles.invoiceLineField}><Field label="Precio" value={linea.precio} onChangeText={(value) => onUpdateLinea(index, 'precio', value)} keyboardType="decimal-pad" /></View>
+                <View style={styles.invoiceLineField}><Field label="Cantidad *" value={linea.cantidad} onChangeText={(value) => onUpdateLinea(index, 'cantidad', value)} keyboardType="decimal-pad" /></View>
+                <View style={styles.invoiceLineField}><Field label="Precio *" value={linea.precio} onChangeText={(value) => onUpdateLinea(index, 'precio', value)} keyboardType="decimal-pad" /></View>
               </View>
               <View style={styles.invoiceLineFieldsGrid}>
-                <View style={styles.invoiceLineField}><Field label="Descuento" value={linea.descuento} onChangeText={(value) => onUpdateLinea(index, 'descuento', value)} keyboardType="decimal-pad" /></View>
+                <View style={styles.invoiceLineField}><Field label="Descuento (opcional)" value={linea.descuento} onChangeText={(value) => onUpdateLinea(index, 'descuento', value)} keyboardType="decimal-pad" /></View>
                 <View style={styles.invoiceLineField}>
                 {ivaOptions.length > 0 ? (
-                  <DropdownField label="IVA" options={ivaOptions} value={getIvaOptionValue(ivaOptions, toNumber(linea.tarifa))} onChange={(value) => onUpdateLinea(index, 'tarifa', value === null ? '0' : String(value))} allowClear />
+                  <DropdownField label="IVA *" options={ivaOptions} value={getIvaOptionValue(ivaOptions, toNumber(linea.tarifa))} onChange={(value) => onUpdateLinea(index, 'tarifa', value === null ? '0' : String(value))} allowClear />
                 ) : (
-                  <Field label="IVA %" value={linea.tarifa} onChangeText={(value) => onUpdateLinea(index, 'tarifa', value)} keyboardType="decimal-pad" />
+                  <Field label="IVA % *" value={linea.tarifa} onChangeText={(value) => onUpdateLinea(index, 'tarifa', value)} keyboardType="decimal-pad" />
                 )}
                 </View>
               </View>
@@ -437,7 +459,7 @@ export function NuevaLiquidacionCompraMobileScreen({
         </View>
       </View>
       <View style={styles.formActions}>
-        <PrimaryButton label="Generar Liquidacion" loading={saving} onPress={onSave} />
+        <PrimaryButton label="Generar Liquidacion" loading={saving || submitting} onPress={handleSave} />
         <SecondaryButton label="Volver a datos" onPress={() => setStep(1)} />
         <SecondaryButton label="Cancelar / limpiar" onPress={handleClear} />
       </View>
@@ -460,17 +482,18 @@ export function RetencionLiquidacionMobileScreen({
   rentaCatalogo: RetencionCatalogItem[];
   loading: boolean;
   saving: boolean;
-  onSave: (retencion: LiquidacionRetencionInput) => void;
+  onSave: (retencion: LiquidacionRetencionInput) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [tipo, setTipo] = useState<'IVA' | 'RENTA'>('IVA');
   const [codigoIndex, setCodigoIndex] = useState(0);
   const [base, setBase] = useState(String(Number(liquidacion.iva ?? 0)));
+  const [submitting, setSubmitting] = useState(false);
   const catalogo = tipo === 'IVA' ? ivaCatalogo : rentaCatalogo;
   const codigo = catalogo[codigoIndex - 1];
   const porcentaje = Number(codigo?.valor ?? 0);
   const baseNumerica = Number(base.replace(',', '.')) || 0;
-  const valorRetenido = baseNumerica * porcentaje / 100;
+  const valorRetenido = Math.round((baseNumerica * porcentaje / 100 + Number.EPSILON) * 100) / 100;
 
   useEffect(() => {
     setCodigoIndex(catalogo.length ? 1 : 0);
@@ -482,7 +505,8 @@ export function RetencionLiquidacionMobileScreen({
     setBase(String(Number(nuevoTipo === 'IVA' ? liquidacion.iva ?? 0 : liquidacion.base ?? 0)));
   };
 
-  const guardar = () => {
+  const guardar = async () => {
+    if (saving || submitting) return;
     const idRet = Number(String(codigo?.codigo ?? '').replace(/\D/g, ''));
     if (!codigo || idRet <= 0) {
       Alert.alert('Codigo requerido', 'Selecciona un codigo de retencion valido.');
@@ -497,16 +521,23 @@ export function RetencionLiquidacionMobileScreen({
       Alert.alert('Base no valida', `La base de retencion no puede superar ${tipo === 'IVA' ? 'el IVA' : 'el subtotal'} de la liquidacion (${formatMoney(baseMaxima)}).`);
       return;
     }
-    onSave({
-      tipo,
-      idRet,
-      codigoRetencion: codigo.codigo,
-      descripcionRet: codigo.descripcion,
-      base: baseNumerica,
-      porcentajeRetencion: porcentaje,
-      valorRetenido,
-      valor: porcentaje,
-    });
+    setSubmitting(true);
+    try {
+      await onSave({
+        tipo,
+        idRet,
+        codigoRetencion: codigo.codigo,
+        descripcionRet: codigo.descripcion,
+        base: baseNumerica,
+        porcentajeRetencion: porcentaje,
+        valorRetenido,
+        valor: porcentaje,
+      });
+    } catch (error) {
+      Alert.alert('No se pudo generar la retencion', error instanceof Error && error.message ? error.message : 'Ocurrio un error inesperado. Intenta nuevamente.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -528,20 +559,26 @@ export function RetencionLiquidacionMobileScreen({
       ) : (
         <>
           <View style={styles.invoiceGrid}>
-            <DropdownField label="Tipo de retencion" options={[{ label: 'IVA', value: 1 }, { label: 'Renta', value: 2 }]} value={tipo === 'IVA' ? 1 : 2} onChange={cambiarTipo} />
-            <DropdownField label="Codigo de retencion" options={catalogo.map((item, index) => ({ label: `${item.codigo} · ${item.descripcion} (${Number(item.valor ?? 0).toFixed(2)}%)`, value: index + 1 }))} value={codigoIndex || null} onChange={(value) => setCodigoIndex(value ?? 0)} allowClear />
+            <DropdownField label="Tipo de retencion *" options={[{ label: 'IVA', value: 1 }, { label: 'Renta', value: 2 }]} value={tipo === 'IVA' ? 1 : 2} onChange={cambiarTipo} />
+            <DropdownField label="Codigo de retencion *" options={catalogo.map((item, index) => ({ label: `${item.codigo} · ${item.descripcion} (${Number(item.valor ?? 0).toFixed(2)}%)`, value: index + 1 }))} value={codigoIndex || null} onChange={(value) => setCodigoIndex(value ?? 0)} allowClear />
           </View>
           <View style={styles.invoiceGrid}>
-            <Field label="Base imponible" value={base} onChangeText={setBase} keyboardType="decimal-pad" />
-            <Field label="Porcentaje" value={`${porcentaje.toFixed(2)}%`} onChangeText={() => undefined} />
+            <Field label="Base imponible *" value={base} onChangeText={setBase} keyboardType="decimal-pad" />
+            <Field label="Porcentaje *" value={`${porcentaje.toFixed(2)}%`} onChangeText={() => undefined} />
           </View>
           <View style={styles.invoiceTotalRow}>
             <Text style={styles.invoiceTotalLabel}>Valor retenido</Text>
             <Text style={styles.invoiceTotalValue}>{formatMoney(valorRetenido)}</Text>
           </View>
+          {submitting ? (
+            <View style={styles.directoryLoading}>
+              <ActivityIndicator color="#0072BD" />
+              <Text style={styles.mutedText}>{saving ? 'Generando retencion y enviandola al SRI...' : 'Validando datos de la retencion...'}</Text>
+            </View>
+          ) : null}
           <View style={styles.formActions}>
             <SecondaryButton label="Cancelar" onPress={onClose} />
-            <PrimaryButton label="Generar y emitir retencion" loading={saving} onPress={guardar} />
+            <PrimaryButton label="Generar y emitir retencion" loading={saving || submitting} onPress={guardar} />
           </View>
         </>
       )}
@@ -769,7 +806,7 @@ export function NuevaGuiaRemisionMobileScreen({
   onRemoveDetalle: (index: number) => void;
   onClear: () => void;
   onHistory: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
 }) {
   const serieOptions = getDocumentSerieOptions(preparacion, puntosData, 'guia');
   usePreferredDocumentSerie(serieOptions, form.serie, (serie) => onChange('serie', serie));
@@ -790,9 +827,26 @@ export function NuevaGuiaRemisionMobileScreen({
   const totalDocumento = totals.total > 0 ? totals.total : Number(factura?.total ?? 0) || 0;
   const subtotalDocumento = totals.subtotal > 0 ? totals.subtotal : Math.max(totalDocumento - totals.iva, 0);
   const [step, setStep] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
   const handleClear = () => {
     onClear();
     setStep(0);
+  };
+  const handleSave = () => {
+    if (saving || submitting) return;
+    setSubmitting(true);
+    void (async () => {
+      try {
+        await onSave();
+      } catch (error) {
+        Alert.alert(
+          'No se pudo generar la guia',
+          error instanceof Error && error.message ? error.message : 'Ocurrio un error inesperado. Intenta nuevamente.',
+        );
+      } finally {
+        setSubmitting(false);
+      }
+    })();
   };
 
   return (
@@ -834,7 +888,7 @@ export function NuevaGuiaRemisionMobileScreen({
           <Text style={styles.invoicePanelTitle}>Datos operativos de la guia</Text>
           <Text style={styles.invoicePanelPill}>Selecciona transportista</Text>
         </View>
-        <SearchField label="Encontrar transportista" placeholder="Identificacion o razon social" value={form.transportistaBusqueda} onChangeText={(value) => onChange('transportistaBusqueda', value)} resultCount={transportistas.length} loading={loadingSearch} onSubmit={onSearchTransportistas} predictive suggestions={transportistas.slice(0, 5).map((item, index) => ({ id: `guia-transportista-${getClienteKey(item, index)}`, title: getClienteDisplayName(item), subtitle: getClienteIdentification(item) || 'Sin identificacion' }))} onSelectSuggestion={(suggestion) => { const item = transportistas.find((candidate, index) => `guia-transportista-${getClienteKey(candidate, index)}` === suggestion.id); if (item) onSelectTransportista(item); }} />
+        <SearchField label="Encontrar transportista *" placeholder="Identificacion o razon social" value={form.transportistaBusqueda} onChangeText={(value) => onChange('transportistaBusqueda', value)} resultCount={transportistas.length} loading={loadingSearch} onSubmit={onSearchTransportistas} predictive suggestions={transportistas.slice(0, 5).map((item, index) => ({ id: `guia-transportista-${getClienteKey(item, index)}`, title: getClienteDisplayName(item), subtitle: getClienteIdentification(item) || 'Sin identificacion' }))} onSelectSuggestion={(suggestion) => { const item = transportistas.find((candidate, index) => `guia-transportista-${getClienteKey(candidate, index)}` === suggestion.id); if (item) onSelectTransportista(item); }} />
         {transportista ? <Text style={styles.profileValue}>Transportista: {getClienteDisplayName(transportista)}</Text> : null}
       </View>
       <View style={styles.formActions}>
@@ -847,27 +901,28 @@ export function NuevaGuiaRemisionMobileScreen({
           <Text style={styles.invoicePanelTitle}>Destino y traslado</Text>
           <Text style={styles.invoicePanelPill}>Cliente, factura y fechas</Text>
         </View>
-        <SearchField label="Encontrar destinatario" placeholder="Identificacion o nombre del cliente" value={form.clienteBusquedaGuia} onChangeText={(value) => onChange('clienteBusquedaGuia', value)} resultCount={clientes.length} loading={loadingSearch} onSubmit={onSearchClientes} predictive suggestions={clientes.slice(0, 5).map((item, index) => ({ id: `guia-cliente-${getClienteKey(item, index)}`, title: getClienteDisplayName(item), subtitle: getClienteIdentification(item) || 'Sin identificacion' }))} onSelectSuggestion={(suggestion) => { const item = clientes.find((candidate, index) => `guia-cliente-${getClienteKey(candidate, index)}` === suggestion.id); if (item) onSelectCliente(item); }} />
+        <SearchField label="Encontrar destinatario *" placeholder="Identificacion o nombre del cliente" value={form.clienteBusquedaGuia} onChangeText={(value) => onChange('clienteBusquedaGuia', value)} resultCount={clientes.length} loading={loadingSearch} onSubmit={onSearchClientes} predictive suggestions={clientes.slice(0, 5).map((item, index) => ({ id: `guia-cliente-${getClienteKey(item, index)}`, title: getClienteDisplayName(item), subtitle: getClienteIdentification(item) || 'Sin identificacion' }))} onSelectSuggestion={(suggestion) => { const item = clientes.find((candidate, index) => `guia-cliente-${getClienteKey(candidate, index)}` === suggestion.id); if (item) onSelectCliente(item); }} />
         <SearchField label="Vincular factura (opcional)" placeholder="Numero completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} loading={loadingSearch} onSubmit={onSearchFacturas} predictive suggestions={facturas.slice(0, 5).map((item, index) => ({ id: `guia-factura-${item.codfactura}-${index}`, title: item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`, subtitle: item.cliente ?? 'Consumidor final' }))} onSelectSuggestion={(suggestion) => { const item = facturas.find((candidate, index) => `guia-factura-${candidate.codfactura}-${index}` === suggestion.id); if (item) onSelectFactura(item); }} />
         <View style={styles.invoiceGrid}>
-          <Field label="Placa" value={form.placa} onChangeText={(value) => onChange('placa', value)} autoCapitalize="characters" />
+          <Field label="Placa *" value={form.placa} onChangeText={(value) => onChange('placa', value)} autoCapitalize="characters" />
         </View>
         <View style={styles.invoiceBottomGrid}>
           <View style={styles.clientCard}>
             <Text style={styles.clientName}>Informacion del Transportista</Text>
             <Field label="Identificacion" value={transportista?.numeroidentificacion ?? ''} onChangeText={() => undefined} />
             <Field label="Razon social" value={transportista ? getClienteDisplayName(transportista) : ''} onChangeText={() => undefined} />
-            <Field label="Contribuyente especial" value={form.contribuyenteEspecial} onChangeText={(value) => onChange('contribuyenteEspecial', value)} />
+            <Field label="Direccion del transportista *" value={form.direccion} onChangeText={(value) => onChange('direccion', value)} />
+            <Field label="Contribuyente especial (opcional)" value={form.contribuyenteEspecial} onChangeText={(value) => onChange('contribuyenteEspecial', value)} />
             <ToggleRow label="Obligado a llevar contabilidad" text="Marca si aplica para el transportista." value={form.transportistaObligadoContabilidad} onChange={(value) => onChange('transportistaObligadoContabilidad', value)} />
             <View style={styles.invoiceGrid}>
-              <Field label="Fecha emision" value={form.fechaEmision} onChangeText={(value) => onChange('fechaEmision', value)} />
-              <Field label="Fecha inicio traslado" value={form.fechaInicioTraslado} onChangeText={(value) => onChange('fechaInicioTraslado', value)} />
+              <Field label="Fecha emision *" value={form.fechaEmision} onChangeText={(value) => onChange('fechaEmision', value)} />
+              <Field label="Fecha inicio traslado *" value={form.fechaInicioTraslado} onChangeText={(value) => onChange('fechaInicioTraslado', value)} />
             </View>
             <View style={styles.invoiceGrid}>
-              <Field label="Fecha fin traslado" value={form.fechaFinTraslado} onChangeText={(value) => onChange('fechaFinTraslado', value)} />
-              <Field label="Detalle" value={form.referencia} onChangeText={(value) => onChange('referencia', value)} />
+              <Field label="Fecha fin traslado *" value={form.fechaFinTraslado} onChangeText={(value) => onChange('fechaFinTraslado', value)} />
+              <Field label="Detalle *" value={form.referencia} onChangeText={(value) => onChange('referencia', value)} />
             </View>
-            <Field label="Direccion de origen" value={form.direccionOrigen} onChangeText={(value) => onChange('direccionOrigen', value)} />
+            <Field label="Direccion de origen *" value={form.direccionOrigen} onChangeText={(value) => onChange('direccionOrigen', value)} />
           </View>
           <View style={styles.clientCard}>
             <Text style={styles.clientName}>Informacion de cliente o factura</Text>
@@ -889,7 +944,7 @@ export function NuevaGuiaRemisionMobileScreen({
           <Text style={styles.invoicePanelPill}>Se cargan automaticamente desde la factura y puedes ajustar cantidades.</Text>
         </View>
         {factura ? <Text style={styles.invoiceSectionHelp}>Los detalles se cargaron desde la factura vinculada. Solo puedes ajustar cantidades.</Text> : <>
-          <SearchField label="Encontrar producto o detalle" placeholder="Codigo, nombre o descripcion" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} resultCount={productos.length} loading={loadingSearch} onSubmit={onSearchProductos} predictive suggestions={productos.slice(0, 5).map((item) => ({ id: `guia-producto-${item.codproducto}`, title: item.descripcion ?? item.codprincipal ?? 'Producto', subtitle: item.codprincipal ?? 'Sin codigo' }))} onSelectSuggestion={(suggestion) => { const item = productos.find((candidate) => `guia-producto-${candidate.codproducto}` === suggestion.id); if (item) onAddProducto(item); }} />
+        <SearchField label="Encontrar producto o detalle *" placeholder="Codigo, nombre o descripcion" value={form.productoBusqueda} onChangeText={(value) => onChange('productoBusqueda', value)} resultCount={productos.length} loading={loadingSearch} onSubmit={onSearchProductos} predictive suggestions={productos.slice(0, 5).map((item) => ({ id: `guia-producto-${item.codproducto}`, title: item.descripcion ?? item.codprincipal ?? 'Producto', subtitle: item.codprincipal ?? 'Sin codigo' }))} onSelectSuggestion={(suggestion) => { const item = productos.find((candidate) => `guia-producto-${candidate.codproducto}` === suggestion.id); if (item) onAddProducto(item); }} />
           <View style={styles.formActions}>
             <SecondaryButton label="Agregar detalle" onPress={onSearchProductos} />
           </View>
@@ -903,7 +958,7 @@ export function NuevaGuiaRemisionMobileScreen({
                 <Text style={styles.clientDetailLabel}>Codigo interno</Text>
                 <Text style={styles.clientDetailValue}>{detalle.producto.codprincipal ?? detalle.producto.codproducto}</Text>
               </View>
-              <View style={styles.invoiceLineField}><Field label="Cantidad" value={detalle.cantidad} onChangeText={(value) => onUpdateDetalle(index, value)} keyboardType="number-pad" /></View>
+              <View style={styles.invoiceLineField}><Field label="Cantidad *" value={detalle.cantidad} onChangeText={(value) => onUpdateDetalle(index, value)} keyboardType="number-pad" /></View>
             </View>
             <SecondaryButton label="Quitar detalle" onPress={() => onRemoveDetalle(index)} />
           </View>
@@ -924,7 +979,13 @@ export function NuevaGuiaRemisionMobileScreen({
       <View style={styles.formActions}>
         <SecondaryButton label="Volver al destino" onPress={() => setStep(1)} />
         <SecondaryButton label="Cancelar / limpiar" onPress={handleClear} />
-        <PrimaryButton label="Generar Guia de Remision" loading={saving} onPress={onSave} />
+        {submitting ? (
+          <View style={styles.directoryLoading}>
+            <ActivityIndicator color="#0072BD" />
+            <Text style={styles.mutedText}>{saving ? 'Generando guia de remision...' : 'Validando datos de la guia...'}</Text>
+          </View>
+        ) : null}
+        <PrimaryButton label="Generar Guia de Remision" loading={saving || submitting} onPress={handleSave} />
       </View>
       </> : null}
     </>
@@ -962,11 +1023,11 @@ export function MisGuiasRemisionMobileScreen({
   const visibleGuias = guias.filter((guia) => {
     const term = filter.trim().toLowerCase();
     const matchesText = !term || [guia.numero, guia.destinatario, guia.identificacionDestinatario, guia.transportista, guia.estadoSri].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
-    const isAuthorized = guia.autorizado || String(guia.estadoSri ?? '').toUpperCase().includes('AUTORIZ');
+    const isAuthorized = guia.autorizado || normalizeSriState(guia.estadoSri) === 'AUTORIZADO';
     const matchesStatus = statusFilter === 1 || (statusFilter === 2 && isAuthorized) || (statusFilter === 3 && !isAuthorized);
     return matchesText && matchesStatus;
   });
-  const autorizadas = visibleGuias.filter((guia) => guia.autorizado || String(guia.estadoSri ?? '').toUpperCase().includes('AUTORIZ')).length;
+  const autorizadas = visibleGuias.filter((guia) => guia.autorizado || normalizeSriState(guia.estadoSri) === 'AUTORIZADO').length;
 
   return (
     <>
@@ -989,7 +1050,7 @@ export function MisGuiasRemisionMobileScreen({
             Identificacion: guia.identificacionDestinatario ?? '',
             Transportista: guia.transportista ?? '',
             Traslado: formatDocumentDate(guia.fechaTraslado),
-            Estado: guia.estadoSri ?? (guia.autorizado ? 'AUTORIZADO' : 'PENDIENTE'),
+            Estado: normalizeSriState(guia.estadoSri ?? (guia.autorizado ? 'AUTORIZADO' : 'PENDIENTE')),
           })))} />
           <PrimaryButton label="Refrescar" loading={loading} onPress={onRefresh} />
         </View>
@@ -1005,8 +1066,8 @@ export function MisGuiasRemisionMobileScreen({
       <View style={styles.listStack}>
         {visibleGuias.map((guia, index) => {
           const key = listItemKey('mis-guias', [guia.codGuia, guia.numero, guia.identificacionDestinatario], index);
-          const statusLabel = guia.estadoSri ?? (guia.autorizado ? 'AUTORIZADO' : 'PENDIENTE');
-          const isAuthorized = guia.autorizado || String(guia.estadoSri ?? '').toUpperCase().includes('AUTORIZ');
+          const statusLabel = normalizeSriState(guia.estadoSri ?? (guia.autorizado ? 'AUTORIZADO' : 'PENDIENTE'));
+          const isAuthorized = guia.autorizado || statusLabel === 'AUTORIZADO';
           return (
             <View key={key} style={styles.invoiceHistoryCard}>
               <View style={styles.invoiceHistoryCardHeader}>
@@ -1045,6 +1106,7 @@ export function MisGuiasRemisionMobileScreen({
                   { label: 'Detalle', icon: 'information-outline', tone: 'primary', onPress: () => setSelectedGuia(guia) },
                   { label: 'Compartir PDF', icon: 'share-variant-outline', tone: 'primary', onPress: () => onSharePdf(guia) },
                   { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(guia) },
+                  { label: 'Ver PDF A4', icon: 'eye-outline', tone: 'danger', onPress: () => onPdf(guia) },
                   { label: 'Descargar PDF A4', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(guia, true) },
                   { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(guia) },
                   ...(!isAuthorized ? [{ label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary' as const, onPress: () => onEmitir(guia) }] : []),
@@ -1064,7 +1126,7 @@ export function MisGuiasRemisionMobileScreen({
           `Transportista: ${selectedGuia.transportista ?? 'No disponible'}`,
           `Fecha: ${formatDocumentDate(selectedGuia.fecha)}`,
           `Traslado: ${formatDocumentDate(selectedGuia.fechaTraslado)}`,
-          `Estado SRI: ${selectedGuia.estadoSri ?? (selectedGuia.autorizado ? 'AUTORIZADO' : 'PENDIENTE')}`,
+          `Estado SRI: ${normalizeSriState(selectedGuia.estadoSri ?? (selectedGuia.autorizado ? 'AUTORIZADO' : 'PENDIENTE'))}`,
           selectedGuia.numeroAutorizacion ? `Autorización: ${selectedGuia.numeroAutorizacion}` : '',
           selectedGuia.mensajeSri ? `Mensaje SRI: ${selectedGuia.mensajeSri}` : '',
         ] : []}
@@ -1237,6 +1299,7 @@ export function MisFacturasMobileScreen({
   onAnular,
   onCuentasCobrar,
   onNotaCredito,
+  processingNotaCreditoAutomatica,
 }: {
   facturas: FacturaListItem[];
   notasCredito: NotaCreditoListItem[];
@@ -1253,6 +1316,7 @@ export function MisFacturasMobileScreen({
   onAnular: (factura: FacturaListItem) => void;
   onCuentasCobrar: (factura: FacturaListItem) => void;
   onNotaCredito: (factura: FacturaListItem) => void;
+  processingNotaCreditoAutomatica: boolean;
 }) {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(1);
@@ -1348,7 +1412,13 @@ export function MisFacturasMobileScreen({
           })))} />
         </View>
       </View>
-      {message ? <MessageBox message={message} /> : null}
+      {message && !processingNotaCreditoAutomatica ? <MessageBox message={message} /> : null}
+      {processingNotaCreditoAutomatica ? (
+        <View style={styles.directoryLoading}>
+          <ActivityIndicator color="#0072BD" />
+          <Text style={styles.mutedText}>Generando y autorizando la nota de credito automatica...</Text>
+        </View>
+      ) : null}
       {loading ? (
         <View style={styles.directoryLoading}>
           <ActivityIndicator color="#0072BD" />

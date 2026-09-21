@@ -1,6 +1,7 @@
 import { ApiError, apiRequest } from './apiClient';
 import { Cliente } from '../types/business';
-import { FacturaListItem, FacturaPreparacion, FacturaProducto, buscarFacturaClientes, buscarFacturaProductos, normalizeFacturaPreparacion } from './facturasMobileService';
+import { FacturaListItem, FacturaPreparacion, FacturaProducto, buscarFacturaClientes, buscarFacturaProductos, getFacturaDetalle, normalizeFacturaPreparacion } from './facturasMobileService';
+import { getNotasCredito } from './notasCreditoMobileService';
 import type { DocumentPdfFormat } from '../utils/documentFormatting';
 
 type ApiRow = Record<string, unknown>;
@@ -49,7 +50,22 @@ export function getGuiaRemisionPreparacion(userId: number) {
     `/api/guias-remision/preparacion?idUsuario=${userId}`,
     `/api/guia-remision/preparacion?idUsuario=${userId}`,
     `/api/facturas/preparacion?idUsuario=${userId}`,
-  ]).then(normalizeFacturaPreparacion);
+  ]).then((response) => {
+    const normalized = normalizeFacturaPreparacion(response);
+    return {
+      ...normalized,
+      direccionOrigen: normalized.direccionOrigen || text(pickValue(response, [
+        'direccionOrigen',
+        'DireccionOrigen',
+        'direccionPartida',
+        'DireccionPartida',
+        'dirEstablecimiento',
+        'DirEstablecimiento',
+        'direccionMatriz',
+        'DireccionMatriz',
+      ])) || null,
+    };
+  });
 }
 
 export async function getGuiasRemision(userId: number, top = 0) {
@@ -74,12 +90,63 @@ export async function buscarGuiaTransportistas(userId: number, filtro: string) {
   return normalizeRows(response).map(toCliente);
 }
 
+export async function getGuiaTransportista(userId: number, identificacion: string) {
+  const response = await requestWithFallback<ApiRow | ApiRow[]>([
+    `/api/guias-remision/transportistas/por-identificacion?idUsuario=${userId}&identificacion=${encodeURIComponent(identificacion)}`,
+    `/api/guia-remision/transportistas/por-identificacion?idUsuario=${userId}&identificacion=${encodeURIComponent(identificacion)}`,
+  ]);
+  const row = normalizeRows(response)[0];
+  return row ? toCliente(row) : null;
+}
+
 export async function buscarGuiaFacturas(userId: number, filtro: string) {
   const response = await requestWithFallback<ApiRow[] | Record<string, unknown>>([
     `/api/guias-remision/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
     `/api/guia-remision/facturas/buscar?idUsuario=${userId}&filtro=${encodeURIComponent(filtro)}`,
   ]);
-  return normalizeFacturaRows(response);
+  const candidates = normalizeFacturaRows(response);
+  if (!candidates.length) return candidates;
+
+  let notasCredito;
+  try {
+    notasCredito = await getNotasCredito(userId, 0);
+  } catch {
+    return candidates;
+  }
+
+  const notasPorFactura = new Map<number, typeof notasCredito>();
+  notasCredito.forEach((nota) => {
+    if (!nota.documentoModificadoId || nota.estado === false) return;
+    const current = notasPorFactura.get(nota.documentoModificadoId) ?? [];
+    current.push(nota);
+    notasPorFactura.set(nota.documentoModificadoId, current);
+  });
+
+  return (await Promise.all(candidates.map(async (factura) => {
+    const notas = notasPorFactura.get(factura.codfactura);
+    if (!notas?.length) return factura;
+
+    let totalFactura = factura.total ?? null;
+    if (totalFactura === null) {
+      try {
+        const detalle = await getFacturaDetalle(userId, factura.codfactura);
+        totalFactura = numberValue(pickValue(detalle.factura ?? {}, ['total', 'Total', 'valortotal', 'ValorTotal', 'valorTotal', 'totalFactura', 'TotalFactura', 'valorDocumento', 'ValorDocumento']));
+      } catch {
+        totalFactura = null;
+      }
+    }
+
+    if (totalFactura !== null && notas.reduce((sum, nota) => sum + (nota.total ?? 0), 0) >= totalFactura) return null;
+
+    try {
+      const disponibles = await apiRequest<ApiRow[] | Record<string, unknown>>(`/api/notas-credito/facturas/${factura.codfactura}/detalles-disponibles?idUsuario=${userId}`, { suppressErrorLog: true });
+      if (!normalizeRows(disponibles).length) return null;
+    } catch {
+      // El API de guías sigue siendo la validación final si este endpoint no existe.
+    }
+
+    return factura;
+  }))).filter((factura): factura is FacturaListItem => Boolean(factura));
 }
 
 export function buscarGuiaProductos(userId: number, filtro: string) {
@@ -108,7 +175,7 @@ export async function guardarGuiaRemision(input: GuiaRemisionGuardarInput) {
     Cantidad: item.cantidad,
   }));
 
-  const response = await apiRequest<{ mensaje?: string; sec?: number; secGuiaRemision?: number; Sec?: number; codGuia?: number; CodGuia?: number; numeroComprobante?: string | null }>(
+  const response = await apiRequest<{ mensaje?: string; sec?: number; secGuiaRemision?: number; SecGuiaRemision?: number; Sec?: number; codGuia?: number; CodGuia?: number; numeroComprobante?: string | null; numeroCompleto?: string | null }>(
     '/api/guias-remision',
     {
       method: 'POST',
@@ -144,8 +211,8 @@ export async function guardarGuiaRemision(input: GuiaRemisionGuardarInput) {
     },
   );
 
-  const sec = response.sec ?? response.Sec ?? response.codGuia ?? response.CodGuia;
-  return { mensaje: response.mensaje ?? 'Guia de remision guardada correctamente.', codGuia: sec, numeroComprobante: response.numeroComprobante ?? null };
+  const sec = response.secGuiaRemision ?? response.SecGuiaRemision ?? response.sec ?? response.Sec ?? response.codGuia ?? response.CodGuia;
+  return { mensaje: response.mensaje ?? 'Guia de remision guardada correctamente.', codGuia: sec, numeroComprobante: response.numeroComprobante ?? response.numeroCompleto ?? null };
 }
 
 export function emitirGuiaRemision(userId: number, sec: number) {
@@ -213,6 +280,7 @@ function normalizeFacturaRows(response: ApiRow[] | Record<string, unknown>): Fac
     numfactura: text(pickValue(row, ['numfactura', 'NumFactura', 'numeroFactura', 'NumeroFactura', 'numero', 'Numero'])) || null,
     numeroCompleto: text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento'])) || null,
     serie: text(pickValue(row, ['serie', 'Serie'])) || null,
+    total: numberValue(pickValue(row, ['total', 'Total', 'valortotal', 'ValorTotal', 'valorTotal', 'totalFactura', 'TotalFactura', 'totalDocumento', 'TotalDocumento', 'valorDocumento', 'ValorDocumento'])),
     cliente: text(pickValue(row, ['cliente', 'Cliente', 'clienteNombre', 'ClienteNombre', 'nombreCliente', 'NombreCliente', 'razonSocial', 'RazonSocial'])) || null,
     identificacionCliente: text(pickValue(row, ['identificacionCliente', 'IdentificacionCliente', 'numeroIdentificacion', 'NumeroIdentificacion', 'ruc', 'Ruc'])) || null,
   }));
@@ -220,19 +288,22 @@ function normalizeFacturaRows(response: ApiRow[] | Record<string, unknown>): Fac
 
 function toCliente(row: ApiRow): Cliente {
   return {
-    codcliente: numberValue(pickValue(row, ['codcliente', 'CodCliente', 'id', 'Id'])) ?? 0,
-    nombrerazonsocial: text(pickValue(row, ['nombrerazonsocial', 'NombreRazonSocial', 'razonSocial', 'RazonSocial', 'nombre', 'Nombre'])) || null,
-    numeroidentificacion: text(pickValue(row, ['numeroidentificacion', 'NumeroIdentificacion', 'identificacion', 'Identificacion', 'ruc', 'Ruc'])) || null,
-    direccion: text(pickValue(row, ['direccion', 'Direccion'])) || null,
+    codcliente: numberValue(pickValue(row, ['codcliente', 'CodCliente', 'codigo', 'Codigo', 'id', 'Id'])) ?? 0,
+    nombrerazonsocial: text(pickValue(row, ['nombrerazonsocial', 'NombreRazonSocial', 'razonSocial', 'RazonSocial', 'razonSocialTransportista', 'RazonSocialTransportista', 'nombreTransportista', 'NombreTransportista', 'nombre', 'Nombre'])) || null,
+    numeroidentificacion: text(pickValue(row, ['numeroidentificacion', 'NumeroIdentificacion', 'numeroIdentificacionTransportista', 'NumeroIdentificacionTransportista', 'identificacionTransportista', 'IdentificacionTransportista', 'identificacion', 'Identificacion', 'ruc', 'Ruc'])) || null,
+    direccion: text(pickValue(row, ['direccion', 'Direccion', 'direccionTransportista', 'DireccionTransportista', 'domicilio', 'Domicilio'])) || null,
     celular: text(pickValue(row, ['celular', 'Celular', 'telefono', 'Telefono'])) || null,
     correo: text(pickValue(row, ['correo', 'Correo', 'email', 'Email'])) || null,
+    tipoidentificacion: text(pickValue(row, ['tipoidentificacion', 'TipoIdentificacion', 'tipoIdentificacion'])) || null,
+    oblgconta: text(pickValue(row, ['oblgconta', 'OblCont', 'oblCont'])) || null,
   };
 }
 
 function toGuiaListItem(row: ApiRow): GuiaRemisionListItem {
   const serie = text(pickValue(row, ['serie', 'Serie']));
-  const numero = text(pickValue(row, ['numero', 'Numero', 'numGuia', 'NumGuia', 'secuencial', 'Secuencial']));
+  const numero = text(pickValue(row, ['numero', 'Numero', 'numeroGuiaRemision', 'NumeroGuiaRemision', 'numGuia', 'NumGuia', 'secuencial', 'Secuencial']));
   const numeroCompleto = text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento']));
+  const estadoSri = text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estado', 'Estado']));
   return {
     codGuia: numberValue(pickValue(row, ['codGuia', 'CodGuia', 'codguia', 'secGuiaRemision', 'SecGuiaRemision', 'secGuia', 'SecGuia', 'sec', 'Sec', 'idGuia', 'IdGuia', 'id', 'Id'])) ?? 0,
     numero: numeroCompleto || [serie, numero].filter(Boolean).join('-') || numero || null,
@@ -242,11 +313,20 @@ function toGuiaListItem(row: ApiRow): GuiaRemisionListItem {
     transportista: text(pickValue(row, ['transportista', 'Transportista', 'nombreTransportista', 'NombreTransportista'])) || null,
     motivoTraslado: text(pickValue(row, ['motivoTraslado', 'MotivoTraslado', 'motivo', 'Motivo'])) || null,
     fechaTraslado: text(pickValue(row, ['fechaTraslado', 'FechaTraslado', 'fechaInicioTraslado', 'FechaInicioTraslado', 'fechaInicioTransporte', 'FechaInicioTransporte', 'fechaIniTraslado', 'FechaIniTraslado', 'fechaSalida', 'FechaSalida'])) || null,
-    estadoSri: text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estado', 'Estado'])) || null,
+    estadoSri: normalizeGuiaEstado(estadoSri),
     autorizado: booleanValue(pickValue(row, ['autorizado', 'Autorizado'])),
     numeroAutorizacion: text(pickValue(row, ['numeroAutorizacion', 'NumeroAutorizacion', 'numAutorizacion', 'NumAutorizacion', 'claveAcceso', 'ClaveAcceso'])) || null,
     mensajeSri: text(pickValue(row, ['mensajeSri', 'MensajeSri', 'mensajeSRI', 'MensajeSRI', 'mensaje', 'Mensaje', 'errorSri', 'ErrorSri', 'observacion', 'Observacion'])) || null,
   };
+}
+
+function normalizeGuiaEstado(value: string) {
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'A' || normalized.includes('AUTORIZ')) return 'AUTORIZADO';
+  if (normalized === 'N' || normalized.includes('RECHAZ') || normalized.includes('NO AUTORIZ')) return 'RECHAZADO';
+  if (normalized === 'ANULADA' || normalized === 'ANULADO' || normalized === 'CANCELADO') return 'ANULADO';
+  if (normalized === 'P' || normalized === 'I' || normalized === 'ENVIADO' || normalized === 'PENDIENTE') return 'PENDIENTE';
+  return value.trim() || null;
 }
 
 function pickValue(row: ApiRow, keys: string[]) {

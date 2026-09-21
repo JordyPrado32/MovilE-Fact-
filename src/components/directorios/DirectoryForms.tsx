@@ -280,7 +280,7 @@ export function EmisorForm({
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Contacto</Text>
         <Field label="Telefono *" value={form.telefono} onChangeText={(value) => onChange('telefono', value)} keyboardType="phone-pad" />
-        <Field label="Correo Electronico" value={form.email} onChangeText={(value) => onChange('email', value)} autoCapitalize="none" keyboardType="email-address" />
+        <Field label="Correo Electronico (opcional)" value={form.email} onChangeText={(value) => onChange('email', value)} autoCapitalize="none" keyboardType="email-address" />
       </View>
 
       <View style={styles.formActions}>
@@ -336,9 +336,9 @@ export function FirmaForm({
 
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Archivo de firma</Text>
-        <SecondaryButton label={configured ? 'Cambiar archivo .p12' : 'Seleccionar archivo .p12'} onPress={onSelectArchivo} />
+        <SecondaryButton label={configured ? 'Cambiar archivo .p12' : 'Seleccionar archivo .p12 *'} onPress={onSelectArchivo} />
         <Text style={styles.mutedText}>{archivoLabel}</Text>
-        <Field label="Clave del certificado" value={form.claveCertificado} onChangeText={(value) => onChange('claveCertificado', value)} secureTextEntry />
+        <Field label="Clave del certificado *" value={form.claveCertificado} onChangeText={(value) => onChange('claveCertificado', value)} secureTextEntry />
         {emisor.tieneClaveCertificadoConfigurada ? <Text style={styles.mutedText}>Clave configurada actualmente.</Text> : null}
       </View>
 

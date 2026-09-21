@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 
 import type { FacturaListItem, FacturaPreparacion, FacturaProducto } from '../../services/facturasMobileService';
 import type { Cliente, PuntosEmisionData } from '../../types/business';
@@ -61,7 +61,7 @@ export function NuevaNotaCreditoMobileScreen({
   onRemoveLinea: (index: number) => void;
   onClear: () => void;
   onHistory: () => void;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
 }) {
   const toNumber = (value: string) => Number(value.replace(',', '.')) || 0;
   const totals = lineas.reduce(
@@ -87,9 +87,23 @@ export function NuevaNotaCreditoMobileScreen({
   const tipoClienteOptions = getTipoClienteOptions(preparacion);
   const ivaOptions = getIvaOptions(preparacion);
   const [step, setStep] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
   const handleClear = () => {
     onClear();
     setStep(1);
+  };
+  const handleSave = () => {
+    if (saving || submitting) return;
+    setSubmitting(true);
+    void (async () => {
+      try {
+        await onSave();
+      } catch (error) {
+        Alert.alert('No se pudo generar la nota de credito', error instanceof Error && error.message ? error.message : 'Ocurrio un error inesperado. Intenta nuevamente.');
+      } finally {
+        setSubmitting(false);
+      }
+    })();
   };
 
   return (
@@ -103,7 +117,7 @@ export function NuevaNotaCreditoMobileScreen({
         <View style={styles.invoiceHeaderActions}>
           <View style={styles.invoiceHeaderBox}>
             <DropdownField
-              label="Serie"
+              label="Serie *"
               options={serieOptions.map((item, index) => ({ label: item.serieVisual || item.serieRaw || `Serie ${index + 1}`, value: index + 1 }))}
               value={Math.max(serieOptions.findIndex((item) => item === getSelectedDocumentSerieOption(serieOptions, effectiveSerie)) + 1, 0) || (serieOptions.length ? 1 : null)}
               onChange={(value) => onChange('serie', value ? serieOptions[value - 1]?.serieRaw ?? serieOptions[value - 1]?.serieVisual ?? effectiveSerie : effectiveSerie)}
@@ -119,6 +133,12 @@ export function NuevaNotaCreditoMobileScreen({
       </View>
       <SharedInvoiceProgressSteps labels={['Factura', 'Detalle']} activeIndex={Math.max(step - 1, 0)} />
       {message ? <MessageBox message={message} /> : null}
+      {submitting ? (
+        <View style={styles.directoryLoading}>
+          <ActivityIndicator color="#0072BD" />
+          <Text style={styles.mutedText}>{saving ? 'Generando nota de credito y enviandola al SRI...' : 'Validando datos de la nota de credito...'}</Text>
+        </View>
+      ) : null}
       {loading ? (
         <View style={styles.directoryLoading}>
           <ActivityIndicator color="#0072BD" />
@@ -129,7 +149,7 @@ export function NuevaNotaCreditoMobileScreen({
         <View style={styles.formSectionBox}>
           <Text style={styles.clientFormSubtitle}>Buscador de factura</Text>
           <Text style={styles.invoiceSectionHelp}>Selecciona la factura modificada. El cliente, los datos de sustento y los detalles se cargarán automáticamente.</Text>
-          <SearchField label="Encontrar factura" placeholder="Número completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} predictive suggestions={facturas.slice(0, 5).map((item, index) => ({ id: `nota-credito-factura-${item.codfactura}-${index}`, title: item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`, subtitle: `${item.cliente ?? 'Consumidor final'} · ${formatMoney(item.total)}` }))} onSelectSuggestion={(suggestion) => { const item = facturas.find((candidate, index) => `nota-credito-factura-${candidate.codfactura}-${index}` === suggestion.id); if (item) onSelectFactura(item); }} />
+          <SearchField label="Encontrar factura *" placeholder="Número completo o secuencial" value={form.facturaBusqueda} onChangeText={(value) => onChange('facturaBusqueda', value)} resultCount={facturas.length} onSubmit={onSearchFacturas} predictive suggestions={facturas.slice(0, 5).map((item, index) => ({ id: `nota-credito-factura-${item.codfactura}-${index}`, title: item.numeroCompleto ?? item.numfactura ?? `Factura ${item.codfactura}`, subtitle: `${item.cliente ?? 'Consumidor final'} · ${formatMoney(item.total)}` }))} onSelectSuggestion={(suggestion) => { const item = facturas.find((candidate, index) => `nota-credito-factura-${candidate.codfactura}-${index}` === suggestion.id); if (item) onSelectFactura(item); }} />
           <Text style={styles.invoiceSearchHint}>Si no aparece, ya fue anulada totalmente o no tiene saldo disponible.</Text>
           {factura ? <Text style={styles.profileValue}>Factura seleccionada: {factura.numeroCompleto ?? factura.numfactura ?? '-'} · {cliente ? getClienteDisplayName(cliente) : 'Cargando cliente'}</Text> : null}
         </View>
@@ -139,20 +159,20 @@ export function NuevaNotaCreditoMobileScreen({
             <Text style={styles.invoicePanelPill}>Cargado desde factura</Text>
           </View>
           <View style={styles.invoiceGrid}>
-            <Field label="Tipo identificacion" value={form.tipoIdentificacion} onChangeText={(value) => onChange('tipoIdentificacion', value)} />
-            <Field label="Numero identificacion" value={form.numeroIdentificacion} onChangeText={(value) => onChange('numeroIdentificacion', value)} />
+            <Field label="Tipo identificacion *" value={form.tipoIdentificacion} onChangeText={(value) => onChange('tipoIdentificacion', value)} />
+            <Field label="Numero identificacion *" value={form.numeroIdentificacion} onChangeText={(value) => onChange('numeroIdentificacion', value)} />
           </View>
           <View style={styles.invoiceGrid}>
-            <DropdownField label="Tipo cliente" options={tipoClienteOptions} value={Number(form.tipoCliente) || null} onChange={(value) => onChange('tipoCliente', value === null ? '' : String(value))} />
-            <Field label="Obligado a llevar contabilidad" value={form.obligadoContabilidad} onChangeText={(value) => onChange('obligadoContabilidad', value)} />
+            <DropdownField label="Tipo cliente *" options={tipoClienteOptions} value={Number(form.tipoCliente) || null} onChange={(value) => onChange('tipoCliente', value === null ? '' : String(value))} />
+            <Field label="Obligado a llevar contabilidad *" value={form.obligadoContabilidad} onChangeText={(value) => onChange('obligadoContabilidad', value)} />
           </View>
-          <Field label="Nombre / razon social" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} />
-          <Field label="Direccion (max 100)" value={form.direccion} onChangeText={(value) => onChange('direccion', value)} />
+          <Field label="Nombre / razon social *" value={form.clienteBusqueda} onChangeText={(value) => onChange('clienteBusqueda', value)} />
+          <Field label="Direccion (max 100) *" value={form.direccion} onChangeText={(value) => onChange('direccion', value)} />
           <View style={styles.invoiceGrid}>
-            <Field label="Telefono" value={form.telefono} onChangeText={(value) => onChange('telefono', value)} keyboardType="phone-pad" />
-            <Field label="Correo electronico principal" value={form.correoPrincipal} onChangeText={(value) => onChange('correoPrincipal', value)} autoCapitalize="none" keyboardType="email-address" />
+            <Field label="Telefono (opcional)" value={form.telefono} onChangeText={(value) => onChange('telefono', value)} keyboardType="phone-pad" />
+            <Field label="Correo electronico principal (opcional)" value={form.correoPrincipal} onChangeText={(value) => onChange('correoPrincipal', value)} autoCapitalize="none" keyboardType="email-address" />
           </View>
-          <Field label="Correo adicional (solo esta nota)" value={form.correoAdicional} onChangeText={(value) => onChange('correoAdicional', value)} autoCapitalize="none" keyboardType="email-address" />
+          <Field label="Correo adicional (opcional, solo esta nota)" value={form.correoAdicional} onChangeText={(value) => onChange('correoAdicional', value)} autoCapitalize="none" keyboardType="email-address" />
           <View style={styles.invoiceGrid}>
             <DropdownField
               label="Motivo de la nota de credito"
@@ -165,7 +185,7 @@ export function NuevaNotaCreditoMobileScreen({
               value={Math.max(['Anular operaciones', 'Devolucion parcial', 'Descuento o bonificacion', 'Correccion de valores'].findIndex((item) => item === form.motivo) + 1, 1)}
               onChange={(value) => onChange('motivo', ['Anular operaciones', 'Devolucion parcial', 'Descuento o bonificacion', 'Correccion de valores'][(value ?? 1) - 1])}
             />
-            <Field label="Observacion (max 250 caracteres)" value={form.observacion} onChangeText={(value) => onChange('observacion', value.slice(0, 250))} />
+          <Field label="Observacion (opcional, max 250 caracteres)" value={form.observacion} onChangeText={(value) => onChange('observacion', value.slice(0, 250))} />
           </View>
         </View> : null}
         <View style={styles.formActions}>
@@ -193,16 +213,16 @@ export function NuevaNotaCreditoMobileScreen({
                 </View>
                 <Field label="Detalle de la línea (opcional)" value={linea.detalle ?? ''} onChangeText={(value) => onUpdateLinea(index, 'detalle', value)} />
                 <View style={styles.invoiceLineFieldsGrid}>
-                  <View style={styles.invoiceLineField}><Field label="Cantidad" value={linea.cantidad} onChangeText={(value) => onUpdateLinea(index, 'cantidad', value)} keyboardType="number-pad" /></View>
-                  <View style={styles.invoiceLineField}><Field label="Precio" value={linea.precio} onChangeText={(value) => onUpdateLinea(index, 'precio', value)} keyboardType="decimal-pad" /></View>
+                  <View style={styles.invoiceLineField}><Field label="Cantidad *" value={linea.cantidad} onChangeText={(value) => onUpdateLinea(index, 'cantidad', value)} keyboardType="number-pad" /></View>
+                  <View style={styles.invoiceLineField}><Field label="Precio *" value={linea.precio} onChangeText={(value) => onUpdateLinea(index, 'precio', value)} keyboardType="decimal-pad" /></View>
                 </View>
                 <View style={styles.invoiceLineFieldsGrid}>
-                  <View style={styles.invoiceLineField}><Field label="Descuento" value={linea.descuento} onChangeText={(value) => onUpdateLinea(index, 'descuento', value)} keyboardType="decimal-pad" /></View>
+                  <View style={styles.invoiceLineField}><Field label="Descuento (opcional)" value={linea.descuento} onChangeText={(value) => onUpdateLinea(index, 'descuento', value)} keyboardType="decimal-pad" /></View>
                   <View style={styles.invoiceLineField}>
                     {ivaOptions.length > 0 ? (
-                      <DropdownField label="IVA" options={ivaOptions} value={getIvaOptionValue(ivaOptions, toNumber(linea.tarifa))} onChange={(value) => onUpdateLinea(index, 'tarifa', value === null ? '0' : String(value))} allowClear />
+                      <DropdownField label="IVA *" options={ivaOptions} value={getIvaOptionValue(ivaOptions, toNumber(linea.tarifa))} onChange={(value) => onUpdateLinea(index, 'tarifa', value === null ? '0' : String(value))} allowClear />
                     ) : (
-                      <Field label="IVA %" value={linea.tarifa} onChangeText={(value) => onUpdateLinea(index, 'tarifa', value)} keyboardType="decimal-pad" />
+                      <Field label="IVA % *" value={linea.tarifa} onChangeText={(value) => onUpdateLinea(index, 'tarifa', value)} keyboardType="decimal-pad" />
                     )}
                   </View>
                 </View>
@@ -228,7 +248,7 @@ export function NuevaNotaCreditoMobileScreen({
         <View style={styles.formActions}>
           <SecondaryButton label="Volver al cliente" onPress={() => setStep(1)} />
           <SecondaryButton label="Cancelar / limpiar" onPress={handleClear} />
-          <PrimaryButton label="Generar Nota de Credito" loading={saving} onPress={onSave} />
+          <PrimaryButton label="Generar Nota de Credito" loading={saving || submitting} onPress={handleSave} />
         </View>
       </> : null}
     </>

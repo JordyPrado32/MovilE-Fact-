@@ -41,7 +41,8 @@ export function MisNotasDebitoMobileScreen({
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState(1);
   const [selectedNota, setSelectedNota] = useState<NotaDebitoListItem | null>(null);
-  const visibleNotas = notas.filter((nota) => {
+  const safeNotas = Array.isArray(notas) ? notas : [];
+  const visibleNotas = safeNotas.filter((nota) => {
     const term = filter.trim().toLowerCase();
     const matchesText = !term || [nota.numeroNota, nota.facturaModificada, nota.motivo, nota.cliente, nota.identificacionCliente, nota.estadoSri].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
     const isAuthorized = isNotaDebitoAuthorized(nota);
@@ -57,7 +58,7 @@ export function MisNotasDebitoMobileScreen({
       <View style={styles.invoiceHistoryFilterPanel}>
         <Text style={styles.clientFormSubtitle}>Busqueda y control</Text>
         <Text style={styles.clientName}>Notas de debito generadas</Text>
-        <SearchField label="Buscar notas de debito" placeholder="Numero, factura, cliente o identificacion" value={filter} onChangeText={setFilter} resultCount={visibleNotas.length} totalCount={notas.length} />
+        <SearchField label="Buscar notas de debito" placeholder="Numero, factura, cliente o identificacion" value={filter} onChangeText={setFilter} resultCount={visibleNotas.length} totalCount={safeNotas.length} />
         <DropdownField
           label="Estado SRI"
           options={[

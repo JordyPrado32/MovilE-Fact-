@@ -1198,7 +1198,7 @@ export function ERubricaMobileScreen({
             </> : null}
             <Field label="Nombres *" value={solicitudForm.nombres} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, nombres: value }))} />
             <Field label="Primer apellido *" value={solicitudForm.primerApellido} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, primerApellido: value }))} />
-            <Field label="Segundo apellido" value={solicitudForm.segundoApellido} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, segundoApellido: value }))} />
+            <Field label="Segundo apellido (opcional)" value={solicitudForm.segundoApellido} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, segundoApellido: value }))} />
             <Text style={styles.clientDetailLabel}>Fecha de nacimiento *</Text>
             <Pressable style={styles.erubricaHistorySearchBox} onPress={() => setShowSolicitudBirthDate(true)}><Text style={[styles.erubricaHistoryInput, !solicitudForm.fechaNacimiento && { color: '#8AA0B5' }]}>{solicitudForm.fechaNacimiento || 'Seleccionar fecha'}</Text><MaterialCommunityIcons name="calendar" size={19} color={ERUBRICA_COLORS.primary} /></Pressable>
             {showSolicitudBirthDate ? <DateTimePicker value={solicitudForm.fechaNacimiento ? new Date(`${solicitudForm.fechaNacimiento}T12:00:00`) : new Date(1990, 0, 1)} mode="date" maximumDate={new Date()} onValueChange={(_, date) => { if (Platform.OS !== 'ios') setShowSolicitudBirthDate(false); if (date) setSolicitudForm((current) => ({ ...current, fechaNacimiento: date.toISOString().slice(0, 10) })); }} onDismiss={() => setShowSolicitudBirthDate(false)} /> : null}
@@ -1208,8 +1208,8 @@ export function ERubricaMobileScreen({
             <View style={styles.erubricaHistorySearchBox}><Picker selectedValue={solicitudForm.nacionalidad} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, nacionalidad: String(value) }))}>{solicitudCatalogos.nacionalidades.map((item) => <Picker.Item key={item} label={item} value={item} />)}</Picker></View>
             <Field label="Celular *" value={solicitudForm.celular} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, celular: value }))} keyboardType="phone-pad" />
             <Field label="Correo principal *" value={solicitudForm.correo} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, correo: value }))} autoCapitalize="none" keyboardType="email-address" />
-            <Field label="Teléfono secundario" value={solicitudForm.telefonoSecundario} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, telefonoSecundario: value }))} keyboardType="phone-pad" />
-            <Field label="Correo secundario" value={solicitudForm.correoSecundario} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, correoSecundario: value }))} autoCapitalize="none" keyboardType="email-address" />
+            <Field label="Teléfono secundario (opcional)" value={solicitudForm.telefonoSecundario} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, telefonoSecundario: value }))} keyboardType="phone-pad" />
+            <Field label="Correo secundario (opcional)" value={solicitudForm.correoSecundario} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, correoSecundario: value }))} autoCapitalize="none" keyboardType="email-address" />
             <Text style={styles.clientDetailLabel}>Provincia *</Text>
             <View style={styles.erubricaHistorySearchBox}><Picker selectedValue={solicitudForm.provincia} style={{ flex: 1, color: ERUBRICA_COLORS.text }} onValueChange={(value) => setSolicitudForm((current) => ({ ...current, provincia: String(value), canton: '' }))}><Picker.Item label="Selecciona una provincia" value="" />{solicitudCatalogos.provincias.map((item) => <Picker.Item key={item.nombre} label={item.nombre} value={item.nombre} />)}</Picker></View>
             <Text style={styles.clientDetailLabel}>Cantón *</Text>
@@ -1223,7 +1223,7 @@ export function ERubricaMobileScreen({
                 <Text style={styles.erubricaHistoryEyebrow}>DATOS DE LA EMPRESA</Text>
                 <Text style={styles.erubricaSignStep}>Información corporativa</Text>
                 <Field label="Razón social de la empresa *" value={solicitudForm.razonSocialEmpresa} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, razonSocialEmpresa: value }))} />
-                <Field label="Departamento" value={solicitudForm.departamento} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, departamento: value }))} />
+            <Field label="Departamento (opcional)" value={solicitudForm.departamento} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, departamento: value }))} />
                 <Field label="Cargo *" value={solicitudForm.cargo} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, cargo: value }))} />
                 <Field label="Motivo de firma *" value={solicitudForm.motivoFirma} onChangeText={(value) => setSolicitudForm((current) => ({ ...current, motivoFirma: value }))} />
               </View>
@@ -1503,7 +1503,7 @@ export function ERubricaMobileScreen({
                 <Text style={styles.erubricaConfigStepHint}>Ingresa la clave del certificado (.p12) para habilitar la firma electrónica.</Text>
               </View>
             </View>
-            <Field label="Clave del certificado" value={certificatePassword} onChangeText={setCertificatePassword} secureTextEntry />
+            <Field label="Clave del certificado *" value={certificatePassword} onChangeText={setCertificatePassword} secureTextEntry />
             {certificatePassword.trim() ? (
               <View style={styles.erubricaConfigSuccessRow}>
                 <MaterialCommunityIcons name="shield-check-outline" size={15} color={ERUBRICA_COLORS.primary} />
@@ -1755,7 +1755,7 @@ export function ERubricaMobileScreen({
                 <Text style={styles.erubricaDropTitle}>{certificateFile ? certificateFile.name : 'Selecciona tu archivo .p12'}</Text>
                 <Text style={styles.erubricaDropText}>Haz clic para buscar · Máximo 5 MB</Text>
               </Pressable>
-              <Field label="Clave del certificado" value={certificatePassword} onChangeText={setCertificatePassword} secureTextEntry />
+               <Field label="Clave del certificado *" value={certificatePassword} onChangeText={setCertificatePassword} secureTextEntry />
               <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Validar archivo y clave" loading={validandoFirmaTemporal} onPress={() => void validarFirmaTemporal()} />
             </View>
           </View>

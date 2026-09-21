@@ -836,11 +836,11 @@ export function PurchaseDocumentsScreen({
         </View>
         <View style={styles.rechargeInputs}>
           <View style={styles.rechargeInputBlock}>
-            <Field label="¿Cuántos documentos deseas comprar?" value={form.codigo} onChangeText={(value) => onChange('codigo', value)} keyboardType="number-pad" />
+            <Field label="¿Cuántos documentos deseas comprar? *" value={form.codigo} onChangeText={(value) => onChange('codigo', value)} keyboardType="number-pad" />
             <Text style={styles.rechargeHint}>Mínimo 11 documentos (equivalente a una recarga desde $5,00)</Text>
           </View>
           <View style={styles.rechargeInputBlock}>
-            <Field label="Valor de la recarga" value={form.valor} onChangeText={(value) => onChange('valor', value)} keyboardType="decimal-pad" />
+            <Field label="Valor de la recarga *" value={form.valor} onChangeText={(value) => onChange('valor', value)} keyboardType="decimal-pad" />
             <Text style={styles.rechargeHint}>Monto mínimo de recarga: $5,00</Text>
           </View>
         </View>

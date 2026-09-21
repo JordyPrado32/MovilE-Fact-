@@ -165,7 +165,7 @@ export function ClienteForm({
           <View key={`correo-${index}`} style={styles.inlineFieldRow}>
             <View style={styles.inlineFieldGrow}>
               <Field
-                label={`Correo adicional ${index + 1}`}
+                 label={`Correo adicional ${index + 1} (opcional)`}
                 value={correo}
                 onChangeText={(value) => {
                   const next = [...form.correosAdicionales];
@@ -196,29 +196,29 @@ export function ClienteForm({
           <SegmentButton active={form.tipoContactoTelefonico === 'CONVENCIONAL'} label="Convencional" onPress={() => onChange('tipoContactoTelefonico', 'CONVENCIONAL')} />
         </View>
         {form.tipoContactoTelefonico === 'CONVENCIONAL' ? (
-          <Field label="Telefono convencional" value={form.telefonoconvencional} onChangeText={(value) => onChange('telefonoconvencional', value)} keyboardType="phone-pad" />
+           <Field label="Telefono convencional (opcional)" value={form.telefonoconvencional} onChangeText={(value) => onChange('telefonoconvencional', value)} keyboardType="phone-pad" />
         ) : (
-          <Field label="Celular" value={form.celular} onChangeText={(value) => onChange('celular', value)} keyboardType="phone-pad" />
+           <Field label="Celular (opcional)" value={form.celular} onChangeText={(value) => onChange('celular', value)} keyboardType="phone-pad" />
         )}
       </View>
 
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Direccion</Text>
-        <Field label="Direccion" value={form.direccion} onChangeText={(value) => onChange('direccion', value)} />
+         <Field label="Direccion *" value={form.direccion} onChangeText={(value) => onChange('direccion', value)} />
         <View style={styles.compactFieldRow}>
           {paises.length ? (
             <View style={styles.compactFieldGrow}>
-              <DropdownField label="Pais" options={paises.map((pais) => ({ label: pais.descripcion, value: pais.idPais }))} value={form.pais} onChange={(value) => onChange('pais', value)} />
+               <DropdownField label="Pais (opcional)" options={paises.map((pais) => ({ label: pais.descripcion, value: pais.idPais }))} value={form.pais} onChange={(value) => onChange('pais', value)} />
             </View>
           ) : null}
           {provincias.length ? (
             <View style={styles.compactFieldGrow}>
-              <DropdownField label="Provincia" options={provincias.map((provincia) => ({ label: provincia.descripcion, value: provincia.idProvincia }))} value={form.provincia} onChange={(value) => onChange('provincia', value)} />
+               <DropdownField label="Provincia (opcional)" options={provincias.map((provincia) => ({ label: provincia.descripcion, value: provincia.idProvincia }))} value={form.provincia} onChange={(value) => onChange('provincia', value)} />
             </View>
           ) : null}
           {ciudades.length ? (
             <View style={styles.compactFieldGrow}>
-              <DropdownField label="Canton" options={ciudades.map((ciudad) => ({ label: ciudad.descripcion, value: ciudad.idCiudad }))} value={form.ciudad} onChange={(value) => onChange('ciudad', value)} />
+               <DropdownField label="Canton (opcional)" options={ciudades.map((ciudad) => ({ label: ciudad.descripcion, value: ciudad.idCiudad }))} value={form.ciudad} onChange={(value) => onChange('ciudad', value)} />
             </View>
           ) : null}
         </View>
@@ -230,8 +230,8 @@ export function ClienteForm({
           {diasCreditoRapidos.map((dias) => <SegmentButton key={dias} active={form.diasCredito === dias} label={`${dias} dias`} onPress={() => onChange('diasCredito', dias)} />)}
           <SegmentButton active={diasCreditoPersonalizado} label="Otro" onPress={() => onChange('diasCredito', diasCreditoPersonalizado ? '0' : '')} />
         </View>
-        {diasCreditoPersonalizado || form.diasCredito.trim() === '' ? <Field label="Dias de credito" value={form.diasCredito} onChangeText={(value) => onChange('diasCredito', value.replace(/[^\d]/g, ''))} keyboardType="number-pad" /> : null}
-        <Field label="Observaciones" value={form.observaciones} onChangeText={(value) => onChange('observaciones', value)} />
+         {diasCreditoPersonalizado || form.diasCredito.trim() === '' ? <Field label="Dias de credito (opcional)" value={form.diasCredito} onChangeText={(value) => onChange('diasCredito', value.replace(/[^\d]/g, ''))} keyboardType="number-pad" /> : null}
+         <Field label="Observaciones (opcional)" value={form.observaciones} onChangeText={(value) => onChange('observaciones', value)} />
       </View>
 
       <View style={styles.formActions}>
