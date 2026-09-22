@@ -5255,6 +5255,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       const target = `${baseDirectory}preview-${Date.now()}-${fileName.replace(/[^a-z0-9._-]/gi, '-')}`;
       const cookie = getAuthSessionCookie();
       const download = await FileSystem.downloadAsync(url, target, cookie ? { headers: { Cookie: cookie } } : undefined);
+      const fileInfo = await FileSystem.getInfoAsync(download.uri);
+      if (download.status !== 200 || !fileInfo.exists || (fileInfo.size ?? 0) < 16) {
+        throw new Error('invalid-pdf-download');
+      }
       setPdfPreview({ uri: download.uri, name: fileName });
     } catch (error) {
       setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo cargar la previsualización del PDF.' });
