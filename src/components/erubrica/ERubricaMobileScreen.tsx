@@ -27,6 +27,7 @@ import { ERubricaDashboard, ERubricaDocumentoFirmado, ERubricaDocumentoPendiente
 import { EFACT_THEME, ERUBRICA_COLORS } from '../../styles/theme';
 import { formatDocumentDate } from '../../utils/documentFormatting';
 import { arrayBufferToBase64, buildDeviceFileName } from '../../utils/fileUtils';
+import { validateEmail, validateIdentificacion } from '../../utils/authValidation';
 import { EmptyState } from '../ui/FeedbackStates';
 import { Field, MessageBox, PrimaryButton, SecondaryButton } from '../ui/FormControls';
 import { ResultCollection } from '../data/ResultCollection';
@@ -48,6 +49,23 @@ function getDocumentAssetUrl(response: { url?: string | null } | string) {
 
 const PDFJS_VIEWER_URI = Image.resolveAssetSource(require('../../../assets/pdfjs/pdf.min.pdf')).uri;
 const PDFJS_WORKER_URI = Image.resolveAssetSource(require('../../../assets/pdfjs/pdf.worker.min.pdf')).uri;
+const TEXTO_SOLICITUD_VALIDO = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ .,'&()\-]+$/;
+
+function textoSolicitudValido(value: string, maxLength = 100) {
+  const text = value.trim();
+  return text.length > 0 && text.length <= maxLength && TEXTO_SOLICITUD_VALIDO.test(text);
+}
+
+function telefonoSolicitudValido(value: string) {
+  const digits = value.replace(/\D/g, '');
+  return /^[0-9+()\-\s]+$/.test(value.trim()) && digits.length >= 7 && digits.length <= 15;
+}
+
+function tipoIdentificacionSolicitud(value: string): 'CEDULA' | 'RUC' | 'PASAPORTE' {
+  if (/ruc/i.test(value)) return 'RUC';
+  if (/pasaporte/i.test(value)) return 'PASAPORTE';
+  return 'CEDULA';
+}
 
 function usePdfJsSource(uri: string) {
   const [source, setSource] = useState<string | null>(null);
@@ -1021,21 +1039,52 @@ export function ERubricaMobileScreen({
       Alert.alert('Edad no válida', 'El solicitante debe ser mayor de edad.');
       return false;
     }
-    if (!/^\S+@\S+\.\S+$/.test(solicitudForm.correo.trim())) {
+    if (!validateEmail(solicitudForm.correo).valid) {
       Alert.alert('Correo no válido', 'Ingresa un correo principal válido.');
       return false;
     }
-    if (/c[eé]dula/i.test(solicitudForm.tipoDocumento) && !/^\d{10}$/.test(solicitudForm.identificacion.trim())) {
-      Alert.alert('Identificación no válida', 'La cédula debe contener 10 dígitos.');
+    if (solicitudForm.correoSecundario.trim() && !validateEmail(solicitudForm.correoSecundario).valid) {
+      Alert.alert('Correo no válido', 'Ingresa un correo secundario válido.');
       return false;
     }
-    if ((solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) && !/^\d{13}$/.test(solicitudForm.ruc.trim())) {
-      Alert.alert('RUC no válido', 'Ingresa un RUC de 13 dígitos.');
+    const identificacionValidation = validateIdentificacion(tipoIdentificacionSolicitud(solicitudForm.tipoDocumento), solicitudForm.identificacion);
+    if (!identificacionValidation.valid) {
+      Alert.alert('Identificación no válida', identificacionValidation.message ?? 'Verifica la identificación.');
+      return false;
+    }
+    if (!telefonoSolicitudValido(solicitudForm.celular) || (solicitudForm.telefonoSecundario.trim() && !telefonoSolicitudValido(solicitudForm.telefonoSecundario))) {
+      Alert.alert('Teléfono no válido', 'Ingresa teléfonos de entre 7 y 15 dígitos.');
+      return false;
+    }
+    if (!textoSolicitudValido(solicitudForm.nombres) || !textoSolicitudValido(solicitudForm.primerApellido) || (solicitudForm.segundoApellido.trim() && !textoSolicitudValido(solicitudForm.segundoApellido))) {
+      Alert.alert('Nombre no válido', 'Los nombres y apellidos solo permiten letras y caracteres habituales.');
+      return false;
+    }
+    if (solicitudForm.direccion.trim().length < 5 || solicitudForm.direccion.trim().length > 300) {
+      Alert.alert('Dirección no válida', 'La dirección debe tener entre 5 y 300 caracteres.');
+      return false;
+    }
+    if (solicitudPersona === 'Representante legal' || solicitudForm.poseeRuc) {
+      const rucValidation = validateIdentificacion('RUC', solicitudForm.ruc);
+      if (!rucValidation.valid) {
+        Alert.alert('RUC no válido', rucValidation.message ?? 'Ingresa un RUC válido.');
+        return false;
+      }
+    }
+    if (solicitudPersona === 'Representante legal' && (!textoSolicitudValido(solicitudForm.razonSocialEmpresa, 150) || !textoSolicitudValido(solicitudForm.departamento) || !textoSolicitudValido(solicitudForm.cargo) || !textoSolicitudValido(solicitudForm.motivoFirma, 250))) {
+      Alert.alert('Datos de empresa no válidos', 'Revisa los textos de empresa, departamento, cargo y motivo.');
       return false;
     }
     if (solicitudPersona === 'Representante legal' && (!solicitudForm.razonSocialEmpresa.trim() || !solicitudForm.departamento.trim() || !solicitudForm.cargo.trim() || !solicitudForm.motivoFirma.trim() || !solicitudForm.representanteTipoDocumento.trim() || !solicitudForm.representanteIdentificacion.trim() || !solicitudForm.representanteNombres.trim() || !solicitudForm.representanteApellidos.trim())) {
       Alert.alert('Datos incompletos', 'Completa los datos de empresa y representante legal.');
       return false;
+    }
+    if (solicitudPersona === 'Representante legal') {
+      const representanteValidation = validateIdentificacion(tipoIdentificacionSolicitud(solicitudForm.representanteTipoDocumento), solicitudForm.representanteIdentificacion);
+      if (!representanteValidation.valid || !textoSolicitudValido(solicitudForm.representanteNombres) || !textoSolicitudValido(solicitudForm.representanteApellidos)) {
+        Alert.alert('Representante no válido', representanteValidation.message ?? 'Revisa la identificación, nombres y apellidos del representante.');
+        return false;
+      }
     }
     const missingFile = solicitudDocumentoItems.find((item) => item.label.includes('*') && !solicitudFiles[item.key]);
     if (missingFile) {
@@ -1084,7 +1133,10 @@ export function ERubricaMobileScreen({
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.82 });
     const asset = !result.canceled ? result.assets[0] : null;
     if (!asset) return;
-    if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+    const extension = asset.fileName?.split('.').pop()?.toLowerCase();
+    const extensionValida = ['jpg', 'jpeg', 'png'].includes(extension ?? '');
+    const mimeValido = ['image/jpeg', 'image/png'].includes(asset.mimeType ?? '');
+    if ((asset.fileSize ?? 0) <= 0 || (asset.fileSize ?? 0) > 5 * 1024 * 1024 || (!extensionValida && !mimeValido)) {
       Alert.alert('Comprobante no valido', 'Selecciona una imagen JPG o PNG de maximo 5MB.');
       return;
     }
@@ -1108,6 +1160,10 @@ export function ERubricaMobileScreen({
       }
       if (!transferForm.banco || !transferForm.titular.trim() || !transferForm.cuenta.trim() || !transferForm.comprobante.trim() || !transferReceipt) {
         Alert.alert('Transferencia incompleta', 'Completa los datos de pago y adjunta el comprobante.');
+        return;
+      }
+      if (!textoSolicitudValido(transferForm.titular, 120) || !/^\d{6,25}$/.test(transferForm.cuenta.trim()) || !/^[A-Za-z0-9\-]{4,50}$/.test(transferForm.comprobante.trim())) {
+        Alert.alert('Transferencia no válida', 'Revisa el titular, cuenta y número de comprobante.');
         return;
       }
       const form = new FormData();

@@ -1,8 +1,4 @@
 import { apiRequest } from './apiClient';
-import * as SecureStore from 'expo-secure-store';
-
-const DISMISSED_KEY_PREFIX = 'efact_dismissed_notifications_';
-const dismissedWrites = new Map<number, Promise<void>>();
 
 export type NotificacionItem = {
   id: string;
@@ -29,35 +25,13 @@ export async function getNotificaciones(userId: number, top = 20) {
   );
 }
 
-export async function getDismissedNotificationIds(userId: number) {
-  if (userId <= 0) return new Set<string>();
-
-  try {
-    const raw = await SecureStore.getItemAsync(`${DISMISSED_KEY_PREFIX}${userId}`);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
-  } catch {
-    return new Set<string>();
-  }
-}
-
-export async function rememberDismissedNotificationIds(userId: number, ids: Iterable<string>) {
-  if (userId <= 0) return;
-
-  const previousWrite = dismissedWrites.get(userId) ?? Promise.resolve();
-  const write = previousWrite.catch(() => undefined).then(async () => {
-    const dismissed = await getDismissedNotificationIds(userId);
-    for (const id of ids) dismissed.add(String(id));
-    await SecureStore.setItemAsync(`${DISMISSED_KEY_PREFIX}${userId}`, JSON.stringify(Array.from(dismissed).slice(-500)));
+export async function dismissNotifications(ids: Iterable<string>) {
+  const values = Array.from(ids, String).filter(Boolean).slice(0, 200);
+  if (!values.length) return;
+  await apiRequest<void>('/api/notificaciones/descartar', {
+    method: 'POST',
+    body: JSON.stringify({ ids: values }),
   });
-  dismissedWrites.set(userId, write);
-  try {
-    await write;
-  } catch {
-    // La bandeja del backend sigue siendo la fuente principal si SecureStore no esta disponible.
-  } finally {
-    if (dismissedWrites.get(userId) === write) dismissedWrites.delete(userId);
-  }
 }
 
 function normalizeNotificationRows(response: ApiRow[] | ApiRow): ApiRow[] {
