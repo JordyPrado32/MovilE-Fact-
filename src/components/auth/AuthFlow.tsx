@@ -1098,7 +1098,7 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
                 <Text style={styles.loginProductCaption}>Soluciones digitales</Text>
               </View>
             </View>
-            <Text style={[styles.title, styles.loginTitle]}>Bienvenido</Text>
+            <Text style={[styles.title, styles.loginTitle]}>Te damos la bienvenida</Text>
             <Text style={[styles.subtitle, styles.loginSubtitle]}>Ingresa para continuar con tu gestión</Text>
             <LoginActionTiles
               active={loginMethod}

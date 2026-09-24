@@ -5361,7 +5361,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const hasDocumentsAvailable = documentPlan.unlimited || Number(compraDocumentosEstado?.saldoDocumentos ?? 0) > 0;
   const initialSetupComplete = hasActiveEmisor && hasEmissionPoint && hasConfiguredFirma && hasDocumentsAvailable;
   const initialSetupLoading = loadingEmisores || loadingPuntos || loadingFirma || loadingCompraDocumentosEstado;
-  const initialSetupAllowedViews = new Set<WorkspaceView>(['dashboard', 'emisor', 'nuevo-emisor', 'firma', 'nueva-firma', 'punto-emision', 'nuevo-punto-emision', 'clientes', 'nuevo-cliente', 'productos', 'nuevo-producto', 'categorias', 'nueva-categoria', 'nueva-subcategoria', 'comprar-documentos', 'recargas', 'perfil', 'portal', 'e-rubrica', 'perfil-e-rubrica', 'politica-privacidad']);
+  const initialSetupAllowedViews = new Set<WorkspaceView>(['dashboard', 'emisor', 'nuevo-emisor', 'firma', 'nueva-firma', 'punto-emision', 'nuevo-punto-emision', 'clientes', 'nuevo-cliente', 'productos', 'nuevo-producto', 'categorias', 'nueva-categoria', 'nueva-subcategoria', 'cotizaciones', 'comprar-documentos', 'recargas', 'perfil', 'portal', 'e-rubrica', 'perfil-e-rubrica', 'politica-privacidad']);
   const firmaSummary = getFirmaSummary(emisores, firmaEstados);
   const moduleByView = new Map<WorkspaceView, MobileModule>(modules.map((module) => [module.view, module]));
   const menuNode = (view: WorkspaceView, label?: string, icon?: React.ComponentProps<typeof MaterialCommunityIcons>['name']): DrawerMenuNode => {
@@ -5385,6 +5385,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         menuNode('mis-facturas', 'Mis Facturas'),
       ],
     },
+    menuNode('cotizaciones', 'Cotizaciones'),
     {
       key: 'otros-documentos',
       label: 'Emision de otros Documentos',
@@ -5448,6 +5449,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     menuNode('punto-emision', 'Pto. Emision'),
     menuNode('clientes', 'Clientes / Proveedores'),
     menuNode('productos', 'Productos'),
+    menuNode('cotizaciones', 'Cotizaciones'),
     menuNode('comprar-documentos', 'Comprar documentos'),
     menuNode('perfil', 'Mi perfil'),
   ];
@@ -5461,6 +5463,33 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
     setActiveView('no-autorizado');
   };
+
+  useEffect(() => {
+    let mounted = true;
+    let handledUri = '';
+    const openIncomingPdf = async (uri: string | null) => {
+      if (!uri || handledUri === uri || (!uri.startsWith('content://') && !uri.startsWith('file://'))) return;
+      handledUri = uri;
+      try {
+        const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+        if (!baseDirectory) throw new Error('missing-directory');
+        const target = `${baseDirectory}external-${Date.now()}.pdf`;
+        await FileSystem.copyAsync({ from: uri, to: target });
+        if (!mounted) return;
+        setErubricaInitialPdf({ uri: target, name: 'Documento recibido.pdf', mimeType: 'application/pdf' });
+        openERubricaTab('firmar');
+      } catch {
+        if (mounted) setDirectoryMessage({ type: 'error', text: 'No se pudo cargar el PDF recibido.' });
+      }
+    };
+
+    void Linking.getInitialURL().then(openIncomingPdf).catch(() => undefined);
+    const subscription = Linking.addEventListener('url', ({ url }) => void openIncomingPdf(url));
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, [canUseERubrica]);
 
   const openPdfPreview = async (loader: () => Promise<{ url?: string | null } | string>, fileName: string) => {
     try {

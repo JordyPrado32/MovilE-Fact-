@@ -366,10 +366,25 @@ export function ERubricaMobileScreen({
     onTabChange(nextTab);
   };
   useEffect(() => {
-    if (initialPdf) {
-      selectTab('firmar');
+    if (!initialPdf) return;
+    let mounted = true;
+    const openIncomingPdf = async () => {
       setPdfFile(initialPdf);
-    }
+      if (puedeFirmarSinPlan) {
+        selectTab('firmar');
+        return;
+      }
+      const plan = planDisponible ?? await getERubricaPlan().catch(() => null);
+      if (!mounted) return;
+      if (plan) setPlanDisponible(plan);
+      const hasActivePlan = label(plan, ['tieneFirmaPagada'], 'false').toLowerCase() === 'true'
+        && label(plan, ['estado'], '').toLowerCase() === 'activo';
+      const nextTab = hasActivePlan ? 'firmar' : 'plan-disponible';
+      setTab(nextTab);
+      onTabChange(nextTab);
+    };
+    void openIncomingPdf();
+    return () => { mounted = false; };
   }, [initialPdf]);
   useEffect(() => {
     const nextTab = requestedTab ?? 'inicio';

@@ -66,7 +66,7 @@ export function AppLaunchScreen({ reduceMotion }: { reduceMotion: boolean }) {
         </View>
         <View style={styles.launchTextBlock}>
           <Text style={styles.launchEyebrow}>Hola, soy Numi</Text>
-          <Text style={styles.launchTitle}>Bienvenido</Text>
+          <Text style={styles.launchTitle}>Te damos la bienvenida</Text>
           <Text style={styles.launchSubtitle}>Preparando tu espacio de facturacion movil</Text>
         </View>
         <View style={styles.launchProgressTrack}><Animated.View style={[styles.launchProgressFill, { width: progressWidth }]} /></View>
