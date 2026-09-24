@@ -1,11 +1,8 @@
-import { useState } from 'react';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Pressable, Text, View } from 'react-native';
 
 import { EFACT_THEME } from '../../styles/theme';
 import { styles } from '../../styles/appStyles';
-import type { FacturaListItem } from '../../services/facturasMobileService';
-import { formatMoney } from '../../utils/documentFormatting';
 
 type DashboardModule = { title: string; description: string };
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
@@ -24,15 +21,6 @@ export function DashboardFavorite({ icon, label, color, onPress }: { icon: IconN
 
 export function DashboardStatCard({ accent, compact, kind, value, label, trend }: { accent: string; compact?: boolean; kind: string; value: string | number; label: string; trend: string }) {
   return <View style={[styles.dashboardStatCard, compact && styles.dashboardStatCardCompact]}><View style={[styles.dashboardStatIcon, { backgroundColor: `${accent}18` }]}><Text style={[styles.dashboardStatIconText, { color: accent }]}>{kind === 'money' ? '$' : kind === 'people' ? '••' : kind === 'box' ? '+' : '▤'}</Text></View><Text style={styles.dashboardStatValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{value}</Text><Text style={styles.dashboardStatLabel} numberOfLines={2}>{label}</Text><Text style={styles.dashboardStatTrend} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>↗ {trend} vs mes anterior</Text></View>;
-}
-
-export function DashboardChartCard({ facturas }: { facturas: FacturaListItem[] }) {
-  const values = [500, 1200, 720, 1350, 1680, 1640, 2450].map((fallback, index) => Number(facturas[index]?.total ?? fallback));
-  const max = Math.max(...values, 1);
-  const days = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
-  const [selectedIndex, setSelectedIndex] = useState(values.length - 1);
-  const selectedValue = values[selectedIndex] ?? 0;
-  return <View style={styles.dashboardChartCard}><View style={styles.dashboardChartHeader}><Text style={styles.dashboardPanelTitle} numberOfLines={1} adjustsFontSizeToFit>Ventas de los ultimos 7 dias</Text><View style={styles.dashboardChartValuePill}><Text style={styles.dashboardChartValueDay}>{days[selectedIndex]}</Text><Text style={styles.dashboardChartValueText}>{formatMoney(selectedValue)}</Text></View></View><View style={styles.dashboardChartArea}>{values.map((value, index) => <Pressable key={`chart-${index}`} style={styles.dashboardChartColumn} onPress={() => setSelectedIndex(index)}><View style={[styles.dashboardChartBar, index === selectedIndex && styles.dashboardChartBarActive, { height: `${Math.max(12, (value / max) * 86)}%` }]} /><View style={[styles.dashboardChartPoint, index === selectedIndex && styles.dashboardChartPointActive, { bottom: `${Math.max(8, (value / max) * 78)}%` }]} /></Pressable>)}</View><View style={styles.dashboardChartLabels}>{days.map((day, index) => <Text key={day} style={[styles.dashboardChartLabel, index === selectedIndex && styles.dashboardChartLabelActive]}>{day}</Text>)}</View></View>;
 }
 
 export function DashboardQuickAction({ color, label, onPress }: { color: string; label: string; onPress: () => void }) {

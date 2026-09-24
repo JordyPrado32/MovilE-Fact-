@@ -693,6 +693,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [operationalItems, setOperationalItems] = useState<OperationalMobileItem[]>([]);
   const [operationalCounts, setOperationalCounts] = useState<Partial<Record<WorkspaceView, number>>>({});
   const [compraDocumentosEstado, setCompraDocumentosEstado] = useState<CompraDocumentosEstado | null>(null);
+  const [loadingCompraDocumentosEstado, setLoadingCompraDocumentosEstado] = useState(true);
   const [operationalTabByView, setOperationalTabByView] = useState<Record<string, string>>({});
   const [operationalFormMode, setOperationalFormMode] = useState<OperationalFormMode>(null);
   const [selectedOperationalItem, setSelectedOperationalItem] = useState<OperationalMobileItem | null>(null);
@@ -824,7 +825,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const authorizedViews = useMemo(() => getAuthorizedViews(menus), [menus]);
   const canUseEfact = authorizedViews.has('dashboard');
   const services = useMemo(() => getServicesFromUser(currentUser, menus), [currentUser, menus]);
-  const canUseERubrica = isSuperAdmin(currentUser) || authorizedViews.has('e-rubrica') || services.some(isERubricaService);
+  const canUseERubrica = userId > 0;
   const canUseFirma = userId > 0;
   const canUsePortal = userId > 0;
   const portalFirstName = getDisplayFirstName(currentUser, perfilData?.perfil);
@@ -1405,21 +1406,23 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   }, [authorizedViews, catalogUserId, reloadKey]);
 
   useEffect(() => {
-    if (!catalogUserId || !authorizedViews.has('recargas')) return;
+    if (!catalogUserId || !canUseEfact) return;
 
     let mounted = true;
+    setLoadingCompraDocumentosEstado(true);
     getCompraDocumentosEstado(catalogUserId)
       .then((data) => {
         if (mounted) setCompraDocumentosEstado(data);
       })
       .catch(() => {
         if (mounted) setCompraDocumentosEstado(null);
+      })
+      .finally(() => {
+        if (mounted) setLoadingCompraDocumentosEstado(false);
       });
 
-    return () => {
-      mounted = false;
-    };
-  }, [authorizedViews, catalogUserId, reloadKey]);
+    return () => { mounted = false; };
+  }, [canUseEfact, catalogUserId, reloadKey]);
 
   useEffect(() => {
     if (!canUseERubrica || activeView !== 'e-rubrica') return;
@@ -5160,6 +5163,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setMenuOpen(false);
     setSearch('');
 
+    if (!initialSetupLoading && !initialSetupComplete && !initialSetupAllowedViews.has(view)) {
+      setActiveView('dashboard');
+      setDirectoryMessage({ type: 'info', text: 'Completa primero emisor, punto de emisión, firma y saldo de documentos.' });
+      return;
+    }
+
     if (view === 'portal' && canUsePortal) {
       setActiveView(view);
       return;
@@ -5301,6 +5310,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const hasActiveEmisor = emisores.some((emisor) => emisor.estado !== false);
   const hasConfiguredFirma = emisores.some(hasFirmaConfigured);
   const documentPlan = getDocumentPlanStatus(compraDocumentosEstado);
+  const hasEmissionPoint = Boolean(puntosData?.emisor && puntosData.cajas?.length);
+  const hasDocumentsAvailable = documentPlan.unlimited || Number(compraDocumentosEstado?.saldoDocumentos ?? 0) > 0;
+  const initialSetupComplete = hasActiveEmisor && hasEmissionPoint && hasConfiguredFirma && hasDocumentsAvailable;
+  const initialSetupLoading = loadingEmisores || loadingPuntos || loadingFirma || loadingCompraDocumentosEstado;
+  const initialSetupAllowedViews = new Set<WorkspaceView>(['dashboard', 'emisor', 'nuevo-emisor', 'firma', 'nueva-firma', 'punto-emision', 'nuevo-punto-emision', 'clientes', 'nuevo-cliente', 'productos', 'nuevo-producto', 'categorias', 'nueva-categoria', 'nueva-subcategoria', 'comprar-documentos', 'recargas', 'perfil', 'portal', 'e-rubrica', 'perfil-e-rubrica']);
   const firmaSummary = getFirmaSummary(emisores, firmaEstados);
   const moduleByView = new Map<WorkspaceView, MobileModule>(modules.map((module) => [module.view, module]));
   const menuNode = (view: WorkspaceView, label?: string, icon?: React.ComponentProps<typeof MaterialCommunityIcons>['name']): DrawerMenuNode => {
@@ -5314,7 +5328,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       disabled: module ? !module.enabled : !authorizedViews.has(view),
     };
   };
-  const efactDrawerMenu: DrawerMenuNode[] = [
+  const fullEfactDrawerMenu: DrawerMenuNode[] = [
     menuNode('clientes', 'Clientes / Proveedores'),
     {
       key: 'facturas',
@@ -5380,6 +5394,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         menuNode('centro-normativo', 'Centro normativo'),
       ],
     },
+  ];
+  const efactDrawerMenu: DrawerMenuNode[] = initialSetupComplete || initialSetupLoading ? fullEfactDrawerMenu : [
+    menuNode('emisor', 'Emisor'),
+    { key: 'firma-configuracion', label: 'Firma', view: 'firma', disabled: !canUseFirma },
+    menuNode('punto-emision', 'Pto. Emision'),
+    menuNode('clientes', 'Clientes / Proveedores'),
+    menuNode('productos', 'Productos'),
+    menuNode('comprar-documentos', 'Comprar documentos'),
+    menuNode('perfil', 'Mi perfil'),
   ];
   const openERubricaTab = (tab: ERubricaTab) => {
     setErubricaTabRequest(tab);
@@ -5826,6 +5849,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       handleBotNavigate,
       hasActiveEmisor,
       hasConfiguredFirma,
+      hasEmissionPoint,
+      hasDocumentsAvailable,
+      initialSetupComplete,
+      initialSetupLoading,
       hasFirmaConfigured,
       idTipoUsuario,
       importNotaCreditoXml,
