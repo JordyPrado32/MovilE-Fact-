@@ -44,7 +44,7 @@ import { getMenusByRol, hasMenusByRolEndpoint } from './src/services/menuService
 import { buscarLiquidacionProductos, buscarLiquidacionProveedores, emitirLiquidacionCompra, enviarLiquidacionCompraCorreo, getLiquidacionCompraPdf, getLiquidacionCompraPreparacion, getLiquidacionesCompra, getLiquidacionCompraRetencionBases, getLiquidacionCompraXml, guardarLiquidacionCompra, getLiquidacionCodigoPorcentaje, LiquidacionCompraListItem } from './src/services/liquidacionesCompraMobileService';
 import { anularNotaCredito, buscarNotaCreditoFacturas, emitirNotaCredito, emitirNotaCreditoAutomatica, enviarNotaCreditoCorreo, getNotaCreditoDetallesDisponibles, getNotaCreditoPdf, getNotaCreditoPreparacion, getNotasCredito, getNotaCreditoXml, guardarNotaCredito, NotaCreditoListItem } from './src/services/notasCreditoMobileService';
 import { anularNotaDebito, buscarNotaDebitoFacturas, emitirNotaDebito, enviarNotaDebitoCorreo, getNotaDebitoPdf, getNotaDebitoPreparacion, getNotasDebito, getNotaDebitoXml, guardarNotaDebito, NotaDebitoListItem } from './src/services/notasDebitoMobileService';
-import { getDismissedNotificationIds, getNotificaciones, rememberDismissedNotificationIds, NotificacionItem } from './src/services/notificacionesService';
+import { dismissNotifications, getNotificaciones, NotificacionItem } from './src/services/notificacionesService';
 import { syncDeviceNotifications } from './src/services/deviceNotificationsService';
 import { CompraDocumentosEstado, CompraDocumentosTransferenciaInput, createOperationalItem, deleteOperationalItem, getCompraDocumentosEstado, getEstadoCuentaDetalle, getEstadoCuentaExcel, getEstadoCuentaListadoExcel, getEstadoCuentaPdf, getOperationalMobileModule, iniciarPagoCompraDocumentos, OperationalMobileItem, OperationalModule, registrarTransferenciaCompraDocumentos, updateOperationalItem } from './src/services/operationalMobileService';
 import { getPerfil, updatePerfil, uploadPerfilAvatar } from './src/services/perfilService';
@@ -122,6 +122,22 @@ function getDocumentAssetUrl(response: { url?: string | null } | string) {
   const value = typeof response === 'string' ? response : response.url;
   if (!value) return '';
   return value.startsWith('http') ? value : `${API_BASE_URL.replace(/\/$/, '')}/${value.replace(/^\//, '')}`;
+}
+
+const TEXTO_NOMBRE_VALIDO = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 .,'&()\-]+$/;
+
+function validarTextoObligatorio(valor: string, etiqueta: string, maximo: number, permitirNumeros = false) {
+  const texto = valor.trim();
+  if (!texto) return `${etiqueta} es obligatorio.`;
+  if (texto.length > maximo) return `${etiqueta} no puede superar ${maximo} caracteres.`;
+  const patron = permitirNumeros ? TEXTO_NOMBRE_VALIDO : /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ .,'&()\-]+$/;
+  return patron.test(texto) ? null : `${etiqueta} contiene caracteres no permitidos.`;
+}
+
+function validarTelefono(valor: string) {
+  const texto = valor.trim();
+  const digitos = texto.replace(/\D/g, '');
+  return /^[0-9+()\-\s]+$/.test(texto) && digitos.length >= 7 && digitos.length <= 15;
 }
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'change';
@@ -1035,13 +1051,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     setNotificationsMessage(null);
 
     getNotificaciones(userId)
-      .then(async (items) => {
-        const dismissed = await getDismissedNotificationIds(userId);
+      .then((items) => {
         if (mounted) {
-          setDismissedNotificationIds(dismissed);
+          setDismissedNotificationIds(new Set());
           setNotifications(items);
         }
-        void syncDeviceNotifications(userId, items.filter((item) => !dismissed.has(item.id)));
+        void syncDeviceNotifications(userId, items);
       })
       .catch((error) => {
         const text = error instanceof ApiError ? error.message : 'No se pudieron cargar las notificaciones.';
@@ -2078,6 +2093,17 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       return;
     }
 
+    const errorNombre = validarTextoObligatorio(nombre, clienteForm.tipoCliente === 2 ? 'La razón social' : 'El nombre del cliente', 150, clienteForm.tipoCliente === 2);
+    if (errorNombre) {
+      setDirectoryMessage({ type: 'error', text: errorNombre });
+      return;
+    }
+
+    if (!validateEmail(clienteForm.correo.trim()).valid) {
+      setDirectoryMessage({ type: 'error', text: 'El correo principal no tiene un formato válido.' });
+      return;
+    }
+
     if (clienteForm.tipoContactoTelefonico === 'CELULAR' && clienteForm.celular.trim() && !/^[0-9+()\-\s]{7,20}$/.test(clienteForm.celular.trim())) {
       setDirectoryMessage({ type: 'error', text: 'El celular no tiene un formato válido.' });
       return;
@@ -2220,6 +2246,20 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       return;
     }
 
+    const nombreProductoError = validarTextoObligatorio(productoForm.nombre, 'El nombre del producto', 300, true);
+    if (nombreProductoError) {
+      setDirectoryMessage({ type: 'error', text: nombreProductoError });
+      return;
+    }
+    if (productoForm.codigo.trim() && !/^[A-Za-z0-9._\-]{1,50}$/.test(productoForm.codigo.trim())) {
+      setDirectoryMessage({ type: 'error', text: 'El código solo permite letras, números, punto, guion y guion bajo; máximo 50 caracteres.' });
+      return;
+    }
+    if (productoForm.categoria === null || productoForm.categoria === undefined) {
+      setDirectoryMessage({ type: 'error', text: 'Selecciona una categoría para el producto.' });
+      return;
+    }
+
     setSavingProducto(true);
     setDirectoryMessage(null);
 
@@ -2294,6 +2334,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
     if (!categoriaForm.descripcion.trim()) {
       setDirectoryMessage({ type: 'error', text: 'Completa la descripcion de la categoria.' });
+      return;
+    }
+
+    const categoriaError = validarTextoObligatorio(categoriaForm.descripcion, 'La descripción de la categoría', 100, true);
+    if (categoriaError) {
+      setDirectoryMessage({ type: 'error', text: categoriaError });
       return;
     }
 
@@ -2377,6 +2423,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       return;
     }
 
+    const subcategoriaError = validarTextoObligatorio(subcategoriaForm.descripcion, 'La descripción de la subcategoría', 100, true);
+    if (subcategoriaError) {
+      setDirectoryMessage({ type: 'error', text: subcategoriaError });
+      return;
+    }
+
     setSavingCategoria(true);
     setDirectoryMessage(null);
 
@@ -2444,6 +2496,35 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       return;
     }
 
+    const perfilNombreError = esEmpresa
+      ? validarTextoObligatorio(perfilForm.nombreEmpresa, 'La razón social', 150, true)
+      : validarTextoObligatorio(`${perfilForm.nombres} ${perfilForm.apellidos}`, 'Los nombres y apellidos', 150);
+    if (perfilNombreError) {
+      setDirectoryMessage({ type: 'error', text: perfilNombreError });
+      return;
+    }
+
+    const identificacionPerfil = perfilData?.tiposIdentificacion.find((item) => item.idTipoIdentificacion === perfilForm.idTipoIdentificacion);
+    const identificacionPerfilError = validateClientIdentification(
+      identificacionPerfil?.nombreTipo ?? perfilForm.idTipoIdentificacion,
+      identificacionPerfil?.descripcion,
+      perfilForm.identificacion,
+    );
+    if (identificacionPerfilError) {
+      setDirectoryMessage({ type: 'error', text: identificacionPerfilError });
+      return;
+    }
+
+    if (perfilForm.direccionEmpresa.trim().length < 5 || perfilForm.direccionEmpresa.trim().length > 300) {
+      setDirectoryMessage({ type: 'error', text: 'La dirección debe tener entre 5 y 300 caracteres.' });
+      return;
+    }
+
+    if (perfilForm.celular.trim() && !validarTelefono(perfilForm.celular)) {
+      setDirectoryMessage({ type: 'error', text: 'El teléfono debe tener entre 7 y 15 dígitos.' });
+      return;
+    }
+
     if (perfilForm.email.trim() && !validateEmail(perfilForm.email.trim()).valid) {
       setDirectoryMessage({ type: 'error', text: 'El formato del correo electronico no es valido.' });
       return;
@@ -2460,8 +2541,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         return;
       }
 
-      if (perfilForm.nuevaPassword.length < 6) {
-        setDirectoryMessage({ type: 'error', text: 'La nueva clave debe tener al menos 6 caracteres.' });
+      if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\da-zA-Z]).{10,}$/.test(perfilForm.nuevaPassword)) {
+        setDirectoryMessage({ type: 'error', text: 'La nueva clave debe tener 10 caracteres, mayúscula, minúscula, número y símbolo.' });
         return;
       }
     }
@@ -2533,6 +2614,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     const punto = normalizeSerieCode(puntoForm.puntoEmision);
     if (!punto) {
       setDirectoryMessage({ type: 'error', text: 'Ingresa el punto de emision.' });
+      return;
+    }
+
+    if (!/^\d{3}$/.test(punto)) {
+      setDirectoryMessage({ type: 'error', text: 'El punto de emisión debe tener exactamente 3 dígitos.' });
       return;
     }
 
@@ -2641,8 +2727,31 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       return;
     }
 
+    const rucValidation = validateIdentificacion('RUC', ruc);
+    if (!rucValidation.valid) {
+      setDirectoryMessage({ type: 'error', text: rucValidation.message ?? 'El RUC no es válido.' });
+      return;
+    }
+
     if (!emisorForm.dirEstablecimiento.trim() || !emisorForm.direccionMatriz.trim()) {
       setDirectoryMessage({ type: 'error', text: 'Completa las direcciones del emisor.' });
+      return;
+    }
+
+    if (emisorForm.dirEstablecimiento.trim().length < 5 || emisorForm.dirEstablecimiento.trim().length > 300 || emisorForm.direccionMatriz.trim().length < 5 || emisorForm.direccionMatriz.trim().length > 300) {
+      setDirectoryMessage({ type: 'error', text: 'Las direcciones deben tener entre 5 y 300 caracteres.' });
+      return;
+    }
+
+    if (!validarTelefono(emisorForm.telefono)) {
+      setDirectoryMessage({ type: 'error', text: 'El teléfono debe tener entre 7 y 15 dígitos.' });
+      return;
+    }
+
+    const razonSocialError = validarTextoObligatorio(emisorForm.razonSocial, 'La razón social', 300, true)
+      ?? validarTextoObligatorio(emisorForm.nomComercial, 'El nombre comercial', 300, true);
+    if (razonSocialError) {
+      setDirectoryMessage({ type: 'error', text: razonSocialError });
       return;
     }
 
@@ -2974,6 +3083,19 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       return;
     }
 
+    if (operationalForm.descripcion.trim() && operationalForm.descripcion.trim().length > 250) {
+      setDirectoryMessage({ type: 'error', text: 'La descripción no puede superar 250 caracteres.' });
+      return;
+    }
+    if (operationalForm.observacion.trim().length > 1000) {
+      setDirectoryMessage({ type: 'error', text: 'La observación no puede superar 1000 caracteres.' });
+      return;
+    }
+    if (operationalForm.valor.trim() && (!/^\d+(?:[,.]\d{1,2})?$/.test(operationalForm.valor.trim()) || Number(operationalForm.valor.replace(',', '.')) < 0)) {
+      setDirectoryMessage({ type: 'error', text: 'El valor debe ser un número válido con máximo dos decimales.' });
+      return;
+    }
+
     if (context.module === 'cuentas-cobrar' && context.tab === 'Abonos') {
       if (!(Number(operationalForm.codigo) > 0) || !(Number(operationalForm.facturaId) > 0)) {
         setDirectoryMessage({ type: 'error', text: 'Selecciona un cliente y una factura para registrar el abono.' });
@@ -2981,6 +3103,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       }
       if (!(Number(operationalForm.valor.replace(',', '.')) > 0)) {
         setDirectoryMessage({ type: 'error', text: 'Ingresa un monto de abono mayor a cero.' });
+        return;
+      }
+    }
+
+    if (context.module === 'recargas' && context.tab === 'Comprar documentos') {
+      const documentos = Number(operationalForm.codigo);
+      const monto = Number(operationalForm.valor.replace(',', '.'));
+      if (!Number.isInteger(documentos) || documentos < 0 || !Number.isFinite(monto) || monto <= 0) {
+        setDirectoryMessage({ type: 'error', text: 'Selecciona un plan o ingresa una cantidad y valor de recarga válidos.' });
         return;
       }
     }
@@ -4405,8 +4536,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       setDirectoryMessage({ type: 'error', text: 'El correo adicional debe ser diferente al correo principal.' });
       return;
     }
-    if (liquidacionForm.direccion.trim().length < 5) {
-      setDirectoryMessage({ type: 'error', text: 'La direccion del proveedor debe tener al menos 5 caracteres.' });
+    if (liquidacionForm.direccion.trim().length < 5 || liquidacionForm.direccion.trim().length > 100) {
+      setDirectoryMessage({ type: 'error', text: 'La dirección del proveedor debe tener entre 5 y 100 caracteres.' });
+      return;
+    }
+    if (liquidacionForm.telefono.trim() && !validarTelefono(liquidacionForm.telefono)) {
+      setDirectoryMessage({ type: 'error', text: 'El teléfono del proveedor debe tener entre 7 y 15 dígitos.' });
       return;
     }
     if (!liquidacionForm.formaPago.trim()) {
@@ -4415,6 +4550,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     }
     if (liquidacionForm.numeroFactura.trim() && !/^\d{1,9}$/.test(liquidacionForm.numeroFactura.trim())) {
       setDirectoryMessage({ type: 'error', text: 'El secuencial debe contener solo numeros y tener hasta 9 digitos.' });
+      return;
+    }
+    if (liquidacionForm.diasCredito.trim() && (!/^\d{1,3}$/.test(liquidacionForm.diasCredito.trim()) || Number(liquidacionForm.diasCredito) > 365)) {
+      setDirectoryMessage({ type: 'error', text: 'Los días de crédito deben estar entre 0 y 365.' });
       return;
     }
 
@@ -4789,6 +4928,14 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       setDirectoryMessage({ type: 'error', text: 'Completa placa, direccion de origen y motivo de traslado.' });
       return;
     }
+    if (!/^[A-Z]{2,3}[0-9]{3,4}$/i.test(guiaForm.placa.trim().replace(/[-\s]/g, ''))) {
+      setDirectoryMessage({ type: 'error', text: 'La placa debe contener 2 o 3 letras y de 3 a 4 dígitos.' });
+      return;
+    }
+    if (guiaForm.direccionOrigen.trim().length < 5 || guiaForm.direccionOrigen.trim().length > 300 || guiaForm.referencia.trim().length < 3 || guiaForm.referencia.trim().length > 300) {
+      setDirectoryMessage({ type: 'error', text: 'Revisa las longitudes de dirección de origen y motivo de traslado.' });
+      return;
+    }
     const fechaError = validateDateRange(guiaForm.fechaInicioTraslado, guiaForm.fechaFinTraslado);
     if (!guiaForm.fechaEmision || fechaError) {
       setDirectoryMessage({ type: 'error', text: fechaError ?? 'Revisa la fecha de emisión.' });
@@ -5108,12 +5255,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   const dismissNotification = (notificationId: string) => {
     dismissNotificationLocal(notificationId);
-    void rememberDismissedNotificationIds(userId, [notificationId]);
+    void dismissNotifications([notificationId]).catch(() => setNotificationsMessage({ type: 'info', text: 'No se pudo guardar el descarte. Inténtalo nuevamente.' }));
   };
 
   const clearVisibleNotifications = () => {
     const notificationIds = visibleNotifications.map((notification) => notification.id);
-    void rememberDismissedNotificationIds(userId, notificationIds);
+    void dismissNotifications(notificationIds).catch(() => setNotificationsMessage({ type: 'info', text: 'No se pudo guardar el descarte. Inténtalo nuevamente.' }));
     setDismissedNotificationIds((current) => {
       const next = new Set(current);
       notificationIds.forEach((notificationId) => next.add(notificationId));
@@ -5255,6 +5402,10 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       const target = `${baseDirectory}preview-${Date.now()}-${fileName.replace(/[^a-z0-9._-]/gi, '-')}`;
       const cookie = getAuthSessionCookie();
       const download = await FileSystem.downloadAsync(url, target, cookie ? { headers: { Cookie: cookie } } : undefined);
+      const fileInfo = await FileSystem.getInfoAsync(download.uri);
+      if (download.status !== 200 || !fileInfo.exists || (fileInfo.size ?? 0) < 16) {
+        throw new Error('invalid-pdf-download');
+      }
       setPdfPreview({ uri: download.uri, name: fileName });
     } catch (error) {
       setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo cargar la previsualización del PDF.' });
