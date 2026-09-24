@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ActivityIndicator, Alert, Image, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, Text, View, useWindowDimensions } from 'react-native';
 
 import type { FacturaListItem } from '../../services/facturasMobileService';
 import { DashboardActivityItem, DashboardPrimaryAction, DashboardServiceRow } from './DashboardWidgets';

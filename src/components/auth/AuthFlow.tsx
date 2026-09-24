@@ -1024,6 +1024,40 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
     setBiometricPendingLogin(null);
   };
 
+  const retryNetwork = async () => {
+    setCheckingNetwork(true);
+    try {
+      const state = await NetInfo.fetch();
+      setNetworkAvailable(state.isConnected !== false && state.isInternetReachable !== false);
+    } finally {
+      setCheckingNetwork(false);
+    }
+  };
+
+  const confirmPrivacyPolicy = () => runRequest(async () => {
+    if (!privacyPendingLogin) return;
+    if (!privacyAccepted) {
+      setPrivacyMessage('Debes marcar la aceptación para continuar.');
+      return;
+    }
+    await acceptPrivacyPolicy(privacyPendingLogin);
+    const response = await login({
+      username: privacyPendingLogin.username,
+      password: privacyPendingLogin.password,
+      recordarme: privacyPendingLogin.recordarme,
+    });
+    setPrivacyPendingLogin(null);
+    setPrivacyAccepted(false);
+    setPrivacyMessage(null);
+    if (response.requiereCambioClave && response.idUsuario) {
+      setChangeForm((current) => ({ ...current, idUsuario: response.idUsuario ?? 0 }));
+      setMode('change');
+      setMessage({ type: 'info', text: 'Ingresa el código de acceso o clave temporal para crear una nueva clave.' });
+      return;
+    }
+    setCurrentUser(response);
+  });
+
   if (booting) {
     return <AppLaunchScreen reduceMotion={reduceMotion} />;
   }
