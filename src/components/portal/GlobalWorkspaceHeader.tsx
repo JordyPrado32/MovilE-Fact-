@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View, useWindowDimensions } from 'react-native';
 
 import { styles } from '../../styles/appStyles';
 import { PortalHeaderAvatar } from './PortalNavigation';
@@ -40,6 +40,7 @@ export function GlobalWorkspaceHeader({
   onFirma: () => void;
   onLogout?: () => void;
 }) {
+  const compact = useWindowDimensions().width < 380;
   const documentTone = statusToneStyles(documentPlan.tone);
   const firmaTone = statusToneStyles(firmaSummary.tone);
   return (
@@ -76,8 +77,8 @@ export function GlobalWorkspaceHeader({
           </Pressable>
         )}
       </View>
-      {!portalMode ? <View style={styles.unifiedStatusGrid}>
-        {!erubricaMode ? <Pressable style={[styles.unifiedStatusCard, documentTone.card]} onPress={onDocuments}>
+      {!portalMode ? <View style={[styles.unifiedStatusGrid, compact && styles.unifiedStatusGridCompact]}>
+        {!erubricaMode ? <Pressable style={[styles.unifiedStatusCard, compact && styles.unifiedStatusCardStacked, documentTone.card]} onPress={onDocuments}>
           <View style={[styles.unifiedStatusIcon, documentTone.icon]}>
             <MaterialCommunityIcons name="file-document-outline" size={20} color={documentTone.color} />
           </View>
@@ -87,7 +88,7 @@ export function GlobalWorkspaceHeader({
             <Text style={styles.unifiedStatusCaption}>{documentPlan.caption}</Text>
           </View>
         </Pressable> : null}
-        <Pressable style={[styles.unifiedStatusCard, erubricaMode && styles.unifiedStatusCardFull, firmaTone.card]} onPress={onFirma}>
+        <Pressable style={[styles.unifiedStatusCard, compact && styles.unifiedStatusCardStacked, erubricaMode && styles.unifiedStatusCardFull, firmaTone.card]} onPress={onFirma}>
           <View style={[styles.unifiedStatusIcon, styles.unifiedFirmaIcon, firmaTone.icon]}>
             <MaterialCommunityIcons name="shield-check-outline" size={20} color={firmaTone.color} />
           </View>

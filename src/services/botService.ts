@@ -16,8 +16,10 @@ export type BotChatResponse = {
   facturaDraft?: BotFacturaDraft;
   requiereConfirmacion?: boolean;
   emitida?: boolean;
+  codigoError?: string | null;
   accionDetectada?: string | null;
   rutaSugerida?: string | null;
+  rutasSugeridas?: string[];
   seleccionPendienteTipo?: string | null;
   seleccionPendienteMensaje?: string | null;
   opcionesSeleccion?: BotSelectionOption[];
@@ -155,8 +157,10 @@ function normalizeBotResponse(value: unknown): BotChatResponse | string | null {
     facturaDraft: normalizeInvoiceDraft(value.facturaDraft),
     requiereConfirmacion: typeof value.requiereConfirmacion === 'boolean' ? value.requiereConfirmacion : undefined,
     emitida: typeof value.emitida === 'boolean' ? value.emitida : undefined,
+    codigoError: value.codigoError === null ? null : asString(value.codigoError),
     accionDetectada: value.accionDetectada === null ? null : asString(value.accionDetectada),
     rutaSugerida: value.rutaSugerida === null ? null : asString(value.rutaSugerida),
+    rutasSugeridas: Array.isArray(value.rutasSugeridas) ? value.rutasSugeridas.filter((item): item is string => typeof item === 'string') : [],
     seleccionPendienteTipo: value.seleccionPendienteTipo === null ? null : asString(value.seleccionPendienteTipo),
     seleccionPendienteMensaje: value.seleccionPendienteMensaje === null ? null : asString(value.seleccionPendienteMensaje),
     opcionesSeleccion: normalizeSelectionOptions(value.opcionesSeleccion),
@@ -398,11 +402,13 @@ export async function sendBotMessage(input: { message: string; userId?: number; 
     draft: typeof response === 'string' ? undefined : response.facturaDraft,
     requiresConfirmation: typeof response === 'string' ? false : response.requiereConfirmacion === true,
     emitted: typeof response === 'string' ? false : response.emitida === true,
+    errorCode: typeof response === 'string' ? undefined : response.codigoError ?? undefined,
     action: typeof response === 'string' ? undefined : response.accionDetectada,
     pendingSelectionType: typeof response === 'string' ? undefined : response.seleccionPendienteTipo,
     pendingSelectionMessage: typeof response === 'string' ? undefined : response.seleccionPendienteMensaje,
     selectionOptions: typeof response === 'string' ? [] : response.opcionesSeleccion ?? [],
     suggestedRoute: typeof response === 'string' ? undefined : response.rutaSugerida,
+    suggestedRoutes: typeof response === 'string' ? [] : response.rutasSugeridas ?? [],
     pendingOperation: typeof response === 'string' ? null : response.operacionPendiente ?? null,
   };
 }

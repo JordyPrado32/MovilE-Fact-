@@ -11,7 +11,7 @@ function getThinkingDetail(request: string) {
   return 'Consultando la información necesaria para responderte.';
 }
 
-export function NumiThinkingIndicator({ request }: { request: string }) {
+export function NumiThinkingIndicator({ request, reduceMotion = false }: { request: string; reduceMotion?: boolean }) {
   const detail = getThinkingDetail(request);
   const bob = useRef(new Animated.Value(0)).current;
   const glow = useRef(new Animated.Value(0.55)).current;
@@ -20,6 +20,14 @@ export function NumiThinkingIndicator({ request }: { request: string }) {
   const progress = useRef(new Animated.Value(0.1)).current;
 
   useEffect(() => {
+    if (reduceMotion) {
+      progress.setValue(0.55);
+      bob.setValue(0);
+      glow.setValue(0.7);
+      orbit.setValue(0);
+      pulse.setValue(1);
+      return undefined;
+    }
     progress.setValue(0.1);
     const progressAnimation = Animated.loop(Animated.sequence([
       Animated.timing(progress, { toValue: 0.82, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
@@ -50,10 +58,10 @@ export function NumiThinkingIndicator({ request }: { request: string }) {
       orbitAnimation.stop();
       pulseAnimation.stop();
     };
-  }, [bob, glow, orbit, progress, pulse]);
+  }, [bob, glow, orbit, progress, pulse, reduceMotion]);
 
   return (
-    <View style={styles.card} accessibilityLabel="Númi está consultando la información">
+    <View style={styles.card} accessibilityRole="progressbar" accessibilityLabel="Númi está consultando la información">
       <View style={styles.robotWrap}>
         <Animated.View style={[styles.glow, { opacity: glow }]} />
         <Animated.View style={[styles.orbit, { transform: [{ rotate: orbit.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]}><View style={styles.orbitDot} /></Animated.View>
@@ -69,7 +77,7 @@ export function NumiThinkingIndicator({ request }: { request: string }) {
 }
 
 const styles = StyleSheet.create({
-  card: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#8DDCF6', borderRadius: 20, borderWidth: 1, flexDirection: 'row', gap: 11, maxWidth: '90%', minWidth: 246, paddingHorizontal: 11, paddingVertical: 11, shadowColor: '#0878C9', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.16, shadowRadius: 12, elevation: 3 },
+  card: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#8DDCF6', borderRadius: 20, borderWidth: 1, flex: 1, flexDirection: 'row', gap: 11, maxWidth: '100%', minWidth: 0, paddingHorizontal: 11, paddingVertical: 11, shadowColor: '#0878C9', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.16, shadowRadius: 12, elevation: 3 },
   robotWrap: { alignItems: 'center', height: 68, justifyContent: 'center', width: 62 },
   glow: { backgroundColor: '#9DEAFF', borderRadius: 28, height: 54, position: 'absolute', width: 54 },
   orbit: { borderColor: 'rgba(8,120,201,0.32)', borderRadius: 30, borderStyle: 'dashed', borderWidth: 1, height: 61, position: 'absolute', width: 61 },

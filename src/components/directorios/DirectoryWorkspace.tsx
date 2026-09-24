@@ -14,7 +14,6 @@ import { CategoriaForm, EmisorForm, FirmaForm, ProductoForm, SubcategoriaForm } 
 import { PuntosEmisionScreen } from '../puntos/PuntosEmisionScreen';
 import { AdminModuleScreen } from '../admin/AdminModuleScreen';
 import { isAdminMobileView } from '../admin/AdminModuleScreen';
-import { EfactBotScreen } from '../bot/EfactBotScreen';
 import { NuevaFacturaMobileScreen } from '../facturacion/NuevaFacturaMobileScreen';
 import { NuevaNotaCreditoMobileScreen } from '../facturacion/NuevaNotaCreditoMobileScreen';
 import { NuevaNotaDebitoMobileScreen } from '../facturacion/NuevaNotaDebitoMobileScreen';
@@ -47,19 +46,6 @@ export function DirectoryWorkspace({ context }: { context: DirectoryWorkspaceCon
                  onChange={updateClienteForm}
                  onReset={() => setClienteForm(initialClienteForm)}
                  onSave={saveCliente}
-               />
-             ) : activeView === 'bot' ? (
-                 <EfactBotScreen
-                   userName={portalFirstName}
-                   userId={userId}
-                   voiceControlsRef={botVoiceControlsRef}
-                   onNavigate={handleBotNavigate}
-                 messages={botMessages}
-                 setMessages={setBotMessages}
-                 draft={botDraft}
-                 setDraft={setBotDraft}
-                 feedbackByMessage={botFeedbackByMessage}
-                 setFeedbackByMessage={setBotFeedbackByMessage}
                />
              ) : activeView === 'clientes' ? (
                <>

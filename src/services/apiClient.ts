@@ -280,6 +280,8 @@ function logApiError(
   body: unknown,
   context: { contentType?: string; elapsedMs?: number; method?: string; timeoutMs?: number; userMessage?: string } = {},
 ) {
+  if (typeof __DEV__ === 'undefined' || !__DEV__) return;
+
   const bodyText = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
   const preview = sanitizeDiagnosticBody(bodyText);
   console.error('[API ERROR]', {

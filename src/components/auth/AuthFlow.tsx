@@ -1,8 +1,9 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
+import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from 'react';
-import { AccessibilityInfo, Alert, Image, ImageSourcePropType, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { AccessibilityInfo, Alert, Image, ImageSourcePropType, Linking, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { ApiError, clearAuthSession, setAuthFailureHandler } from '../../services/apiClient';
@@ -18,7 +19,7 @@ import type { PuntoDocumentoKey } from '../../services/puntosEmisionService';
 import { sanitizeIdentificacion, validateChangePassword, validateEmail, validateLogin, validateRegisterForm } from '../../utils/authValidation';
 import { arrayBufferToBase64, buildDeviceFileName } from '../../utils/fileUtils';
 import { AppLaunchScreen, AuthCard } from './AuthShell';
-import { BiometricSetupModal, BrandLockup, BrandMark, LoadingScreen, ScreenFrame } from './AuthWidgets';
+import { BiometricSetupModal, BrandLockup, BrandMark, LoadingScreen, OfflineScreen, ScreenFrame } from './AuthWidgets';
 import { Field, InlineSwitch, LoginActionTiles, MessageBox, PrimaryButton, SecondaryButton, SegmentButton, TextLink } from '../ui/FormControls';
 import { InitialsAvatar } from '../ui/MenuItem';
 import { styles } from '../../styles/appStyles';
@@ -84,6 +85,7 @@ export type WorkspaceView =
   | 'facturacion'
   | 'nueva-factura'
   | 'mis-facturas'
+  | 'cotizaciones'
   | 'notas-credito'
   | 'nueva-nota-credito'
   | 'mis-notas-credito'
@@ -122,7 +124,17 @@ type BiometricCredentials = { username: string; password: string };
 async function readBiometricCredentials() {
   const value = await SecureStore.getItemAsync(BIOMETRIC_CREDENTIALS_KEY);
   if (!value) return null;
-  try { return JSON.parse(value) as BiometricCredentials; } catch { return null; }
+  try {
+    const parsed = JSON.parse(value) as Partial<BiometricCredentials>;
+    if (typeof parsed.username !== 'string' || typeof parsed.password !== 'string' || !parsed.username.trim() || !parsed.password) {
+      await SecureStore.deleteItemAsync(BIOMETRIC_CREDENTIALS_KEY);
+      return null;
+    }
+    return { username: parsed.username, password: parsed.password };
+  } catch {
+    await SecureStore.deleteItemAsync(BIOMETRIC_CREDENTIALS_KEY);
+    return null;
+  }
 }
 
 async function getBiometricLabel() {
@@ -164,6 +176,7 @@ const BASE_EFACT_MOBILE_MENUS: DynamicMenu[] = [
   { id: -1024, nombre: 'Númi Bot', ruta: '/bot', icono: 'ri-robot-line', orden: 22, estado: true },
   { id: -1022, nombre: 'Tutoriales', ruta: '/tutoriales', icono: 'ri-graduation-cap-line', orden: 22, estado: true },
   { id: -1023, nombre: 'Liquidacion de Compra', ruta: '/compras', icono: 'ri-file-add-line', orden: 23, estado: true },
+  { id: -1025, nombre: 'Cotizaciones', ruta: '/cotizaciones', icono: 'ri-file-list-3-line', orden: 24, estado: true },
 ];
 const ADMIN_EFACT_MOBILE_MENUS: DynamicMenu[] = [
   { id: -1101, nombre: 'Cajas y secuencias', ruta: '/administracion/cajas-secuencias', icono: 'ri-stack-line', orden: 101, estado: true },
@@ -310,6 +323,7 @@ export const EFACT_MODULES: Omit<MobileModule, 'count' | 'enabled'>[] = [
   { view: 'facturacion', title: 'Facturacion', description: 'Facturas, secuenciales, PDF, correo y autorizacion.' },
   { view: 'nueva-factura', title: 'Nueva Factura', description: 'Emision de facturas desde el movil.' },
   { view: 'mis-facturas', title: 'Mis Facturas', description: 'Consulta, PDF, XML, correo y anulacion.' },
+  { view: 'cotizaciones', title: 'Cotizaciones', description: 'Crea proformas, apruébalas y conviértelas en factura.' },
   { view: 'nueva-nota-credito', title: 'Nueva Nota de Credito', description: 'Emision de notas de credito desde factura modificada.' },
   { view: 'mis-notas-credito', title: 'Mis Notas de Credito', description: 'Consulta, PDF, XML y correo de notas de credito.' },
   { view: 'nueva-nota-debito', title: 'Nueva Nota de Debito', description: 'Emision de notas de debito desde factura modificada.' },
@@ -361,6 +375,7 @@ const VIEW_ROUTE_ALIASES: Partial<Record<Exclude<WorkspaceView, 'portal' | 'dash
   facturacion: ['facturacion', 'factura', 'facturas'],
   'nueva-factura': ['facturacion/nueva', 'nueva-factura', 'facturacion', 'factura'],
   'mis-facturas': ['facturas', 'mis-facturas', 'facturacion'],
+  cotizaciones: ['cotizaciones', 'cotizacion', 'proformas', 'proforma'],
   'notas-credito': ['nota-credito', 'notas-credito', 'credito'],
   'nueva-nota-credito': ['facturacion/nota-credito', 'nota-credito', 'nueva-nota-credito', 'credito'],
   'mis-notas-credito': ['facturacion/notas-credito-generadas', 'notas-credito-generadas', 'mis-notas-credito', 'notas-credito', 'credito'],
@@ -724,6 +739,8 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
   const [biometricLabel, setBiometricLabel] = useState<string | null>(null);
   const [biometricCredentials, setBiometricCredentials] = useState<BiometricCredentials | null>(null);
   const [biometricPendingLogin, setBiometricPendingLogin] = useState<{ response: LoginResponse; credentials: BiometricCredentials } | null>(null);
+  const [networkAvailable, setNetworkAvailable] = useState<boolean | null>(null);
+  const [checkingNetwork, setCheckingNetwork] = useState(false);
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -778,6 +795,19 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
 
     return () => {
       mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const updateNetworkState = (state: NetInfoState) => {
+      if (mounted) setNetworkAvailable(state.isConnected !== false && state.isInternetReachable !== false);
+    };
+    const unsubscribe = NetInfo.addEventListener(updateNetworkState);
+    void NetInfo.fetch().then(updateNetworkState).catch(() => undefined);
+    return () => {
+      mounted = false;
+      unsubscribe();
     };
   }, []);
 
@@ -978,8 +1008,22 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
     setBiometricPendingLogin(null);
   };
 
+  const retryNetwork = async () => {
+    setCheckingNetwork(true);
+    try {
+      const state = await NetInfo.fetch();
+      setNetworkAvailable(state.isConnected !== false && state.isInternetReachable !== false);
+    } finally {
+      setCheckingNetwork(false);
+    }
+  };
+
   if (booting) {
     return <AppLaunchScreen reduceMotion={reduceMotion} />;
+  }
+
+  if (networkAvailable === false) {
+    return <OfflineScreen checking={checkingNetwork} onRetry={retryNetwork} onOpenSettings={() => { void Linking.openSettings().catch(() => undefined); }} />;
   }
 
   if (authenticating) {
@@ -991,7 +1035,7 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
       <BusinessHome
         currentUser={currentUser}
         onLogout={() => {
-          void logoutSession().catch(() => undefined).finally(() => resetLocalSession(true));
+          void logoutSession().catch(() => undefined).finally(() => resetLocalSession(false));
         }}
       />
     );

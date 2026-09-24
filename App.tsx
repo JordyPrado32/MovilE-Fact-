@@ -3328,8 +3328,13 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   };
 
   const validateEmissionPrerequisites = async () => {
+    const hasActiveEmitter = emisores.some((emisor) => emisor.estado !== false);
+    const hasValidSignature = Object.values(firmaEstados).some((estado) => estado.esValida === true);
+    if (loadingEmisores) return 'Espera a que termine la carga del emisor antes de emitir.';
+    if (!hasActiveEmitter && !hasValidSignature) return 'No se puede emitir: configura un emisor activo y una firma electrónica válida y vigente.';
+    if (!hasActiveEmitter) return 'No se puede emitir: configura un emisor activo antes de continuar.';
     if (loadingFirma) return 'Espera a que termine la validación de la firma electrónica.';
-    if (!Object.values(firmaEstados).some((estado) => estado.esValida === true)) {
+    if (!hasValidSignature) {
       return 'No se puede emitir: configura una firma electrónica válida y vigente.';
     }
 
@@ -5090,6 +5095,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
               ? categorias.length + subcategorias.length
               : module.view === 'mis-facturas'
                 ? facturasList.length
+                : module.view === 'cotizaciones'
+                  ? undefined
                 : module.view === 'nueva-factura'
                   ? facturaLineas.length
                   : module.view === 'mis-notas-credito'
@@ -5131,6 +5138,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
         'categorias',
         'nueva-factura',
         'mis-facturas',
+        'cotizaciones',
         'nueva-nota-credito',
         'mis-notas-credito',
         'nueva-nota-debito',
@@ -5231,16 +5239,47 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
 
   const handleBotNavigate = (route: string) => {
     const routeMap: Record<string, WorkspaceView> = {
+      '/dashboard': 'dashboard',
       '/facturacion': 'facturacion',
       '/facturacion/nueva': 'nueva-factura',
+      '/facturacion/nota-credito': 'nueva-nota-credito',
+      '/cotizaciones': 'cotizaciones',
       '/facturacion/notas-credito': 'nueva-nota-credito',
       '/facturacion/notas-credito-generadas': 'mis-notas-credito',
+      '/facturacion/nota-debito': 'nueva-nota-debito',
       '/facturacion/notas-debito': 'nueva-nota-debito',
+      '/facturacion/notas-debito-generadas': 'mis-notas-debito',
       '/facturacion/retenciones': 'retenciones',
+      '/facturacion/retenciones-generadas': 'retenciones',
+      '/facturacion/guia-remision': 'nueva-guia-remision',
+      '/compras/importar-xml': 'retenciones',
+      '/compras/nueva-liquidacion': 'nueva-liquidacion-compra',
+      '/compras/liquidaciones-generadas': 'mis-liquidaciones-compra',
+      '/facturas': 'mis-facturas',
+      '/reportes/documentos': 'reportes',
       '/e-rubrica': 'e-rubrica',
       '/cuentas-cobrar': 'cuentas-cobrar',
+      '/emisor': 'emisor',
+      '/nuevo-emisor': 'nuevo-emisor',
+      '/firma': 'firma',
+      '/nueva-firma': 'firma',
+      '/punto-emision': 'punto-emision',
     };
-    const normalizedRoute = route.trim().toLowerCase();
+    const normalizedRoute = route.trim().toLowerCase().split('?')[0].replace(/\/+$/, '') || '/';
+    const erubricaRouteMap: Record<string, ERubricaTab> = {
+      '/e-rubrica/configuracion/firma': 'firma-config',
+      '/e-rubrica/mis-firmas': 'ver-mis-firmas',
+      '/solicitud/pagos': 'historial-solicitudes',
+      '/solicitud/nueva': 'nueva-solicitud',
+      '/e-rubrica/documentos': 'historial-documentos',
+      '/e-rubrica/documentos/firmar': 'firmar',
+      '/e-rubrica/documentos/validar-firma': 'validar-firma',
+    };
+    const erubricaTab = erubricaRouteMap[normalizedRoute];
+    if (erubricaTab) {
+      openERubricaTab(erubricaTab);
+      return;
+    }
     const view = routeMap[normalizedRoute] ?? routeMap[`/${normalizedRoute.replace(/^\/+/, '')}`];
     if (view) openView(view);
   };
@@ -6299,6 +6338,7 @@ function getWorkspaceTitle(view: WorkspaceView) {
     facturacion: 'Facturacion',
     'nueva-factura': 'Nueva Factura',
     'mis-facturas': 'Mis Facturas',
+    cotizaciones: 'Cotizaciones',
     'notas-credito': 'Notas de credito',
     'nueva-nota-credito': 'Nueva Nota de Credito',
     'mis-notas-credito': 'Mis Notas de Credito',

@@ -7,6 +7,8 @@ import type { WorkspaceView } from './AuthFlow';
 import type { CategoriaFormState, EmisorFormState, ProductoFormState, SubcategoriaFormState } from '../../types/directoryForms';
 import type { ClienteLookups, Emisor, FirmaEstado, PerfilUsuario, PuntoEmision } from '../../types/business';
 import type { NuevaFacturaFormState } from '../../types/invoices';
+import { CotizacionesMobileScreen } from '../cotizaciones/CotizacionesMobileScreen';
+import { getCotizacionPdfUrl } from '../../services/cotizacionesMobileService';
 
 type OperationalFormState = { codigo: string; facturaId: string; descripcion: string; valor: string; observacion: string };
 type PerfilFormState = { nombres: string; apellidos: string; nombreEmpresa: string; email: string; avatarUrl: string; avatarUploadUri: string; avatarUploadName: string; avatarUploadMimeType: string; identificacion: string; tipoCliente: number; idTipoIdentificacion: number | null; direccionEmpresa: string; celular: string; nuevaPassword: string; confirmarPassword: string; cambiarClave: boolean };
@@ -234,7 +236,7 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
 
         <View style={styles.workspaceBodyFrame}>
         <ScrollView
-          style={styles.workspaceBodyScroll}
+          style={[styles.workspaceBodyScroll, activeView === 'bot' && styles.botWorkspaceHiddenScroll]}
           scrollEnabled={!pdfPositionDragging}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.workspaceCanvasWithBottomNav, activeView === 'dashboard' && styles.efactHomeWorkspaceCanvas, { paddingBottom: activeView === 'portal' ? 20 + insets.bottom : 88 + insets.bottom }]}
@@ -356,7 +358,16 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
           />
         ) : null}
 
-        {!loadingMenus && activeView !== 'portal' && activeView !== 'dashboard' && activeView !== 'e-rubrica' && activeView !== 'no-autorizado' ? (
+        {!loadingMenus && activeView === 'cotizaciones' ? (
+          <CotizacionesMobileScreen
+            userId={userId}
+            onValidateEmission={validateEmissionPrerequisites}
+            onPdf={(cotizacion) => catalogUserId ? openPdfInDeviceViewer(() => getCotizacionPdfUrl(catalogUserId, cotizacion.id), `cotizacion-${cotizacion.id}.pdf`) : undefined}
+            onSharePdf={(cotizacion) => catalogUserId ? sharePdf(() => getCotizacionPdfUrl(catalogUserId, cotizacion.id), `cotizacion-${cotizacion.id}.pdf`) : undefined}
+          />
+        ) : null}
+
+        {!loadingMenus && activeView !== 'portal' && activeView !== 'dashboard' && activeView !== 'e-rubrica' && activeView !== 'no-autorizado' && activeView !== 'bot' && activeView !== 'cotizaciones' ? (
           <>
            <DirectoryWorkspace context={{
              activeView,
@@ -737,24 +748,26 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
         </ScreenTransition>
 
         </ScrollView>
+        {canUseEfact && !isERubricaWorkspace ? (
+          <EfactBotScreen
+            voiceOnly={activeView !== 'bot'}
+            embedded={activeView === 'bot'}
+            userName={portalFirstName}
+            userId={userId}
+            reduceMotion={reduceMotion}
+            voiceControlsRef={botVoiceControlsRef}
+            onNavigate={handleBotNavigate}
+            messages={botMessages}
+            setMessages={setBotMessages}
+            draft={botDraft}
+            setDraft={setBotDraft}
+            feedbackByMessage={botFeedbackByMessage}
+            setFeedbackByMessage={setBotFeedbackByMessage}
+          />
+        ) : null}
         </View>
       </View>
       </KeyboardAvoidingView>
-      {activeView !== 'bot' && canUseEfact && !isERubricaWorkspace ? (
-        <EfactBotScreen
-          voiceOnly
-          userName={portalFirstName}
-          userId={userId}
-          voiceControlsRef={botVoiceControlsRef}
-          onNavigate={handleBotNavigate}
-          messages={botMessages}
-          setMessages={setBotMessages}
-          draft={botDraft}
-          setDraft={setBotDraft}
-          feedbackByMessage={botFeedbackByMessage}
-          setFeedbackByMessage={setBotFeedbackByMessage}
-        />
-      ) : null}
       {activeView !== 'portal' ? (
         <PortalBottomNav
           bottomInset={insets.bottom}
