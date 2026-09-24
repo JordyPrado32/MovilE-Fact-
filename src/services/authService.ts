@@ -48,6 +48,13 @@ export function register(request: RegisterRequest) {
   });
 }
 
+export function acceptPrivacyPolicy(request: { idUsuario: number; username: string; password: string }) {
+  return apiRequest<{ success: boolean; message?: string }>('/api/auth/accept-privacy-policy', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
 export function recoverPassword(request: RecoverPasswordRequest) {
   return apiRequest<RecoverPasswordResponse>('/api/auth/recover-password', {
     method: 'POST',

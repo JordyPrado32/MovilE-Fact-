@@ -359,7 +359,7 @@ export function ERubricaMobileScreen({
       limpiarPdfTemporal();
     }
     if (nextTab === 'firmar' && !puedeFirmarPdf) {
-      Alert.alert('Firma no disponible', 'Primero adquiere una firma de E-Rúbrica para usar Firmar PDF.');
+      Alert.alert('Firma no disponible', 'Primero adquiere una firma de E-RÚBRICA para usar Firmar PDF.');
       nextTab = 'plan-disponible';
     }
     setTab(nextTab);
@@ -1192,7 +1192,7 @@ export function ERubricaMobileScreen({
           <Pressable style={styles.erubricaNumiPanel} onPress={onOpenBot}>
             <View style={styles.erubricaNumiAccentPanel} /><View style={styles.erubricaNumiConfettiDotLarge} /><View style={styles.erubricaNumiConfettiDotSmall} /><View style={styles.erubricaNumiConfettiRing} />
             <View style={styles.erubricaNumiHeader}>
-              <View style={styles.erubricaNumiCopy}><Text style={styles.erubricaNumiName}>Númi</Text><Text style={styles.erubricaNumiSubtitle}>Tu asistente de E-Rúbrica</Text><View style={styles.erubricaNumiBubble}><Text style={styles.erubricaNumiBubbleText}>Te ayudo a firmar, validar y gestionar tus documentos.</Text></View></View>
+              <View style={styles.erubricaNumiCopy}><Text style={styles.erubricaNumiName}>Númi</Text><Text style={styles.erubricaNumiSubtitle}>Tu asistente de E-RÚBRICA</Text><View style={styles.erubricaNumiBubble}><Text style={styles.erubricaNumiBubbleText}>Te ayudo a firmar, validar y gestionar tus documentos.</Text></View></View>
               <Image source={require('../../../assets/numi-home.png')} style={styles.erubricaNumiImage} resizeMode="contain" />
             </View>
             <View style={styles.erubricaNumiActions}><View style={styles.erubricaNumiAction}><MaterialCommunityIcons name="message-processing-outline" size={22} color="#BDF5CD" /><View style={styles.erubricaNumiActionCopy}><Text style={styles.erubricaNumiActionTitle}>Consultas</Text><Text style={styles.erubricaNumiActionText}>Haz tus preguntas</Text></View></View><View style={styles.erubricaNumiAction}><MaterialCommunityIcons name="file-sign" size={22} color="#BDF5CD" /><View style={styles.erubricaNumiActionCopy}><Text style={styles.erubricaNumiActionTitle}>Firmas</Text><Text style={styles.erubricaNumiActionText}>Guías y pasos</Text></View></View></View>
@@ -1200,13 +1200,13 @@ export function ERubricaMobileScreen({
           <View style={styles.erubricaHomeStateCard}><View style={styles.erubricaHomeSectionHeader}><Text style={styles.erubricaHomeSectionTitle}>Estado de la firma</Text><Text style={styles.erubricaHomeSectionHint}>Solicitud más reciente</Text></View><View style={styles.erubricaHomeStateGrid}><View style={styles.erubricaHomeStateItem}><View style={styles.erubricaHomeStateIcon}><MaterialCommunityIcons name="cash-check" size={18} color="#079349" /></View><View><Text style={styles.erubricaHomeStateLabel}>Estado de pago</Text><Text style={styles.erubricaHomeStateValue}>{pagoInicio}</Text></View></View><View style={styles.erubricaHomeStateItem}><View style={[styles.erubricaHomeStateIcon, styles.erubricaHomeStateIconBlue]}><MaterialCommunityIcons name="send-outline" size={18} color="#2563B8" /></View><View><Text style={styles.erubricaHomeStateLabel}>Estado Uanataca</Text><Text style={styles.erubricaHomeStateValue}>{uanatacaInicio}</Text></View></View></View></View>
           <View style={styles.erubricaHomeQuickGrid}>{[['file-sign', 'Firmar documento', 'Firma tus documentos en pocos pasos', 'firmar'], ['cart-outline', 'Comprar / Renovar firma', 'Adquiere o renueva tu firma electrónica', 'plan-disponible'], ['folder-open-outline', 'Mis documentos', 'Accede a tus documentos firmados', 'historial-documentos'], ['shield-check-outline', 'Validar firma', 'Verifica documentos firmados', 'validar-firma']].map(([icon, title, description, destination], index) => <Pressable key={destination} style={[styles.erubricaHomeQuickCard, index === 0 && styles.erubricaHomeQuickCardPrimary]} onPress={() => selectTab(destination as ERubricaTab)}><View style={styles.erubricaHomeQuickIcon}><MaterialCommunityIcons name={icon as keyof typeof MaterialCommunityIcons.glyphMap} size={22} color={index === 0 ? '#FFFFFF' : ERUBRICA_COLORS.primary} /></View><View style={styles.erubricaHomeQuickCopy}><Text style={[styles.erubricaHomeQuickTitle, index === 0 && styles.erubricaHomeQuickTitlePrimary]}>{title}</Text><Text style={[styles.erubricaHomeQuickText, index === 0 && styles.erubricaHomeQuickTextPrimary]}>{description}</Text></View><MaterialCommunityIcons name="chevron-right" size={20} color={index === 0 ? '#FFFFFF' : '#607887'} /></Pressable>)}</View>
           <View style={styles.erubricaHomeOverviewCard}><Text style={styles.erubricaHomeSectionTitle}>Resumen de firmas y documentos</Text><View style={styles.erubricaHomeOverviewContent}><View style={styles.erubricaHomeRing}><Text style={styles.erubricaHomeRingValue}>{solicitudHistoryItems.length}</Text><Text style={styles.erubricaHomeRingLabel}>TOTAL</Text></View><View style={styles.erubricaHomeLegend}><Text style={styles.erubricaHomeLegendText}>● Pendientes: {solicitudesPendientes}</Text><Text style={styles.erubricaHomeLegendText}>● Pagadas: {solicitudesPagadas}</Text><Text style={styles.erubricaHomeLegendText}>● Firmados: {historialDocumentos.length}</Text></View></View><View style={styles.erubricaHomeMetricsGrid}>{[[porFirmarInicio, 'Por firmar'], [historialDocumentos.length, 'Firmados'], [signedMonthCount, 'Firmas del mes']].map(([value, title]) => <View key={String(title)} style={[styles.erubricaHomeMetric, inicioCompacto && styles.erubricaHomeMetricCompact]}><Text style={styles.erubricaHomeMetricValue}>{value}</Text><Text style={styles.erubricaHomeMetricLabel}>{title}</Text></View>)}</View></View>
-          <View style={styles.erubricaHomeRecentCard}><View style={styles.erubricaHomeSectionHeader}><Text style={styles.erubricaHomeSectionTitle}>Documentos recientes</Text><Pressable onPress={() => selectTab('historial-documentos')}><Text style={styles.erubricaHomeLink}>Ver todos</Text></Pressable></View>{recientesInicio.length ? recientesInicio.map((item, index) => { const fecha = formatSignedDate(item); return <Pressable key={`${itemValue(item, ['id', 'nombre', 'fileName'])}-${index}`} style={styles.erubricaHomeRecentRow} onPress={() => selectTab('historial-documentos')}><View style={styles.erubricaHomeRecentIcon}><MaterialCommunityIcons name="file-pdf-box" size={20} color="#F04444" /></View><View style={styles.erubricaHomeRecentCopy}><Text style={styles.erubricaHomeRecentName} numberOfLines={1}>{label(item, ['nombreDocumento', 'nombreArchivo', 'fileName', 'nombre'], 'Documento firmado')}</Text><Text style={styles.erubricaHomeRecentMeta}>PDF firmado desde e-rúbrica · {fecha.date}</Text></View><View style={styles.erubricaHomeValidPill}><Text style={styles.erubricaHomeValidText}>VÁLIDO</Text></View></Pressable>; }) : <Text style={styles.erubricaHomeEmpty}>Todavía no tienes documentos firmados.</Text>}</View>
+          <View style={styles.erubricaHomeRecentCard}><View style={styles.erubricaHomeSectionHeader}><Text style={styles.erubricaHomeSectionTitle}>Documentos recientes</Text><Pressable onPress={() => selectTab('historial-documentos')}><Text style={styles.erubricaHomeLink}>Ver todos</Text></Pressable></View>{recientesInicio.length ? recientesInicio.map((item, index) => { const fecha = formatSignedDate(item); return <Pressable key={`${itemValue(item, ['id', 'nombre', 'fileName'])}-${index}`} style={styles.erubricaHomeRecentRow} onPress={() => selectTab('historial-documentos')}><View style={styles.erubricaHomeRecentIcon}><MaterialCommunityIcons name="file-pdf-box" size={20} color="#F04444" /></View><View style={styles.erubricaHomeRecentCopy}><Text style={styles.erubricaHomeRecentName} numberOfLines={1}>{label(item, ['nombreDocumento', 'nombreArchivo', 'fileName', 'nombre'], 'Documento firmado')}</Text><Text style={styles.erubricaHomeRecentMeta}>PDF firmado desde E-RÚBRICA · {fecha.date}</Text></View><View style={styles.erubricaHomeValidPill}><Text style={styles.erubricaHomeValidText}>VÁLIDO</Text></View></Pressable>; }) : <Text style={styles.erubricaHomeEmpty}>Todavía no tienes documentos firmados.</Text>}</View>
         </View>
       ) : null}
 
-      {tab === 'asistente' ? <EfactBotScreen userName={userName} userId={userId} messages={assistantMessages} setMessages={setAssistantMessages} draft={assistantDraft} setDraft={setAssistantDraft} feedbackByMessage={assistantFeedback} setFeedbackByMessage={setAssistantFeedback} welcomeText={`Hola ${userName || ''}. Soy Númi, tu asistente de E-Rúbrica. Puedo ayudarte con firmas, solicitudes, pagos y validación de documentos.`} assistantContext="asistente de E-Rúbrica. Ayuda únicamente con firma electrónica: crear y seguir solicitudes, requisitos de persona natural o representante legal, pagos, Uanataca, configurar certificado .p12, firmar PDF, ubicar la firma, documentos firmados y validar firmas. No ofrezcas crear facturas ni acciones de E-FACT. Usa únicamente información real disponible y no inventes datos." quickActions={[{ label: 'Estado de mi firma', command: '¿Cuál es el estado de mi firma electrónica?' }, { label: 'Solicitar firma', command: '¿Qué necesito para solicitar una firma electrónica?' }, { label: 'Firmar PDF', command: '¿Cómo firmo un PDF?' }, { label: 'Validar firma', command: '¿Cómo valido la firma de un documento?' }]} theme="erubrica" /> : null}
+      {tab === 'asistente' ? <EfactBotScreen userName={userName} userId={userId} messages={assistantMessages} setMessages={setAssistantMessages} draft={assistantDraft} setDraft={setAssistantDraft} feedbackByMessage={assistantFeedback} setFeedbackByMessage={setAssistantFeedback} welcomeText={`Hola ${userName || ''}. Soy Númi, tu asistente de E-RÚBRICA. Puedo ayudarte con firmas, solicitudes, pagos y validación de documentos.`} assistantContext="asistente de E-RÚBRICA. Ayuda únicamente con firma electrónica: crear y seguir solicitudes, requisitos de persona natural o representante legal, pagos, Uanataca, configurar certificado .p12, firmar PDF, ubicar la firma, documentos firmados y validar firmas. No ofrezcas crear facturas ni acciones de E-FACT. Usa únicamente información real disponible y no inventes datos." quickActions={[{ label: 'Estado de mi firma', command: '¿Cuál es el estado de mi firma electrónica?' }, { label: 'Solicitar firma', command: '¿Qué necesito para solicitar una firma electrónica?' }, { label: 'Firmar PDF', command: '¿Cómo firmo un PDF?' }, { label: 'Validar firma', command: '¿Cómo valido la firma de un documento?' }]} theme="erubrica" /> : null}
 
-      {loading ? <View style={styles.directoryLoading}><ActivityIndicator color={ERUBRICA_COLORS.primary} /><Text style={styles.mutedText}>Cargando E-Rúbrica...</Text></View> : null}
+      {loading ? <View style={styles.directoryLoading}><ActivityIndicator color={ERUBRICA_COLORS.primary} /><Text style={styles.mutedText}>Cargando E-RÚBRICA...</Text></View> : null}
       {tab === 'firmar' ? (
         <View style={styles.erubricaSignFlow}>
           <View style={styles.erubricaSignCard}>
@@ -1746,7 +1746,7 @@ export function ERubricaMobileScreen({
             <View style={styles.erubricaPlanHero}>
               <View style={styles.erubricaPlanPills}>
               <Text style={styles.erubricaPlanPill}>{label(planDisponible, ['tieneFirmaPagada'], 'false') === 'true' && planEstado.toLowerCase() === 'activo' ? 'Firma vigente' : 'Sin firma vigente'}</Text>
-                <Text style={styles.erubricaPlanPillAlt}>Servicio: E-Rúbrica</Text>
+                <Text style={styles.erubricaPlanPillAlt}>Servicio: E-RÚBRICA</Text>
               </View>
               <View style={styles.erubricaPlanHeroBody}>
                 <View style={styles.erubricaPlanIcon}>
@@ -1754,7 +1754,7 @@ export function ERubricaMobileScreen({
                 </View>
                 <View style={styles.erubricaHistoryHeroCopy}>
                   <Text style={styles.erubricaHistoryEyebrow}>TU ACCESO DIGITAL</Text>
-                  <Text style={styles.erubricaPlanTitle}>Plan de E-Rúbrica</Text>
+                  <Text style={styles.erubricaPlanTitle}>Plan de E-RÚBRICA</Text>
                   <Text style={styles.erubricaPlanText}>Firma, valida y protege tus documentos con respaldo legal.</Text>
                 </View>
               </View>
@@ -1918,7 +1918,7 @@ export function ERubricaMobileScreen({
       ) : null}
       {tab === 'soporte' ? (
         <View style={styles.clientCard}>
-          <Text style={styles.clientDetailLabel}>Soporte E-Rúbrica</Text>
+          <Text style={styles.clientDetailLabel}>Soporte E-RÚBRICA</Text>
           <Text style={styles.clientMeta}>Para firmar: carga un PDF, usa tu firma configurada o un .p12 temporal y verifica la clave. Si el certificado está vencido, renuévalo antes de estampar.</Text>
           <Text style={styles.clientDetailValue}>El acceso web también dispone de ayuda y administración avanzada de roles, usuarios y planes.</Text>
         </View>
@@ -1933,7 +1933,7 @@ export function ERubricaMobileScreen({
             </View>
             <MaterialCommunityIcons name="file-sign" size={25} color={ERUBRICA_COLORS.primary} />
           </View>
-              <Text style={styles.clientDetailValue}>{label(item, ['solFormatoFirma', 'SolFormatoFirma', 'formato', 'producto', 'descripcion'], 'Solicitud E-Rúbrica')}</Text>
+              <Text style={styles.clientDetailValue}>{label(item, ['solFormatoFirma', 'SolFormatoFirma', 'formato', 'producto', 'descripcion'], 'Solicitud E-RÚBRICA')}</Text>
               {Number(label(item, ['solId', 'SolId', 'id'], '0')) > 0 ? <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Descargar firma .p12" onPress={async () => {
                 try {
               const solId = Number(label(item, ['solId', 'SolId', 'id'], '0'));
@@ -2221,7 +2221,7 @@ export function ERubricaMobileScreen({
             </View>
             <ScrollView contentContainerStyle={styles.erubricaPaymentContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
             <View style={styles.erubricaPaymentSummaryGrid}>
-              <View style={styles.erubricaPaymentSummaryBox}><Text style={styles.erubricaHistoryMetricLabel}>SERVICIO</Text><Text style={styles.erubricaPaymentSummaryValue}>e-Rúbrica</Text></View>
+              <View style={styles.erubricaPaymentSummaryBox}><Text style={styles.erubricaHistoryMetricLabel}>SERVICIO</Text><Text style={styles.erubricaPaymentSummaryValue}>E-RÚBRICA</Text></View>
               <View style={styles.erubricaPaymentSummaryBox}><Text style={styles.erubricaHistoryMetricLabel}>SUBTOTAL</Text><Text style={styles.erubricaPaymentSummaryValue}>USD {solicitudSubtotal.toFixed(2)}</Text></View>
               <View style={styles.erubricaPaymentSummaryBox}><Text style={styles.erubricaHistoryMetricLabel}>IVA 15%</Text><Text style={styles.erubricaPaymentSummaryValue}>USD {solicitudIva.toFixed(2)}</Text></View>
               <View style={[styles.erubricaPaymentSummaryBox, styles.erubricaPaymentTotalBox]}><Text style={styles.erubricaHistoryMetricLabel}>TOTAL</Text><Text style={styles.erubricaPaymentSummaryValue}>USD {solicitudTotal.toFixed(2)}</Text></View>
