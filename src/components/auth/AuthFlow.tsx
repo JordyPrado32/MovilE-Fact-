@@ -8,7 +8,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ApiError, clearAuthSession, setAuthFailureHandler } from '../../services/apiClient';
 import { clearBotHistory } from '../../services/botService';
 import { API_BASE_URL } from '../../config/api';
-import { changePassword, checkAuth, login, logout as logoutSession, recoverPassword, register } from '../../services/authService';
+import { acceptPrivacyPolicy, changePassword, checkAuth, login, logout as logoutSession, recoverPassword, register } from '../../services/authService';
 import { ChangePasswordRequest, DynamicMenu, LoginResponse, RegisterRequest, ServiceAccess, TipoDocumento } from '../../types/auth';
 import { FacturaPreparacion } from '../../services/facturasMobileService';
 import { NotificacionItem } from '../../services/notificacionesService';
@@ -22,6 +22,7 @@ import { BiometricSetupModal, BrandLockup, BrandMark, LoadingScreen, ScreenFrame
 import { Field, InlineSwitch, LoginActionTiles, MessageBox, PrimaryButton, SecondaryButton, SegmentButton, TextLink } from '../ui/FormControls';
 import { InitialsAvatar } from '../ui/MenuItem';
 import { styles } from '../../styles/appStyles';
+import { PrivacyPolicyScreen } from '../legal/PrivacyPolicyScreen';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'change';
 type MessageState = { type: 'success' | 'error' | 'info'; text: string } | null;
@@ -57,6 +58,7 @@ export type WorkspaceView =
   | 'dashboard'
   | 'perfil'
   | 'perfil-e-rubrica'
+  | 'politica-privacidad'
   | 'emisor'
   | 'firma'
   | 'e-rubrica'
@@ -302,7 +304,7 @@ export const EFACT_MODULES: Omit<MobileModule, 'count' | 'enabled'>[] = [
   { view: 'perfil', title: 'Perfil', description: 'Datos de usuario, avatar y preferencias.' },
   { view: 'emisor', title: 'Emisor', description: 'Datos fiscales del emisor.' },
   { view: 'firma', title: 'Firma / certificado', description: 'Certificado digital para emitir documentos.' },
-  { view: 'e-rubrica', title: 'E-Rúbrica', description: 'Solicitudes, documentos y validación de firmas electrónicas.' },
+  { view: 'e-rubrica', title: 'E-RÚBRICA', description: 'Solicitudes, documentos y validación de firmas electrónicas.' },
   { view: 'punto-emision', title: 'Punto de emision / caja', description: 'Caja, establecimiento y secuenciales.' },
   { view: 'clientes', title: 'Clientes', description: 'Clientes, proveedores y contactos comerciales.' },
   { view: 'productos', title: 'Productos', description: 'Catalogo de productos y servicios.' },
@@ -724,6 +726,9 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
   const [biometricLabel, setBiometricLabel] = useState<string | null>(null);
   const [biometricCredentials, setBiometricCredentials] = useState<BiometricCredentials | null>(null);
   const [biometricPendingLogin, setBiometricPendingLogin] = useState<{ response: LoginResponse; credentials: BiometricCredentials } | null>(null);
+  const [privacyPendingLogin, setPrivacyPendingLogin] = useState<{ idUsuario: number; username: string; password: string; recordarme: boolean } | null>(null);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [privacyMessage, setPrivacyMessage] = useState<string | null>(null);
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -743,6 +748,9 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
     setMessage(null);
     setMode('login');
     setBiometricPendingLogin(null);
+    setPrivacyPendingLogin(null);
+    setPrivacyAccepted(false);
+    setPrivacyMessage(null);
     if (removeBiometric) {
       const accountUserId = currentUser ? getClaimNumber(currentUser, 'idJefe') ?? activeUserId : activeUserId;
       if (accountUserId > 0) void SecureStore.deleteItemAsync(`${INVOICE_DRAFT_KEY_PREFIX}.${accountUserId}`);
@@ -829,7 +837,9 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
         }
 
         if (response.requierePoliticas) {
-          setMessage({ type: 'info', text: 'Debes aceptar las politicas de privacidad antes de continuar.' });
+          setPrivacyPendingLogin({ idUsuario: response.idUsuario ?? 0, username, password, recordarme });
+          setPrivacyAccepted(false);
+          setPrivacyMessage(null);
           return;
         }
 
@@ -872,6 +882,12 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
         if (isBackofficeOnlyUser(response)) {
           clearAuthSession();
           setMessage({ type: 'error', text: BACKOFFICE_UNAVAILABLE_MESSAGE });
+          return;
+        }
+        if (response.requierePoliticas) {
+          setPrivacyPendingLogin({ idUsuario: response.idUsuario ?? 0, username: biometricCredentials.username, password: biometricCredentials.password, recordarme: true });
+          setPrivacyAccepted(false);
+          setPrivacyMessage(null);
           return;
         }
         setCurrentUser(response);
@@ -978,12 +994,40 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
     setBiometricPendingLogin(null);
   };
 
+  const confirmPrivacyPolicy = () => runRequest(async () => {
+    if (!privacyPendingLogin) return;
+    if (!privacyAccepted) {
+      setPrivacyMessage('Debes marcar la aceptación para continuar.');
+      return;
+    }
+    await acceptPrivacyPolicy(privacyPendingLogin);
+    const response = await login({
+      username: privacyPendingLogin.username,
+      password: privacyPendingLogin.password,
+      recordarme: privacyPendingLogin.recordarme,
+    });
+    setPrivacyPendingLogin(null);
+    setPrivacyAccepted(false);
+    setPrivacyMessage(null);
+    if (response.requiereCambioClave && response.idUsuario) {
+      setChangeForm((current) => ({ ...current, idUsuario: response.idUsuario ?? 0 }));
+      setMode('change');
+      setMessage({ type: 'info', text: 'Ingresa el código de acceso o clave temporal para crear una nueva clave.' });
+      return;
+    }
+    setCurrentUser(response);
+  });
+
   if (booting) {
     return <AppLaunchScreen reduceMotion={reduceMotion} />;
   }
 
   if (authenticating) {
     return <LoadingScreen />;
+  }
+
+  if (privacyPendingLogin) {
+    return <ScrollView style={styles.flex} showsVerticalScrollIndicator={false}><PrivacyPolicyScreen requireAcceptance accepted={privacyAccepted} saving={loading} message={privacyMessage} onToggleAccepted={() => { setPrivacyAccepted((value) => !value); setPrivacyMessage(null); }} onAccept={confirmPrivacyPolicy} /></ScrollView>;
   }
 
   if (currentUser) {

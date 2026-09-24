@@ -26,12 +26,14 @@ export function DashboardHomeScreen({
   modules,
   initialSetup,
   onOpenView,
+  onOpenERubricaRequest,
   onOpenVoice,
 }: {
   facturas: FacturaListItem[];
   modules: DashboardModule[];
   initialSetup: InitialSetupStatus;
   onOpenView: (view: string) => void;
+  onOpenERubricaRequest: () => void;
   onOpenVoice: () => void;
 }) {
   const latestFacturas = facturas.slice(0, 3);
@@ -71,7 +73,7 @@ export function DashboardHomeScreen({
           <View style={styles.dashboardSetupProgressTrack}><View style={[styles.dashboardSetupProgressBar, { width: `${completedSteps / 3 * 100}%` }]} /></View>
           <View style={styles.dashboardSetupCards}>
             <SetupCard icon="office-building-outline" title="Emisor y punto de emisión" ready={initialSetup.issuer} pending="Ingresa tus datos fiscales y configura la serie de emisión." action="Configurar" onPress={() => onOpenView('emisor')} />
-            <SetupCard icon="file-certificate-outline" title="Firma electrónica" ready={initialSetup.signature} pending="Carga tu certificado .p12 o solicita una firma en e-Rúbrica." action="Configurar" onPress={() => onOpenView('firma')} secondaryAction="Comprar e-Rúbrica" onSecondaryPress={() => onOpenView('e-rubrica')} />
+            <SetupCard icon="file-certificate-outline" title="Firma electrónica" ready={initialSetup.signature} pending="Carga tu certificado .p12 o solicita una firma en E-RÚBRICA." action="Configurar" onPress={() => onOpenView('firma')} secondaryAction="Comprar E-RÚBRICA" onSecondaryPress={onOpenERubricaRequest} />
             <SetupCard icon="database-outline" title="Saldo de documentos" ready={initialSetup.documents} readyText={initialSetup.documentLabel} pending="Compra un paquete o realiza una recarga para poder emitir." action="Comprar documentos" onPress={() => onOpenView('comprar-documentos')} />
             <SetupCard icon="account-box-multiple-outline" title="Clientes y productos" ready={false} optional pending="No bloquean la emisión, pero agilizan tus siguientes comprobantes." action="Clientes" onPress={() => onOpenView('clientes')} secondaryAction="Productos" onSecondaryPress={() => onOpenView('productos')} />
           </View>

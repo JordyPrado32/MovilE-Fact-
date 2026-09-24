@@ -675,6 +675,7 @@ export function DirectoryWorkspace({ context }: { context: DirectoryWorkspaceCon
                     onSelectInitialsAvatar={selectInitialsPerfilAvatar}
                     onSelectPresetAvatar={selectPresetPerfilAvatar}
                     onSave={savePerfil}
+                    onOpenPrivacy={() => openView('politica-privacidad')}
                     avatars={AVATARS}
                     avatarImageSource={avatarImageSource}
                     resolveImageUrl={resolveImageUrl}

@@ -40,6 +40,7 @@ export function PerfilForm<T extends PerfilFormData>({
   onSelectInitialsAvatar,
   onSelectPresetAvatar,
   onSave,
+  onOpenPrivacy,
   avatars,
   avatarImageSource,
   resolveImageUrl,
@@ -58,6 +59,7 @@ export function PerfilForm<T extends PerfilFormData>({
   onSelectInitialsAvatar: () => void;
   onSelectPresetAvatar: (avatar: string) => void;
   onSave: () => void;
+  onOpenPrivacy: () => void;
   avatars: string[];
   avatarImageSource: (fileName: string) => ImageSourcePropType;
   resolveImageUrl: (value?: string | null) => string;
@@ -82,7 +84,7 @@ export function PerfilForm<T extends PerfilFormData>({
     : [form.nombres, form.apellidos].filter(Boolean).join(' ') || 'Usuario';
   const erubrica = service === 'erubrica';
   const accentColor = erubrica ? ERUBRICA_COLORS.primary : EFACT_THEME.colors.primary;
-  const profileLabel = erubrica ? 'Perfil E-RUBRICA' : getTipoClienteLabel(form.tipoCliente) || 'Perfil E-FACT';
+  const profileLabel = erubrica ? 'Perfil E-RÚBRICA' : getTipoClienteLabel(form.tipoCliente) || 'Perfil E-FACT';
   const identificationLabel = identificaciones.find((item) => item.idTipoIdentificacion === form.idTipoIdentificacion)?.descripcion
     ?? identificaciones.find((item) => item.idTipoIdentificacion === form.idTipoIdentificacion)?.nombreTipo
     ?? 'Identificacion';
@@ -121,6 +123,10 @@ export function PerfilForm<T extends PerfilFormData>({
           <ProfileInfoTile icon="map-marker-outline" label="Direccion" value={form.direccionEmpresa || 'Sin direccion'} full />
         </View>
 
+        <Pressable style={styles.profileSecondaryAction} onPress={onOpenPrivacy}>
+          <MaterialCommunityIcons name="shield-account-outline" size={19} color={accentColor} />
+          <Text style={[styles.profileSecondaryActionText, erubrica && styles.erubricaProfileSecondaryActionText]}>Política de privacidad</Text>
+        </Pressable>
         <View style={[styles.profileSecurityCard, erubrica && styles.erubricaProfileSecurityCard]}>
           <View style={[styles.profileSecurityIcon, erubrica && styles.erubricaProfileSecurityIcon]}>
             <MaterialCommunityIcons name="shield-check-outline" size={22} color={accentColor} />
@@ -136,7 +142,7 @@ export function PerfilForm<T extends PerfilFormData>({
           </View>
           <View style={styles.infoNoticeBody}>
             <Text style={styles.infoNoticeTitle}>{erubrica ? 'Datos para firma electronica' : 'Datos para facturacion'}</Text>
-            <Text style={styles.infoNoticeText}>{erubrica ? 'Esta informacion se utilizara para validar tu identidad dentro de E-Rubrica.' : 'Esta informacion se utilizara para emitir correctamente tus comprobantes.'}</Text>
+            <Text style={styles.infoNoticeText}>{erubrica ? 'Esta información se utilizará para validar tu identidad dentro de E-RÚBRICA.' : 'Esta informacion se utilizara para emitir correctamente tus comprobantes.'}</Text>
           </View>
         </View>
       </View>
@@ -146,7 +152,7 @@ export function PerfilForm<T extends PerfilFormData>({
     <View style={styles.clientFormCard}>
       <View style={styles.profileEditHeader}>
         <View style={styles.profileEditTitleBlock}>
-          <Text style={styles.clientFormTitle}>{erubrica ? 'Editar perfil E-Rubrica' : 'Editar perfil'}</Text>
+          <Text style={styles.clientFormTitle}>{erubrica ? 'Editar perfil E-RÚBRICA' : 'Editar perfil'}</Text>
           <Text style={styles.profileEditHint}>Actualiza solo los datos que necesites cambiar.</Text>
         </View>
         <Pressable style={styles.profileCloseEditButton} onPress={() => setEditing(false)}>
@@ -191,11 +197,11 @@ export function PerfilForm<T extends PerfilFormData>({
         </View>
         <View style={styles.infoNoticeBody}>
           <Text style={styles.infoNoticeTitle}>{erubrica ? 'Datos para firma electronica' : 'Datos para facturacion'}</Text>
-          <Text style={styles.infoNoticeText}>{erubrica ? 'Esta informacion se utilizara para validar tu identidad dentro de E-Rubrica.' : 'Esta informacion se utilizara para emitir correctamente tus comprobantes.'}</Text>
+          <Text style={styles.infoNoticeText}>{erubrica ? 'Esta información se utilizará para validar tu identidad dentro de E-RÚBRICA.' : 'Esta informacion se utilizara para emitir correctamente tus comprobantes.'}</Text>
         </View>
       </View>
       <View style={styles.formSectionBox}>
-        <Text style={styles.clientFormSubtitle}>{erubrica ? 'Cuenta E-Rubrica' : 'Cuenta'}</Text>
+        <Text style={styles.clientFormSubtitle}>{erubrica ? 'Cuenta E-RÚBRICA' : 'Cuenta'}</Text>
         <Field label="Correo Electronico (opcional)" value={form.email} onChangeText={(value) => onChange('email', value)} autoCapitalize="none" keyboardType="email-address" />
         <DropdownField
           label="Tipo de cliente *"

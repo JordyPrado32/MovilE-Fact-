@@ -813,6 +813,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const [pdfPositionDragging, setPdfPositionDragging] = useState(false);
   const botHistoryReadyRef = useRef(false);
   const [portalServiceQuery, setPortalServiceQuery] = useState('');
+  const [privacyReturnView, setPrivacyReturnView] = useState<'perfil' | 'perfil-e-rubrica'>('perfil');
 
   const userId = getClaimNumber(currentUser, 'idUsuario') ?? 0;
   const catalogUserId = getClaimNumber(currentUser, 'idJefe') ?? userId;
@@ -1433,7 +1434,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     getERubricaDashboard()
       .then((data) => { if (mounted) setErubricaData(data); })
       .catch((error) => {
-        if (mounted) setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo cargar E-Rúbrica.' });
+        if (mounted) setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo cargar E-RÚBRICA.' });
       })
       .finally(() => { if (mounted) setLoadingErubrica(false); });
 
@@ -1455,7 +1456,8 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       activeView !== 'nueva-subcategoria' &&
       activeView !== 'nuevo-emisor' &&
       activeView !== 'nueva-firma' &&
-      activeView !== 'nuevo-punto-emision' &&
+       activeView !== 'nuevo-punto-emision' &&
+       activeView !== 'politica-privacidad' &&
        !(['e-rubrica', 'perfil-e-rubrica'].includes(activeView) ? canUseERubrica : activeView === 'firma' ? canUseFirma : authorizedViews.has(activeView))
     ) {
       setActiveView('no-autorizado');
@@ -5179,6 +5181,12 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       return;
     }
 
+    if (view === 'politica-privacidad') {
+      setPrivacyReturnView(activeView === 'perfil-e-rubrica' ? 'perfil-e-rubrica' : 'perfil');
+      setActiveView(view);
+      return;
+    }
+
     if (view === 'firma' && canUseFirma) {
       setActiveView(view);
       return;
@@ -5314,7 +5322,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const hasDocumentsAvailable = documentPlan.unlimited || Number(compraDocumentosEstado?.saldoDocumentos ?? 0) > 0;
   const initialSetupComplete = hasActiveEmisor && hasEmissionPoint && hasConfiguredFirma && hasDocumentsAvailable;
   const initialSetupLoading = loadingEmisores || loadingPuntos || loadingFirma || loadingCompraDocumentosEstado;
-  const initialSetupAllowedViews = new Set<WorkspaceView>(['dashboard', 'emisor', 'nuevo-emisor', 'firma', 'nueva-firma', 'punto-emision', 'nuevo-punto-emision', 'clientes', 'nuevo-cliente', 'productos', 'nuevo-producto', 'categorias', 'nueva-categoria', 'nueva-subcategoria', 'comprar-documentos', 'recargas', 'perfil', 'portal', 'e-rubrica', 'perfil-e-rubrica']);
+  const initialSetupAllowedViews = new Set<WorkspaceView>(['dashboard', 'emisor', 'nuevo-emisor', 'firma', 'nueva-firma', 'punto-emision', 'nuevo-punto-emision', 'clientes', 'nuevo-cliente', 'productos', 'nuevo-producto', 'categorias', 'nueva-categoria', 'nueva-subcategoria', 'comprar-documentos', 'recargas', 'perfil', 'portal', 'e-rubrica', 'perfil-e-rubrica', 'politica-privacidad']);
   const firmaSummary = getFirmaSummary(emisores, firmaEstados);
   const moduleByView = new Map<WorkspaceView, MobileModule>(modules.map((module) => [module.view, module]));
   const menuNode = (view: WorkspaceView, label?: string, icon?: React.ComponentProps<typeof MaterialCommunityIcons>['name']): DrawerMenuNode => {
@@ -5976,6 +5984,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       portalFirstName,
       portalServiceCards,
       portalServiceQuery,
+      privacyReturnView,
       prepararRetencionLiquidacion,
       processingNotaCreditoAutomatica,
       productoCategoriaFiltro,
@@ -6299,9 +6308,10 @@ function getWorkspaceTitle(view: WorkspaceView) {
     dashboard: 'Inicio',
     perfil: 'Perfil',
     'perfil-e-rubrica': 'Mi perfil',
+    'politica-privacidad': 'Política de privacidad',
     emisor: 'Emisor',
     firma: 'Mi firma',
-    'e-rubrica': 'E-Rúbrica',
+    'e-rubrica': 'E-RÚBRICA',
     'punto-emision': 'Punto de emision / caja',
     'admin-cajas-secuencias': 'Cajas y secuencias',
     'admin-roles-permisos': 'Roles y Permisos',

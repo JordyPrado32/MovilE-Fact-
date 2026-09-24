@@ -7,6 +7,7 @@ import type { WorkspaceView } from './AuthFlow';
 import type { CategoriaFormState, EmisorFormState, ProductoFormState, SubcategoriaFormState } from '../../types/directoryForms';
 import type { ClienteLookups, Emisor, FirmaEstado, PerfilUsuario, PuntoEmision } from '../../types/business';
 import type { NuevaFacturaFormState } from '../../types/invoices';
+import { PrivacyPolicyScreen } from '../legal/PrivacyPolicyScreen';
 
 type OperationalFormState = { codigo: string; facturaId: string; descripcion: string; valor: string; observacion: string };
 type PerfilFormState = { nombres: string; apellidos: string; nombreEmpresa: string; email: string; avatarUrl: string; avatarUploadUri: string; avatarUploadName: string; avatarUploadMimeType: string; identificacion: string; tipoCliente: number; idTipoIdentificacion: number | null; direccionEmpresa: string; celular: string; nuevaPassword: string; confirmarPassword: string; cambiarClave: boolean };
@@ -331,6 +332,7 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
               documentLabel: documentPlan.unlimited ? 'Plan ilimitado activo' : `${documentPlan.label} disponibles`,
             }}
             onOpenView={(view: any) => openView(view as WorkspaceView)}
+            onOpenERubricaRequest={() => openERubricaTab('nueva-solicitud')}
             onOpenVoice={() => botVoiceControlsRef.current?.startHandsFree()}
           />
         ) : null}
@@ -358,13 +360,17 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
                 setDirectoryMessage({ type: 'success', text: 'Solicitudes pendientes sincronizadas.' });
                 setReloadKey((value: number) => value + 1);
               } catch (error: any) {
-                setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo sincronizar E-Rúbrica.' });
+                setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo sincronizar E-RÚBRICA.' });
               }
             }}
           />
         ) : null}
 
-        {!loadingMenus && activeView !== 'portal' && activeView !== 'dashboard' && activeView !== 'e-rubrica' && activeView !== 'no-autorizado' ? (
+        {!loadingMenus && activeView === 'politica-privacidad' ? (
+          <PrivacyPolicyScreen onClose={() => openView(context.privacyReturnView)} />
+        ) : null}
+
+        {!loadingMenus && activeView !== 'portal' && activeView !== 'dashboard' && activeView !== 'e-rubrica' && activeView !== 'politica-privacidad' && activeView !== 'no-autorizado' ? (
           <>
            <DirectoryWorkspace context={{
              activeView,
@@ -929,7 +935,7 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
             <View style={[styles.menuHeader, isERubricaWorkspace && styles.erubricaMenuHeader]}>
               <View>
                 <Text style={styles.menuTitle}>Menu</Text>
-                <Text style={[styles.menuSubtitle, isERubricaWorkspace && styles.erubricaMenuSubtitle]}>{isERubricaWorkspace ? 'E-Rubrica' : 'Numérica Software'}</Text>
+                <Text style={[styles.menuSubtitle, isERubricaWorkspace && styles.erubricaMenuSubtitle]}>{isERubricaWorkspace ? 'E-RÚBRICA' : 'Numérica Software'}</Text>
               </View>
               <Pressable accessibilityLabel="Cerrar menu" accessibilityRole="button" hitSlop={6} style={[styles.menuCloseButton, isERubricaWorkspace && styles.erubricaMenuCloseButton]} onPress={() => setMenuOpen(false)}>
                 <Text style={styles.menuCloseText}>×</Text>
