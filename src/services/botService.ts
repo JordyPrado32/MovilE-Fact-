@@ -53,6 +53,120 @@ export type BotSelectionOption = {
   producto?: { id?: number; nombre?: string; precioUnitario?: number; tarifaPorcentaje?: number; codigoPrincipal?: string | null } | null;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function asString(value: unknown) {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function asNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeClient(value: unknown) {
+  if (value === null) return null;
+  if (!isRecord(value)) return undefined;
+  return {
+    id: asNumber(value.id),
+    nombre: asString(value.nombre),
+    identificacion: value.identificacion === null ? null : asString(value.identificacion),
+  };
+}
+
+function normalizeInvoiceDraft(value: unknown): BotFacturaDraft | undefined {
+  if (!isRecord(value)) return undefined;
+  const items = Array.isArray(value.items)
+    ? value.items.filter(isRecord).map((item) => ({
+      id: asString(item.id),
+      descripcion: asString(item.descripcion),
+      cantidad: asNumber(item.cantidad),
+      precioUnitario: asNumber(item.precioUnitario),
+      tarifaPorcentaje: asNumber(item.tarifaPorcentaje),
+      impuesto: asNumber(item.impuesto),
+      total: asNumber(item.total),
+    }))
+    : undefined;
+
+  return {
+    cliente: normalizeClient(value.cliente),
+    items,
+    subtotal: asNumber(value.subtotal),
+    impuesto: asNumber(value.impuesto),
+    total: asNumber(value.total),
+    formaPago: value.formaPago === null ? null : asString(value.formaPago),
+  };
+}
+
+function normalizeSelectionOptions(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item) || asNumber(item.indice) === undefined || !asString(item.tipo) || !asString(item.etiqueta)) return [];
+    return [{
+      indice: asNumber(item.indice) as number,
+      tipo: asString(item.tipo) as string,
+      etiqueta: asString(item.etiqueta) as string,
+      descripcion: item.descripcion === null ? null : asString(item.descripcion),
+      cliente: normalizeClient(item.cliente),
+      producto: isRecord(item.producto)
+        ? {
+          id: asNumber(item.producto.id),
+          nombre: asString(item.producto.nombre),
+          precioUnitario: asNumber(item.producto.precioUnitario),
+          tarifaPorcentaje: asNumber(item.producto.tarifaPorcentaje),
+          codigoPrincipal: item.producto.codigoPrincipal === null ? null : asString(item.producto.codigoPrincipal),
+        }
+        : item.producto === null ? null : undefined,
+    }];
+  });
+}
+
+function normalizeProgress(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item) || !asString(item.id) || !asString(item.label)) return [];
+    const status: BotProgressStep['status'] = item.status === 'pending' || item.status === 'completed' || item.status === 'warning' ? item.status : undefined;
+    return [{ id: asString(item.id) as string, label: asString(item.label) as string, detail: asString(item.detail), status }];
+  });
+}
+
+function normalizePendingOperation(value: unknown) {
+  if (value === null) return null;
+  if (!isRecord(value)) return undefined;
+  return { tipo: asString(value.tipo), resumen: asString(value.resumen), expiraEn: value.expiraEn === null ? null : asString(value.expiraEn) };
+}
+
+function normalizeBotResponse(value: unknown): BotChatResponse | string | null {
+  if (typeof value === 'string') return value;
+  if (!isRecord(value)) return null;
+  const data = isRecord(value.data)
+    ? { respuesta: asString(value.data.respuesta), response: asString(value.data.response), mensaje: asString(value.data.mensaje), message: asString(value.data.message) }
+    : undefined;
+  return {
+    requestId: asString(value.requestId),
+    sessionId: asString(value.sessionId),
+    estadoVersion: asNumber(value.estadoVersion),
+    respuesta: asString(value.respuesta),
+    response: asString(value.response),
+    mensaje: asString(value.mensaje),
+    message: asString(value.message),
+    estado: asString(value.estado),
+    facturaDraft: normalizeInvoiceDraft(value.facturaDraft),
+    requiereConfirmacion: typeof value.requiereConfirmacion === 'boolean' ? value.requiereConfirmacion : undefined,
+    emitida: typeof value.emitida === 'boolean' ? value.emitida : undefined,
+    accionDetectada: value.accionDetectada === null ? null : asString(value.accionDetectada),
+    rutaSugerida: value.rutaSugerida === null ? null : asString(value.rutaSugerida),
+    seleccionPendienteTipo: value.seleccionPendienteTipo === null ? null : asString(value.seleccionPendienteTipo),
+    seleccionPendienteMensaje: value.seleccionPendienteMensaje === null ? null : asString(value.seleccionPendienteMensaje),
+    opcionesSeleccion: normalizeSelectionOptions(value.opcionesSeleccion),
+    data,
+    progreso: normalizeProgress(value.progreso),
+    datosFaltantes: Array.isArray(value.datosFaltantes) ? value.datosFaltantes.filter((item): item is string => typeof item === 'string') : [],
+    operacionPendiente: normalizePendingOperation(value.operacionPendiente),
+  };
+}
+
 let activeBotSession: { userId: number; sessionId: string } | null = null;
 let botHistoryWrite = Promise.resolve();
 const BOT_HISTORY_TTL_MS = 24 * 60 * 60 * 1000;
@@ -153,10 +267,7 @@ export async function loadBotHistory(userId: number) {
     const info = await FileSystem.getInfoAsync(uri);
     if (!info.exists) return null;
     const decrypted = await decryptHistory(userId, await FileSystem.readAsStringAsync(uri));
-    if (!decrypted) {
-      await FileSystem.deleteAsync(uri, { idempotent: true });
-      return null;
-    }
+    if (!decrypted) return null;
     const parsed = JSON.parse(decrypted) as { savedAt?: number; messages?: unknown; feedbackByMessage?: unknown };
     if (!parsed.savedAt || Date.now() - parsed.savedAt > BOT_HISTORY_TTL_MS) {
       await FileSystem.deleteAsync(uri, { idempotent: true });
@@ -186,10 +297,7 @@ export function saveBotHistory(userId: number, messages: BotMessage[], feedbackB
   botHistoryWrite = botHistoryWrite
     .then(async () => {
       const encrypted = await encryptHistory(userId, value);
-      if (!encrypted) {
-        await FileSystem.deleteAsync(uri, { idempotent: true });
-        return;
-      }
+      if (!encrypted) return;
       await FileSystem.writeAsStringAsync(uri, encrypted);
     })
     .catch(() => undefined);
@@ -257,7 +365,7 @@ export async function resetBotSession(userId: number) {
 
 export async function sendBotMessage(input: { message: string; userId?: number; sessionId?: string; contexto?: string; modo?: 'texto' | 'voz'; requestId?: string }) {
   const sessionId = input.sessionId ?? await getOrCreateBotSessionId(input.userId ?? 0);
-  const response = await apiRequest<BotChatResponse | string>(BOT_CHAT_PATH, {
+  const response = normalizeBotResponse(await apiRequest<unknown>(BOT_CHAT_PATH, {
     method: 'POST',
     timeoutMs: 60000,
     body: JSON.stringify({
@@ -267,7 +375,9 @@ export async function sendBotMessage(input: { message: string; userId?: number; 
         modo: input.modo ?? 'texto',
         contexto: input.contexto,
       }),
-  });
+  }));
+
+  if (!response) throw new Error('El bot devolvió una respuesta inválida.');
 
   const answer = typeof response === 'string' ? response : response.respuesta ?? response.response ?? response.mensaje ?? response.message
     ?? response.data?.respuesta ?? response.data?.response ?? response.data?.mensaje ?? response.data?.message;

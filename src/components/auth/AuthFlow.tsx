@@ -115,6 +115,7 @@ const AVATAR_BASE_URL = 'https://efact.numericasoftware.com/images/Avatars';
 const LAUNCH_DURATION_MS = 1600;
 const BIOMETRIC_CREDENTIALS_KEY = 'efact.biometric.credentials';
 export const INVOICE_DRAFT_KEY_PREFIX = 'efact.invoice.draft';
+const BACKOFFICE_UNAVAILABLE_MESSAGE = 'Esta función de backoffice no está disponible en móvil. Úsala desde la web.';
 
 type BiometricCredentials = { username: string; password: string };
 
@@ -634,6 +635,11 @@ function hasAdminMenu(menus: DynamicMenu[]) {
   });
 }
 
+function isBackofficeOnlyUser(user: LoginResponse) {
+  const activeMenus = flattenMenus(getLoginMenus(user)).filter(isMenuEnabled);
+  return activeMenus.length > 0 && hasAdminMenu(activeMenus) && activeMenus.every(isAdministrationMenu);
+}
+
 function mergeMobileBaseMenus(menus: DynamicMenu[], includeAdmin = false) {
   const visibleMenus = menus.filter((menu) => !isAdministrationMenu(menu));
   const existingRoutes = new Set(visibleMenus.map((menu) => normalizeText(menu.ruta || menu.nombre)));
@@ -757,6 +763,11 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
     const authCheck = checkAuth()
       .then((response) => {
         if (!mounted || !response.authenticated) return;
+        if (isBackofficeOnlyUser(response)) {
+          clearAuthSession();
+          setMessage({ type: 'error', text: BACKOFFICE_UNAVAILABLE_MESSAGE });
+          return;
+        }
         setCurrentUser(response);
       })
       .catch(() => undefined);
@@ -811,6 +822,12 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
         const response = await login({ username, password, recordarme });
         await delay(350);
 
+        if (isBackofficeOnlyUser(response)) {
+          clearAuthSession();
+          setMessage({ type: 'error', text: BACKOFFICE_UNAVAILABLE_MESSAGE });
+          return;
+        }
+
         if (response.requierePoliticas) {
           setMessage({ type: 'info', text: 'Debes aceptar las politicas de privacidad antes de continuar.' });
           return;
@@ -852,6 +869,11 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
       setAuthenticating(true);
       try {
         const response = await login({ ...biometricCredentials, recordarme: true });
+        if (isBackofficeOnlyUser(response)) {
+          clearAuthSession();
+          setMessage({ type: 'error', text: BACKOFFICE_UNAVAILABLE_MESSAGE });
+          return;
+        }
         setCurrentUser(response);
       } finally {
         setAuthenticating(false);
