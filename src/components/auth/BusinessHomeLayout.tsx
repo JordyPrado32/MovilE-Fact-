@@ -767,6 +767,7 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
           <EfactBotScreen
             voiceOnly={activeView !== 'bot'}
             embedded={activeView === 'bot'}
+            bottomInset={activeView === 'bot' ? 88 + insets.bottom : 0}
             userName={portalFirstName}
             userId={userId}
             reduceMotion={reduceMotion}

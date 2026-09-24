@@ -28,7 +28,7 @@ import { PrivacyPolicyScreen } from '../legal/PrivacyPolicyScreen';
 type AuthMode = 'login' | 'register' | 'forgot' | 'change';
 type MessageState = { type: 'success' | 'error' | 'info'; text: string } | null;
 type MobileModule = { view: WorkspaceView; title: string; description: string };
-type BusinessHomeProps = { currentUser: LoginResponse; onLogout: () => void };
+type BusinessHomeProps = { currentUser: LoginResponse; incomingPdfUri?: string | null; onIncomingPdfHandled?: () => void; onLogout: () => void };
 
 let reduceMotionEnabled = false;
 const reduceMotionListeners = new Set<() => void>();
@@ -744,6 +744,7 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
   const [privacyPendingLogin, setPrivacyPendingLogin] = useState<{ idUsuario: number; username: string; password: string; recordarme: boolean } | null>(null);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [privacyMessage, setPrivacyMessage] = useState<string | null>(null);
+  const [incomingPdfUri, setIncomingPdfUri] = useState<string | null>(null);
   const [networkAvailable, setNetworkAvailable] = useState<boolean | null>(null);
   const [checkingNetwork, setCheckingNetwork] = useState(false);
 
@@ -755,6 +756,15 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
   const [registerForm, setRegisterForm] = useState<RegisterRequest>(initialRegisterForm);
   const [recoverEmail, setRecoverEmail] = useState('');
   const [changeForm, setChangeForm] = useState<ChangePasswordRequest>(initialChangeForm);
+
+  useEffect(() => {
+    const captureIncomingPdf = (uri: string | null) => {
+      if (uri?.startsWith('content://') || uri?.startsWith('file://')) setIncomingPdfUri(uri);
+    };
+    void Linking.getInitialURL().then(captureIncomingPdf).catch(() => undefined);
+    const subscription = Linking.addEventListener('url', ({ url }) => captureIncomingPdf(url));
+    return () => subscription.remove();
+  }, []);
 
   const resetLocalSession = (removeBiometric = false) => {
     const activeUserId = currentUser?.idUsuario ?? 0;
@@ -1078,6 +1088,8 @@ export function AppContent({ BusinessHome }: { BusinessHome: ComponentType<Busin
     return (
       <BusinessHome
         currentUser={currentUser}
+        incomingPdfUri={incomingPdfUri}
+        onIncomingPdfHandled={() => setIncomingPdfUri(null)}
         onLogout={() => {
           void logoutSession().catch(() => undefined).finally(() => resetLocalSession(false));
         }}

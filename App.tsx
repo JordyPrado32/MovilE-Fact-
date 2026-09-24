@@ -627,7 +627,7 @@ export default function App() {
 }
 
 
-function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; onLogout: () => void }) {
+function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLogout }: { currentUser: LoginResponse; incomingPdfUri?: string | null; onIncomingPdfHandled?: () => void; onLogout: () => void }) {
   const insets = useSafeAreaInsets();
   const [activeView, setActiveView] = useState<WorkspaceView>(() => {
     if (isSuperAdmin(currentUser)) return 'portal';
@@ -823,7 +823,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
     return queued;
   };
   const idTipoUsuario = getClaimNumber(currentUser, 'idTipoUsuario');
-  const authorizedViews = useMemo(() => getAuthorizedViews(menus), [menus]);
+  const authorizedViews = useMemo(() => {
+    const views = getAuthorizedViews(menus);
+    views.add('cotizaciones');
+    return views;
+  }, [menus]);
   const canUseEfact = authorizedViews.has('dashboard');
   const services = useMemo(() => getServicesFromUser(currentUser, menus), [currentUser, menus]);
   const canUseERubrica = userId > 0;
@@ -5257,7 +5261,7 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   const handleBotNavigate = (route: string) => {
     const routeMap: Record<string, WorkspaceView> = {
       '/dashboard': 'dashboard',
-      '/facturacion': 'facturacion',
+      '/facturacion': 'nueva-factura',
       '/facturacion/nueva': 'nueva-factura',
       '/facturacion/nota-credito': 'nueva-nota-credito',
       '/cotizaciones': 'cotizaciones',
@@ -5273,6 +5277,15 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       '/compras/nueva-liquidacion': 'nueva-liquidacion-compra',
       '/compras/liquidaciones-generadas': 'mis-liquidaciones-compra',
       '/facturas': 'mis-facturas',
+      '/clientes': 'clientes',
+      '/productos': 'productos',
+      '/categorias': 'categorias',
+      '/notas-credito': 'mis-notas-credito',
+      '/notas-debito': 'mis-notas-debito',
+      '/guias-remision': 'mis-guias-remision',
+      '/compras': 'compras',
+      '/perfil': 'perfil',
+      '/reportes': 'reportes',
       '/reportes/documentos': 'reportes',
       '/e-rubrica': 'e-rubrica',
       '/cuentas-cobrar': 'cuentas-cobrar',
@@ -5298,7 +5311,11 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
       return;
     }
     const view = routeMap[normalizedRoute] ?? routeMap[`/${normalizedRoute.replace(/^\/+/, '')}`];
-    if (view) openView(view);
+    if (view) {
+      openView(view);
+      return;
+    }
+    setDirectoryMessage({ type: 'info', text: 'Númi no encontró esa sección. Abre el menú para continuar.' });
   };
 
   const dismissNotificationLocal = (notificationId: string) => {
@@ -5465,31 +5482,28 @@ function BusinessHome({ currentUser, onLogout }: { currentUser: LoginResponse; o
   };
 
   useEffect(() => {
+    if (!incomingPdfUri) return;
     let mounted = true;
-    let handledUri = '';
-    const openIncomingPdf = async (uri: string | null) => {
-      if (!uri || handledUri === uri || (!uri.startsWith('content://') && !uri.startsWith('file://'))) return;
-      handledUri = uri;
+    const openIncomingPdf = async () => {
       try {
         const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
         if (!baseDirectory) throw new Error('missing-directory');
         const target = `${baseDirectory}external-${Date.now()}.pdf`;
-        await FileSystem.copyAsync({ from: uri, to: target });
+        await FileSystem.copyAsync({ from: incomingPdfUri, to: target });
         if (!mounted) return;
         setErubricaInitialPdf({ uri: target, name: 'Documento recibido.pdf', mimeType: 'application/pdf' });
         openERubricaTab('firmar');
+        onIncomingPdfHandled?.();
       } catch {
         if (mounted) setDirectoryMessage({ type: 'error', text: 'No se pudo cargar el PDF recibido.' });
       }
     };
 
-    void Linking.getInitialURL().then(openIncomingPdf).catch(() => undefined);
-    const subscription = Linking.addEventListener('url', ({ url }) => void openIncomingPdf(url));
+    void openIncomingPdf();
     return () => {
       mounted = false;
-      subscription.remove();
     };
-  }, [canUseERubrica]);
+  }, [incomingPdfUri, canUseERubrica]);
 
   const openPdfPreview = async (loader: () => Promise<{ url?: string | null } | string>, fileName: string) => {
     try {
