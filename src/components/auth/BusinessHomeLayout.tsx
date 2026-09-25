@@ -37,6 +37,7 @@ export function getDocumentPlanStatus(data: CompraDocumentosEstado | null) {
 }
 
 const EXPORT_GREEN = '#18B889';
+const BOTTOM_NAV_CONTENT_INSET = 120;
 
 export function getFirmaSummary(emisores: Emisor[], estados: Record<number, FirmaEstado>) {
   const configured = emisores.filter((emisor) => hasFirmaConfigured(emisor) || estados[emisor.codigo]?.tieneCertificado === true);
@@ -242,7 +243,7 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
           style={styles.workspaceBodyScroll}
           scrollEnabled={!pdfPositionDragging}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.workspaceCanvasWithBottomNav, activeView === 'dashboard' && styles.efactHomeWorkspaceCanvas, { paddingBottom: activeView === 'portal' ? 20 + insets.bottom : 88 + insets.bottom }]}
+          contentContainerStyle={[styles.workspaceCanvasWithBottomNav, activeView === 'dashboard' && styles.efactHomeWorkspaceCanvas, { paddingBottom: activeView === 'portal' ? 20 + insets.bottom : BOTTOM_NAV_CONTENT_INSET + insets.bottom }]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
           nestedScrollEnabled
@@ -767,7 +768,7 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
           <EfactBotScreen
             voiceOnly={activeView !== 'bot'}
             embedded={activeView === 'bot'}
-            bottomInset={activeView === 'bot' ? 88 + insets.bottom : 0}
+            bottomInset={activeView === 'bot' ? BOTTOM_NAV_CONTENT_INSET + insets.bottom : 0}
             userName={portalFirstName}
             userId={userId}
             reduceMotion={reduceMotion}
