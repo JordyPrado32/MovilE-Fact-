@@ -38,6 +38,15 @@
           "action": "VIEW",
           "category": ["DEFAULT", "BROWSABLE"],
           "data": {
+            "scheme": "content",
+            "mimeType": "application/pdf"
+          }
+        },
+        {
+          "action": "VIEW",
+          "category": ["DEFAULT", "BROWSABLE"],
+          "data": {
+            "scheme": "file",
             "mimeType": "application/pdf"
           }
         }

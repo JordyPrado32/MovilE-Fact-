@@ -41,6 +41,14 @@ type MessageState = {
   text: string;
 } | null;
 
+type ERubricaSolicitudPrefill = {
+  nombres?: string;
+  apellidos?: string;
+  identificacion?: string;
+  correo?: string;
+  celular?: string;
+};
+
 function getDocumentAssetUrl(response: { url?: string | null } | string) {
   const value = typeof response === 'string' ? response : response.url;
   if (!value) return '';
@@ -50,6 +58,41 @@ function getDocumentAssetUrl(response: { url?: string | null } | string) {
 const PDFJS_VIEWER_URI = Image.resolveAssetSource(require('../../../assets/pdfjs/pdf.min.pdf')).uri;
 const PDFJS_WORKER_URI = Image.resolveAssetSource(require('../../../assets/pdfjs/pdf.worker.min.pdf')).uri;
 const TEXTO_SOLICITUD_VALIDO = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ .,'&()\-]+$/;
+
+const ERUBRICA_BOT_ROUTE_MAP: Record<string, ERubricaTab> = {
+  '/e-rubrica': 'inicio',
+  '/e-rubrica/configuracion/firma': 'firma-config',
+  '/e-rubrica/configuracion/plan': 'plan-disponible',
+  '/e-rubrica/plan-disponible': 'plan-disponible',
+  '/e-rubrica/mis-firmas': 'ver-mis-firmas',
+  '/solicitud/pagos': 'historial-solicitudes',
+  '/solicitud/nueva': 'nueva-solicitud',
+  '/e-rubrica/documentos': 'historial-documentos',
+  '/e-rubrica/documentos-por-firmar': 'documentos-por-firmar',
+  '/e-rubrica/documentos/por-firmar': 'documentos-por-firmar',
+  '/e-rubrica/documentos/firmar': 'firmar',
+  '/e-rubrica/documentos/validar-firma': 'validar-firma',
+};
+
+const ERUBRICA_BOT_ACTION_MAP: Record<string, ERubricaTab> = {
+  abrir_plan: 'plan-disponible',
+  abrir_solicitud: 'nueva-solicitud',
+  abrir_pagos: 'historial-solicitudes',
+  abrir_configuracion_firma: 'firma-config',
+  abrir_firma_pdf: 'firmar',
+  abrir_validar_firma: 'validar-firma',
+  abrir_documentos: 'historial-documentos',
+  abrir_mis_firmas: 'ver-mis-firmas',
+};
+
+function getERubricaBotTab(route: string) {
+  const normalized = route.trim().toLowerCase().split('?')[0].replace(/\/+$/, '') || '/';
+  return ERUBRICA_BOT_ROUTE_MAP[normalized];
+}
+
+function getERubricaBotActionTab(action?: string) {
+  return action ? ERUBRICA_BOT_ACTION_MAP[action.trim().toLowerCase()] : undefined;
+}
 
 function textoSolicitudValido(value: string, maxLength = 100) {
   const text = value.trim();
@@ -73,9 +116,37 @@ function usePdfJsSource(uri: string) {
   useEffect(() => {
     let mounted = true;
     const load = async () => {
+      const readers = uri.startsWith('file:')
+        ? [
+            () => FileSystem.readAsStringAsync(uri),
+            async () => {
+              const response = await fetch(uri);
+              if (!response.ok) throw new Error(`asset-${response.status}`);
+              return response.text();
+            },
+          ]
+        : [
+            async () => {
+              const response = await fetch(uri);
+              if (!response.ok) throw new Error(`asset-${response.status}`);
+              return response.text();
+            },
+            () => FileSystem.readAsStringAsync(uri),
+          ];
+
       try {
-        const value = uri.startsWith('file:') ? await FileSystem.readAsStringAsync(uri) : await (await fetch(uri)).text();
-        if (mounted) setSource(value);
+        for (const read of readers) {
+          try {
+            const value = await read();
+            if (value.trim()) {
+              if (mounted) setSource(value);
+              return;
+            }
+          } catch {
+            // Try the next supported asset transport.
+          }
+        }
+        throw new Error('empty-pdfjs-source');
       } catch {
         if (mounted) setSource('');
       }
@@ -131,7 +202,7 @@ export function PdfDocumentPreview({
   const clickHandler = selectable ? `let dragging=false,marker=null;const moveMarker=e=>{const r=c.getBoundingClientRect(),x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y=Math.max(0,Math.min(1,(e.clientY-r.top)/r.height));if(marker){marker.style.left=(x*100)+'%';marker.style.top=(y*100)+'%'}return{x,y}};viewer.addEventListener('pointerdown',e=>{marker=e.target.closest('.marker');if(e.target!==c&&!marker)return;dragging=true;viewer.setPointerCapture&&viewer.setPointerCapture(e.pointerId);window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:true}));moveMarker(e)});viewer.addEventListener('pointermove',e=>{if(dragging)moveMarker(e)});const finish=e=>{if(!dragging)return;dragging=false;const p=moveMarker(e);const index=marker&&Number(marker.dataset.index);window.ReactNativeWebView.postMessage(JSON.stringify(marker&&Number.isInteger(index)?{type:'move',index,x:p.x,y:p.y}:{type:'position',x:p.x,y:p.y}));marker=null;window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:false}))};viewer.addEventListener('pointerup',finish);viewer.addEventListener('pointercancel',finish);` : '';
   const sizeHandler = selectable ? `window.ReactNativeWebView.postMessage(JSON.stringify({type:'size',widthMm:v.width*25.4/72,heightMm:v.height*25.4/72}));` : '';
   const html = base64 && pdfJsSource ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>html,body{margin:0;background:#eef3f7}#stage{text-align:center;padding:12px;box-sizing:border-box}#viewer{display:inline-block;position:relative}#canvas{display:block;background:#fff;max-width:100%;box-shadow:0 2px 8px #63758755}.marker{position:absolute;transform:translate(-50%,-50%);width:84px;height:36px;border:2px solid #087c3a;background:#e5f8ebdd;color:#087c3a;font:700 11px Arial;border-radius:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;touch-action:none}</style></head><body><div id="stage"><div id="viewer"><canvas id="canvas"></canvas>${markers}</div></div><script>${pdfJsSource}</script><script>try{const r=atob('${base64}'),b=new Uint8Array(r.length);for(let i=0;i<r.length;i++)b[i]=r.charCodeAt(i);pdfjsLib.getDocument({data:b,disableWorker:true}).promise.then(d=>{window.ReactNativeWebView.postMessage(JSON.stringify({type:'pageCount',pageCount:d.numPages}));return d.getPage(Math.min(${page},d.numPages))}).then(p=>{const v=p.getViewport({scale:1}),s=Math.min((innerWidth-24)/v.width,1.5),d=Math.min(3,window.devicePixelRatio||2),q=p.getViewport({scale:s}),h=p.getViewport({scale:s*d}),c=document.getElementById('canvas'),viewer=document.getElementById('viewer');c.width=h.width;c.height=h.height;c.style.width=q.width+'px';c.style.height=q.height+'px';${sizeHandler}window.ReactNativeWebView.postMessage(JSON.stringify({type:'height',height:Math.ceil(q.height+24)}));return p.render({canvasContext:c.getContext('2d'),viewport:h}).promise.then(()=>{${clickHandler}})}).catch(()=>document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>')}catch(e){document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>'}</script></body></html>` : base64 === '' ? '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">El archivo descargado no es un PDF válido.</p>' : pdfJsUnavailable ? '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo iniciar el visor de PDF.</p>' : '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">Cargando PDF…</p>';
-  const preview = <WebView originWhitelist={['*']} source={{ html }} javaScriptEnabled style={[styles.pdfDocumentWebView, { height: renderedHeight }]} onMessage={(event) => { try { const result = JSON.parse(event.nativeEvent.data) as { type?: string; dragging?: boolean; index?: number; x?: number; y?: number; widthMm?: number; heightMm?: number; height?: number; pageCount?: number }; if (result.type === 'drag' && typeof result.dragging === 'boolean') onDragChange?.(result.dragging); if (result.type === 'position' && typeof result.x === 'number' && typeof result.y === 'number') onPositionChange?.({ x: result.x, y: result.y }); if (result.type === 'move' && typeof result.index === 'number' && typeof result.x === 'number' && typeof result.y === 'number') onPlacementMove?.(result.index, { x: result.x, y: result.y }); if (result.type === 'size' && typeof result.widthMm === 'number' && typeof result.heightMm === 'number') onPageSizeChange?.({ widthMm: result.widthMm, heightMm: result.heightMm }); if (result.type === 'height' && typeof result.height === 'number') setRenderedHeight(Math.max(240, Math.min(820, result.height))); if (result.type === 'pageCount' && typeof result.pageCount === 'number') onPageCountChange?.(result.pageCount); } catch { /* ignore viewer messages */ } }} />;
+  const preview = <WebView key={`${uri}-${page}-${base64 ? 'ready' : 'loading'}`} originWhitelist={['*']} source={{ html }} javaScriptEnabled domStorageEnabled allowFileAccess allowFileAccessFromFileURLs allowUniversalAccessFromFileURLs style={[styles.pdfDocumentWebView, { height: renderedHeight }]} onMessage={(event) => { try { const result = JSON.parse(event.nativeEvent.data) as { type?: string; dragging?: boolean; index?: number; x?: number; y?: number; widthMm?: number; heightMm?: number; height?: number; pageCount?: number }; if (result.type === 'drag' && typeof result.dragging === 'boolean') onDragChange?.(result.dragging); if (result.type === 'position' && typeof result.x === 'number' && typeof result.y === 'number') onPositionChange?.({ x: result.x, y: result.y }); if (result.type === 'move' && typeof result.index === 'number' && typeof result.x === 'number' && typeof result.y === 'number') onPlacementMove?.(result.index, { x: result.x, y: result.y }); if (result.type === 'size' && typeof result.widthMm === 'number' && typeof result.heightMm === 'number') onPageSizeChange?.({ widthMm: result.widthMm, heightMm: result.heightMm }); if (result.type === 'height' && typeof result.height === 'number') setRenderedHeight(Math.max(240, Math.min(820, result.height))); if (result.type === 'pageCount' && typeof result.pageCount === 'number') onPageCountChange?.(result.pageCount); } catch { /* ignore viewer messages */ } }} />;
   if (!selectable) return preview;
   return <View style={styles.pdfPositionCard}>
     <View style={styles.pdfPositionHeader}><View style={styles.pdfPositionCopy}><Text style={styles.clientDetailLabel}>Ubicación de la firma</Text><Text style={styles.clientMeta}>Toca el PDF para elegir dónde se colocará la firma.</Text></View><View style={styles.pdfPositionBadge}><MaterialCommunityIcons name="gesture-tap" size={16} color={ERUBRICA_COLORS.primary} /><Text style={styles.pdfPositionBadgeText}>TÁCTIL</Text></View></View>
@@ -216,6 +287,7 @@ export function ERubricaMobileScreen({
   onPdfPositionDragChange,
   userName,
   userId,
+  solicitudPrefill,
 }: {
   data: ERubricaDashboard | null;
   puedeFirmarSinPlan: boolean;
@@ -233,6 +305,7 @@ export function ERubricaMobileScreen({
   onPdfPositionDragChange: (dragging: boolean) => void;
   userName: string;
   userId: number;
+  solicitudPrefill?: ERubricaSolicitudPrefill;
 }) {
   const [tab, setTab] = useState<ERubricaTab>('inicio');
   const [qrInput, setQrInput] = useState('');
@@ -364,6 +437,24 @@ export function ERubricaMobileScreen({
     }
     setTab(nextTab);
     onTabChange(nextTab);
+  };
+  const buildSolicitudFormFromProfile = (persona: string) => {
+    const identificacion = solicitudPrefill?.identificacion?.replace(/\D/g, '') ?? '';
+    const apellidos = (solicitudPrefill?.apellidos ?? '').trim().split(/\s+/).filter(Boolean);
+    const isCedula = /^\d{10}$/.test(identificacion);
+    const isRuc = /^\d{13}$/.test(identificacion);
+    return {
+      ...SOLICITUD_FORM_INITIAL,
+      poseeRuc: persona !== 'Persona natural con cédula',
+      tipoDocumento: isCedula ? 'CEDULA' : '',
+      identificacion: isCedula && persona !== 'Representante legal' ? identificacion : '',
+      ruc: isRuc && persona !== 'Persona natural con cédula' ? identificacion : '',
+      nombres: (solicitudPrefill?.nombres ?? '').trim(),
+      primerApellido: apellidos[0] ?? '',
+      segundoApellido: apellidos.slice(1).join(' '),
+      celular: (solicitudPrefill?.celular ?? '').trim(),
+      correo: (solicitudPrefill?.correo ?? '').trim(),
+    };
   };
   useEffect(() => {
     if (!initialPdf) return;
@@ -1219,7 +1310,7 @@ export function ERubricaMobileScreen({
         </View>
       ) : null}
 
-      {tab === 'asistente' ? <EfactBotScreen userName={userName} userId={userId} messages={assistantMessages} setMessages={setAssistantMessages} draft={assistantDraft} setDraft={setAssistantDraft} feedbackByMessage={assistantFeedback} setFeedbackByMessage={setAssistantFeedback} welcomeText={`Hola ${userName || ''}. Soy Númi, tu asistente de E-RÚBRICA. Puedo ayudarte con firmas, solicitudes, pagos y validación de documentos.`} assistantContext="asistente de E-RÚBRICA. Ayuda únicamente con firma electrónica: crear y seguir solicitudes, requisitos de persona natural o representante legal, pagos, Uanataca, configurar certificado .p12, firmar PDF, ubicar la firma, documentos firmados y validar firmas. No ofrezcas crear facturas ni acciones de E-FACT. Usa únicamente información real disponible y no inventes datos. Usa lenguaje neutral; no asumas el género de la persona ni uses bienvenido/bienvenida." quickActions={[{ label: 'Estado de mi firma', command: '¿Cuál es el estado de mi firma electrónica?' }, { label: 'Solicitar firma', command: '¿Qué necesito para solicitar una firma electrónica?' }, { label: 'Firmar PDF', command: '¿Cómo firmo un PDF?' }, { label: 'Validar firma', command: '¿Cómo valido la firma de un documento?' }]} theme="erubrica" /> : null}
+      {tab === 'asistente' ? <EfactBotScreen userName={userName} userId={userId} onNavigate={(route) => { const nextTab = getERubricaBotTab(route); if (nextTab) onTabChange(nextTab); }} onUiAction={(action) => { const nextTab = getERubricaBotActionTab(action); if (nextTab) onTabChange(nextTab); }} sessionScope="erubrica" messages={assistantMessages} setMessages={setAssistantMessages} draft={assistantDraft} setDraft={setAssistantDraft} feedbackByMessage={assistantFeedback} setFeedbackByMessage={setAssistantFeedback} welcomeText={`Hola ${userName || ''}. Soy Númi, tu asistente de E-RÚBRICA. Puedo ayudarte con firmas, solicitudes, pagos y validación de documentos.`} assistantContext="asistente de E-RÚBRICA. Ayuda únicamente con firma electrónica: comprar o renovar certificados, crear y seguir solicitudes, requisitos de persona natural o representante legal, pagos, Uanataca, configurar certificado .p12, firmar PDF, ubicar la firma, documentos firmados y validar firmas. No ofrezcas crear facturas ni acciones de E-FACT. Usa únicamente información real disponible y no inventes datos. Usa lenguaje neutral; no asumas el género de la persona ni uses bienvenido/bienvenida." quickActions={[{ label: 'Comprar o renovar firma', command: 'Quiero comprar o renovar mi firma electrónica' }, { label: 'Estado de mi firma', command: '¿Cuál es el estado de mi firma electrónica?' }, { label: 'Solicitar firma', command: '¿Qué necesito para solicitar una firma electrónica?' }, { label: 'Firmar PDF', command: '¿Cómo firmo un PDF?' }, { label: 'Validar firma', command: '¿Cómo valido la firma de un documento?' }]} theme="erubrica" /> : null}
 
       {loading ? <View style={styles.directoryLoading}><ActivityIndicator color={ERUBRICA_COLORS.primary} /><Text style={styles.mutedText}>Cargando E-RÚBRICA...</Text></View> : null}
       {tab === 'firmar' ? (
@@ -1518,7 +1609,7 @@ export function ERubricaMobileScreen({
             {['Persona natural con cédula', 'Persona natural con RUC', 'Representante legal'].map((option) => {
               const active = solicitudPersona === option;
               return (
-              <Pressable key={option} style={[styles.erubricaRequestPerson, active && styles.erubricaRequestPersonActive]} onPress={() => { setSolicitudPersona(option); setSolicitudForm({ ...SOLICITUD_FORM_INITIAL, poseeRuc: option !== 'Persona natural con cédula' }); setSolicitudFiles(SOLICITUD_FILES_INITIAL); setSolicitudId(null); }}>
+              <Pressable key={option} style={[styles.erubricaRequestPerson, active && styles.erubricaRequestPersonActive]} onPress={() => { setSolicitudPersona(option); setSolicitudForm(buildSolicitudFormFromProfile(option)); setSolicitudFiles(SOLICITUD_FILES_INITIAL); setSolicitudId(null); }}>
                   <MaterialCommunityIcons name={active ? 'check-circle' : 'card-account-details-outline'} size={18} color={active ? ERUBRICA_COLORS.primary : '#607887'} />
                   <Text style={styles.erubricaRequestOptionTitle}>{option}</Text>
                 </Pressable>

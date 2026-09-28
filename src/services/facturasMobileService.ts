@@ -179,7 +179,7 @@ export function getSiguienteFactura(userId: number, codemisor?: number | null, s
 
 export function guardarFactura(input: FacturaGuardarInput) {
   const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
-  const getBase = (item: FacturaLineaInput) => Math.max(item.cantidad * item.precio - item.descuento, 0);
+  const getBase = (item: FacturaLineaInput) => roundMoney(Math.max(item.cantidad * item.precio - item.descuento, 0));
   const totalBase12 = input.detalles.reduce((sum, item) => sum + (item.tarifa > 0 ? getBase(item) : 0), 0);
   const totalBase0 = input.detalles.reduce((sum, item) => sum + (item.tarifa <= 0 ? getBase(item) : 0), 0);
   const totalBase = roundMoney(totalBase12 + totalBase0);
@@ -208,7 +208,8 @@ export function guardarFactura(input: FacturaGuardarInput) {
 
   const detalles = input.detalles.map((item) => {
     const base = Math.max(item.cantidad * item.precio - item.descuento, 0);
-    const iva = base * (item.tarifa / 100);
+    const baseRedondeada = roundMoney(base);
+    const iva = roundMoney(baseRedondeada * (item.tarifa / 100));
     return {
       codproducto: item.producto.codproducto,
       codprincipal: item.producto.codprincipal,
@@ -217,9 +218,9 @@ export function guardarFactura(input: FacturaGuardarInput) {
       descripproducto: [item.producto.descripcion, item.detalle?.trim()].filter(Boolean).join(' - '),
       precioproducto: item.precio,
       descuento: item.descuento,
-      valortproducto: base,
+      valortproducto: baseRedondeada,
       valoriva: iva,
-      valortotal: base + iva,
+      valortotal: roundMoney(baseRedondeada + iva),
       tarifa: item.tarifa,
       costo: item.producto.costo ?? 0,
     };

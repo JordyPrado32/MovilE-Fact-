@@ -34,12 +34,19 @@ export class ApiError extends Error {
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { timeoutMs, suppressErrorLog, headers, ...requestOptions } = options;
+  const { timeoutMs, suppressErrorLog, headers, signal: externalSignal, ...requestOptions } = options;
   const isFormData = typeof FormData !== 'undefined' && requestOptions.body instanceof FormData;
   const controller = new AbortController();
   const requestTimeoutMs = timeoutMs ?? REQUEST_TIMEOUT_MS;
   const startedAt = Date.now();
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+  const abortExternal = () => controller.abort();
+  const cleanup = () => {
+    clearTimeout(timeout);
+    externalSignal?.removeEventListener('abort', abortExternal);
+  };
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener('abort', abortExternal, { once: true });
 
   let response: Response;
 
@@ -56,7 +63,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       },
     });
   } catch (error) {
-    clearTimeout(timeout);
+    cleanup();
     if (!suppressErrorLog) logApiNetworkError(path, requestOptions.method, Date.now() - startedAt, requestTimeoutMs, error);
 
     if (error instanceof Error && error.name === 'AbortError') {
@@ -75,14 +82,14 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   try {
     text = await response.text();
   } catch (error) {
-    clearTimeout(timeout);
+    cleanup();
     if (!suppressErrorLog) logApiNetworkError(path, requestOptions.method, Date.now() - startedAt, requestTimeoutMs, error);
     if (error instanceof Error && error.name === 'AbortError') {
       throw new ApiError(0, 'La conexion con el servidor tardo demasiado.');
     }
     throw new ApiError(0, 'No se pudo leer la respuesta del servidor.');
   }
-  clearTimeout(timeout);
+  cleanup();
   const body = contentType.includes('application/json') && text ? safeParseJson(text) : text;
 
   if (!response.ok) {

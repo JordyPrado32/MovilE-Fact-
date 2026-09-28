@@ -2,16 +2,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ActivityIndicator, Alert, Image, Pressable, Text, View, useWindowDimensions } from 'react-native';
 
 import type { FacturaListItem } from '../../services/facturasMobileService';
-import { DashboardActivityItem, DashboardPrimaryAction, DashboardServiceRow } from './DashboardWidgets';
+import { DashboardActivityItem, DashboardPrimaryAction } from './DashboardWidgets';
 import { EFACT_THEME } from '../../styles/theme';
 import { styles } from '../../styles/appStyles';
 import { formatDocumentDate, formatMoney, listItemKey } from '../../utils/documentFormatting';
-
-type DashboardModule = {
-  view: string;
-  title: string;
-  description: string;
-};
 
 export type InitialSetupStatus = {
   loading: boolean;
@@ -23,14 +17,12 @@ export type InitialSetupStatus = {
 
 export function DashboardHomeScreen({
   facturas,
-  modules,
   initialSetup,
   onOpenView,
   onOpenERubricaRequest,
   onOpenVoice,
 }: {
   facturas: FacturaListItem[];
-  modules: DashboardModule[];
   initialSetup: InitialSetupStatus;
   onOpenView: (view: string) => void;
   onOpenERubricaRequest: () => void;
@@ -40,9 +32,6 @@ export function DashboardHomeScreen({
   const compact = width < 390;
   const veryCompact = width < 360;
   const latestFacturas = facturas.slice(0, 3);
-  const mainModules = modules
-    .filter((module) => ['mis-facturas', 'clientes', 'productos', 'emisor', 'punto-emision'].includes(module.view))
-    .slice(0, 5);
   const recentFactura = facturas[0];
   const openConsultas = () => {
     Alert.alert('Consultas con Númi', '¿Cómo quieres hacer tu consulta?', [
@@ -166,17 +155,6 @@ export function DashboardHomeScreen({
         )}
       </View>
 
-      <View style={styles.dashboardSectionHeader}>
-        <Text style={styles.dashboardSectionTitle}>Servicios frecuentes</Text>
-        <Pressable hitSlop={8} onPress={() => onOpenView('portal')}>
-          <Text style={styles.dashboardViewAll}>Ver todos</Text>
-        </Pressable>
-      </View>
-      <View style={styles.dashboardServiceList}>
-        {mainModules.map((module, index) => (
-          <DashboardServiceRow key={`home-module-${module.view}`} module={module} index={index} onPress={() => onOpenView(module.view)} />
-        ))}
-      </View>
     </View>
   );
 }

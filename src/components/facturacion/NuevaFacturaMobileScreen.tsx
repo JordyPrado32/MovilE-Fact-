@@ -61,21 +61,22 @@ export function NuevaFacturaMobileScreen({
   onSave: () => void | Promise<void>;
 }) {
   const toNumber = (value: string) => Number(value.replace(',', '.')) || 0;
+  const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
   const totals = lineas.reduce(
     (acc, item) => {
       const quantity = toNumber(item.cantidad);
       const price = toNumber(item.precio);
       const discount = toNumber(item.descuento);
       const rate = toNumber(item.tarifa);
-      const base = Math.max(quantity * price - discount, 0);
-      const tax = base * (rate / 100);
+      const base = roundMoney(Math.max(quantity * price - discount, 0));
+      const tax = roundMoney(base * (rate / 100));
       const key = rate <= 0 ? 'baseZero' : 'baseTaxed';
       return {
         ...acc,
         [key]: acc[key] + base,
-        discount: acc.discount + discount,
+        discount: acc.discount + roundMoney(discount),
         iva: acc.iva + tax,
-        total: acc.total + base + tax,
+        total: acc.total + roundMoney(base + tax),
       };
     },
     { baseTaxed: 0, baseZero: 0, discount: 0, iva: 0, total: 0 },
@@ -197,9 +198,9 @@ export function NuevaFacturaMobileScreen({
             const quantity = toNumber(linea.cantidad);
             const price = toNumber(linea.precio);
             const discount = toNumber(linea.descuento);
-            const base = Math.max(quantity * price - discount, 0);
+            const base = roundMoney(Math.max(quantity * price - discount, 0));
             const rate = toNumber(linea.tarifa);
-            const total = base + base * (rate / 100);
+            const total = roundMoney(base + roundMoney(base * (rate / 100)));
             return (
               <View key={`linea-factura-${index}`} style={styles.invoiceLineCard}>
                 <View style={styles.clientCardHeader}><View style={styles.clientInfo}><Text style={styles.clientName} numberOfLines={2}>{linea.producto.descripcion ?? linea.producto.codprincipal}</Text><Text style={styles.clientMeta} numberOfLines={1}>Codigo: {linea.producto.codprincipal ?? linea.producto.codproducto}</Text></View><Text style={styles.invoiceLineTotal}>{formatMoney(total)}</Text></View>

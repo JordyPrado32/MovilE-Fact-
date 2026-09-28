@@ -18,6 +18,7 @@ export type BotChatResponse = {
   emitida?: boolean;
   codigoError?: string | null;
   accionDetectada?: string | null;
+  accionUi?: string | null;
   rutaSugerida?: string | null;
   rutasSugeridas?: string[];
   seleccionPendienteTipo?: string | null;
@@ -27,6 +28,20 @@ export type BotChatResponse = {
   progreso?: BotProgressStep[];
   datosFaltantes?: string[];
   operacionPendiente?: { tipo?: string; resumen?: string; expiraEn?: string | null } | null;
+};
+
+export type BotSessionScope = 'efact' | 'erubrica';
+
+export type BotWorkflowState = {
+  invoiceDraft: BotFacturaDraft | null;
+  missingData: string[];
+  requiresConfirmation: boolean;
+  invoiceState: string;
+  selectionOptions: BotSelectionOption[];
+  progress: BotProgressStep[];
+  configurationRoutes: string[];
+  pendingOperation: { tipo?: string; resumen?: string; expiraEn?: string | null } | null;
+  workflowStale: boolean;
 };
 
 export type BotFacturaDraft = {
@@ -139,6 +154,21 @@ function normalizePendingOperation(value: unknown) {
   return { tipo: asString(value.tipo), resumen: asString(value.resumen), expiraEn: value.expiraEn === null ? null : asString(value.expiraEn) };
 }
 
+function normalizeWorkflow(value: unknown): BotWorkflowState | null {
+  if (!isRecord(value)) return null;
+  return {
+    invoiceDraft: normalizeInvoiceDraft(value.invoiceDraft) ?? null,
+    missingData: Array.isArray(value.missingData) ? value.missingData.filter((item): item is string => typeof item === 'string') : [],
+    requiresConfirmation: value.requiresConfirmation === true,
+    invoiceState: asString(value.invoiceState) ?? '',
+    selectionOptions: normalizeSelectionOptions(value.selectionOptions),
+    progress: normalizeProgress(value.progress),
+    configurationRoutes: Array.isArray(value.configurationRoutes) ? value.configurationRoutes.filter((item): item is string => typeof item === 'string') : [],
+    pendingOperation: normalizePendingOperation(value.pendingOperation) ?? null,
+    workflowStale: value.workflowStale === true,
+  };
+}
+
 function normalizeBotResponse(value: unknown): BotChatResponse | string | null {
   if (typeof value === 'string') return value;
   if (!isRecord(value)) return null;
@@ -171,17 +201,19 @@ function normalizeBotResponse(value: unknown): BotChatResponse | string | null {
   };
 }
 
-let activeBotSession: { userId: number; sessionId: string } | null = null;
+let activeBotSession: { userId: number; scope: BotSessionScope; sessionId: string } | null = null;
 let botHistoryWrite = Promise.resolve();
 const BOT_HISTORY_TTL_MS = 24 * 60 * 60 * 1000;
 const BOT_HISTORY_KEY_PREFIX = 'efact.bot.history.key.';
 
-function historyFileUri(userId: number) {
-  return userId > 0 && FileSystem.documentDirectory ? `${FileSystem.documentDirectory}${BOT_HISTORY_FILE_PREFIX}${userId}.json` : null;
+function historyFileUri(userId: number, scope: BotSessionScope = 'efact') {
+  return userId > 0 && FileSystem.documentDirectory
+    ? `${FileSystem.documentDirectory}${BOT_HISTORY_FILE_PREFIX}${scope === 'efact' ? '' : `${scope}.`}${userId}.json`
+    : null;
 }
 
-function historyKey(userId: number) {
-  return `${BOT_HISTORY_KEY_PREFIX}${userId}`;
+function historyKey(userId: number, scope: BotSessionScope = 'efact') {
+  return `${BOT_HISTORY_KEY_PREFIX}${scope === 'efact' ? '' : `${scope}.`}${userId}`;
 }
 
 function toBase64(bytes: Uint8Array) {
@@ -197,26 +229,26 @@ function fromBase64(value: string) {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-async function getHistoryKey(userId: number, create: boolean) {
+async function getHistoryKey(userId: number, scope: BotSessionScope, create: boolean) {
   if (userId <= 0 || !(await SecureStore.isAvailableAsync())) return null;
   try {
-    const stored = await SecureStore.getItemAsync(historyKey(userId));
+    const stored = await SecureStore.getItemAsync(historyKey(userId, scope));
     if (stored) return stored;
     if (!create || !globalThis.crypto?.getRandomValues) return null;
     const bytes = new Uint8Array(32);
     globalThis.crypto.getRandomValues(bytes);
     const generated = toBase64(bytes);
     if (!generated) return null;
-    await SecureStore.setItemAsync(historyKey(userId), generated);
+    await SecureStore.setItemAsync(historyKey(userId, scope), generated);
     return generated;
   } catch {
     return null;
   }
 }
 
-async function encryptHistory(userId: number, value: string) {
+async function encryptHistory(userId: number, scope: BotSessionScope, value: string) {
   const cryptoApi = globalThis.crypto;
-  const keyValue = await getHistoryKey(userId, true);
+  const keyValue = await getHistoryKey(userId, scope, true);
   if (!cryptoApi?.subtle || !cryptoApi.getRandomValues || !keyValue) return null;
   const rawKey = fromBase64(keyValue);
   if (!rawKey) return null;
@@ -234,9 +266,9 @@ async function encryptHistory(userId: number, value: string) {
   return encodedIv && encodedData ? `v1.${encodedIv}.${encodedData}` : null;
 }
 
-async function decryptHistory(userId: number, value: string) {
+async function decryptHistory(userId: number, scope: BotSessionScope, value: string) {
   const cryptoApi = globalThis.crypto;
-  const keyValue = await getHistoryKey(userId, false);
+  const keyValue = await getHistoryKey(userId, scope, false);
   if (!cryptoApi?.subtle || !keyValue || !value.startsWith('v1.')) return null;
   const [, encodedIv, encodedData] = value.split('.');
   const iv = encodedIv ? fromBase64(encodedIv) : null;
@@ -264,17 +296,18 @@ function isBotMessage(value: unknown): value is BotMessage {
   return typeof candidate.id === 'string' && (candidate.role === 'user' || candidate.role === 'assistant') && typeof candidate.text === 'string';
 }
 
-export async function loadBotHistory(userId: number) {
-  const uri = historyFileUri(userId);
+export async function loadBotHistory(userId: number, scope: BotSessionScope = 'efact') {
+  const uri = historyFileUri(userId, scope);
   if (!uri) return null;
   try {
     const info = await FileSystem.getInfoAsync(uri);
     if (!info.exists) return null;
-    const decrypted = await decryptHistory(userId, await FileSystem.readAsStringAsync(uri));
+    const decrypted = await decryptHistory(userId, scope, await FileSystem.readAsStringAsync(uri));
     if (!decrypted) return null;
-    const parsed = JSON.parse(decrypted) as { savedAt?: number; messages?: unknown; feedbackByMessage?: unknown };
+    const parsed = JSON.parse(decrypted) as { savedAt?: number; messages?: unknown; feedbackByMessage?: unknown; workflow?: unknown };
     if (!parsed.savedAt || Date.now() - parsed.savedAt > BOT_HISTORY_TTL_MS) {
       await FileSystem.deleteAsync(uri, { idempotent: true });
+      await resetBotSession(userId, scope);
       return null;
     }
     const messages = Array.isArray(parsed.messages) ? parsed.messages.filter(isBotMessage).slice(-100) : [];
@@ -284,23 +317,24 @@ export async function loadBotHistory(userId: number) {
         if (value === 'like' || value === 'dislike') feedbackByMessage[id] = value;
       }
     }
-    return { messages, feedbackByMessage };
+    return { messages, feedbackByMessage, workflow: normalizeWorkflow(parsed.workflow) };
   } catch {
     return null;
   }
 }
 
-export function saveBotHistory(userId: number, messages: BotMessage[], feedbackByMessage: BotFeedbackState) {
-  const uri = historyFileUri(userId);
+export function saveBotHistory(userId: number, messages: BotMessage[], feedbackByMessage: BotFeedbackState, workflow: BotWorkflowState | null = null, scope: BotSessionScope = 'efact') {
+  const uri = historyFileUri(userId, scope);
   if (!uri) return Promise.resolve();
   const value = JSON.stringify({
     savedAt: Date.now(),
     messages: messages.slice(-100).map(sanitizeHistoryMessage),
     feedbackByMessage,
+    workflow,
   });
   botHistoryWrite = botHistoryWrite
     .then(async () => {
-      const encrypted = await encryptHistory(userId, value);
+      const encrypted = await encryptHistory(userId, scope, value);
       if (!encrypted) return;
       await FileSystem.writeAsStringAsync(uri, encrypted);
     })
@@ -308,18 +342,18 @@ export function saveBotHistory(userId: number, messages: BotMessage[], feedbackB
   return botHistoryWrite;
 }
 
-export function clearBotHistory(userId: number) {
-  const uri = historyFileUri(userId);
+export function clearBotHistory(userId: number, scope: BotSessionScope = 'efact') {
+  const uri = historyFileUri(userId, scope);
   botHistoryWrite = botHistoryWrite
     .then(async () => {
       if (uri) await FileSystem.deleteAsync(uri, { idempotent: true });
       if (userId > 0 && await SecureStore.isAvailableAsync()) {
-        await SecureStore.deleteItemAsync(historyKey(userId));
-        await SecureStore.deleteItemAsync(storageKey(userId));
+        await SecureStore.deleteItemAsync(historyKey(userId, scope));
+        await SecureStore.deleteItemAsync(storageKey(userId, scope));
       }
     })
     .catch(() => undefined);
-  if (activeBotSession?.userId === userId) activeBotSession = null;
+  if (activeBotSession?.userId === userId && activeBotSession.scope === scope) activeBotSession = null;
   return botHistoryWrite;
 }
 
@@ -328,54 +362,65 @@ function buildSessionId(userId: number) {
   return `mobile-${userId}-${Date.now().toString(36)}-${randomPart}`;
 }
 
-function storageKey(userId: number) {
-  return `${BOT_SESSION_STORAGE_PREFIX}${userId}`;
+function buildRequestId() {
+  return `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-async function readStoredSession(userId: number) {
+function storageKey(userId: number, scope: BotSessionScope) {
+  return `${BOT_SESSION_STORAGE_PREFIX}${scope}.${userId}`;
+}
+
+async function readStoredSession(userId: number, scope: BotSessionScope) {
   if (userId <= 0 || !(await SecureStore.isAvailableAsync())) return null;
   try {
-    return await SecureStore.getItemAsync(storageKey(userId));
+    return await SecureStore.getItemAsync(storageKey(userId, scope));
   } catch {
     return null;
   }
 }
 
-async function saveStoredSession(userId: number, sessionId: string) {
+async function saveStoredSession(userId: number, scope: BotSessionScope, sessionId: string) {
   if (userId <= 0 || !(await SecureStore.isAvailableAsync())) return;
   try {
-    await SecureStore.setItemAsync(storageKey(userId), sessionId);
+    await SecureStore.setItemAsync(storageKey(userId, scope), sessionId);
   } catch {
     // La sesión sigue funcionando en memoria si el dispositivo no permite almacenamiento seguro.
   }
 }
 
-export async function getOrCreateBotSessionId(userId: number) {
-  if (activeBotSession?.userId === userId) return activeBotSession.sessionId;
+export async function getOrCreateBotSessionId(userId: number, scope: BotSessionScope = 'efact') {
+  if (activeBotSession?.userId === userId && activeBotSession.scope === scope) return activeBotSession.sessionId;
 
-  const stored = await readStoredSession(userId);
-  const sessionId = stored?.trim() || (BOT_SESSION_ID && userId <= 0 ? BOT_SESSION_ID : buildSessionId(userId));
-  activeBotSession = { userId, sessionId };
-  if (sessionId !== stored) await saveStoredSession(userId, sessionId);
+  const stored = await readStoredSession(userId, scope);
+  const sessionId = stored?.trim() || (BOT_SESSION_ID && userId <= 0 && scope === 'efact' ? BOT_SESSION_ID : buildSessionId(userId));
+  activeBotSession = { userId, scope, sessionId };
+  if (sessionId !== stored) await saveStoredSession(userId, scope, sessionId);
   return sessionId;
 }
 
-export async function resetBotSession(userId: number) {
+export async function resetBotSession(userId: number, scope: BotSessionScope = 'efact') {
   const sessionId = buildSessionId(userId);
-  activeBotSession = { userId, sessionId };
-  await saveStoredSession(userId, sessionId);
+  activeBotSession = { userId, scope, sessionId };
+  await saveStoredSession(userId, scope, sessionId);
   return sessionId;
 }
 
-export async function sendBotMessage(input: { message: string; userId?: number; sessionId?: string; contexto?: string; modo?: 'texto' | 'voz'; requestId?: string }) {
-  const sessionId = input.sessionId ?? await getOrCreateBotSessionId(input.userId ?? 0);
+export async function sendBotMessage(input: { message: string; userId?: number; sessionId?: string; sessionScope?: BotSessionScope; contexto?: string; modo?: 'texto' | 'voz'; requestId?: string; signal?: AbortSignal }) {
+  const message = input.message.trim();
+  if (!message) throw new Error('Escribe una instrucción para Númi.');
+  if (message.length > 800) throw new Error('La instrucción no puede superar 800 caracteres.');
+  const sessionScope = input.sessionScope ?? 'efact';
+  const sessionId = input.sessionId ?? await getOrCreateBotSessionId(input.userId ?? 0, sessionScope);
+  const requestId = input.requestId?.trim() || buildRequestId();
   const response = normalizeBotResponse(await apiRequest<unknown>(BOT_CHAT_PATH, {
     method: 'POST',
     timeoutMs: 60000,
+    signal: input.signal,
     body: JSON.stringify({
-      requestId: input.requestId,
+      requestId,
         sessionId,
-        mensaje: input.message.trim(),
+        scope: sessionScope,
+        mensaje: message,
         modo: input.modo ?? 'texto',
         contexto: input.contexto,
       }),
@@ -383,16 +428,24 @@ export async function sendBotMessage(input: { message: string; userId?: number; 
 
   if (!response) throw new Error('El bot devolvió una respuesta inválida.');
 
-  const answer = typeof response === 'string' ? response : response.respuesta ?? response.response ?? response.mensaje ?? response.message
-    ?? response.data?.respuesta ?? response.data?.response ?? response.data?.mensaje ?? response.data?.message;
-  if (!answer?.trim()) throw new Error('El bot no devolvio una respuesta valida.');
-  const responseSessionId = typeof response === 'string' ? sessionId : response.sessionId ?? sessionId;
+  const answer = typeof response === 'string' ? response : [
+    response.respuesta,
+    response.response,
+    response.mensaje,
+    response.message,
+    response.data?.respuesta,
+    response.data?.response,
+    response.data?.mensaje,
+    response.data?.message,
+  ].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+  if (!answer?.trim()) throw new Error('El bot no devolvió una respuesta válida.');
+  const responseSessionId = typeof response === 'string' ? sessionId : response.sessionId?.trim() || sessionId;
   if (input.userId && input.userId > 0) {
-    activeBotSession = { userId: input.userId, sessionId: responseSessionId };
-    await saveStoredSession(input.userId, responseSessionId);
+    activeBotSession = { userId: input.userId, scope: sessionScope, sessionId: responseSessionId };
+    await saveStoredSession(input.userId, sessionScope, responseSessionId);
   }
   return {
-    requestId: typeof response === 'string' ? input.requestId : response.requestId ?? input.requestId,
+    requestId: typeof response === 'string' ? requestId : response.requestId?.trim() || requestId,
     sessionId: responseSessionId,
     estadoVersion: typeof response === 'string' ? undefined : response.estadoVersion,
     answer: answer.trim(),
@@ -404,6 +457,7 @@ export async function sendBotMessage(input: { message: string; userId?: number; 
     emitted: typeof response === 'string' ? false : response.emitida === true,
     errorCode: typeof response === 'string' ? undefined : response.codigoError ?? undefined,
     action: typeof response === 'string' ? undefined : response.accionDetectada,
+    uiAction: typeof response === 'string' ? undefined : response.accionUi ?? undefined,
     pendingSelectionType: typeof response === 'string' ? undefined : response.seleccionPendienteTipo,
     pendingSelectionMessage: typeof response === 'string' ? undefined : response.seleccionPendienteMensaje,
     selectionOptions: typeof response === 'string' ? [] : response.opcionesSeleccion ?? [],

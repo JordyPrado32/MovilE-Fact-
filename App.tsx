@@ -32,6 +32,7 @@ import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from 'react-native-
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ApiError, clearAuthSession, getAuthSessionCookie, setAuthFailureHandler } from './src/services/apiClient';
 import { clearBotHistory, loadBotHistory, saveBotHistory, sendBotMessage } from './src/services/botService';
+import type { BotWorkflowState } from './src/services/botService';
 import { API_BASE_URL } from './src/config/api';
 import { AdminMobileItem, getAdminMobileModule } from './src/services/adminMobileService';
 import { changePassword, checkAuth, login, logout as logoutSession, recoverPassword, register } from './src/services/authService';
@@ -122,6 +123,12 @@ function getDocumentAssetUrl(response: { url?: string | null } | string) {
   const value = typeof response === 'string' ? response : response.url;
   if (!value) return '';
   return value.startsWith('http') ? value : `${API_BASE_URL.replace(/\/$/, '')}/${value.replace(/^\//, '')}`;
+}
+
+function normalizeFacturaIva(value?: number | null) {
+  const rate = Number(value ?? 0);
+  if (!Number.isFinite(rate)) return 0;
+  return ({ 2: 12, 3: 14, 4: 15, 5: 5, 6: 0, 7: 0, 8: 8, 10: 13, 13: 10, 14: 3, 15: 15 } as Record<number, number>)[rate] ?? Math.max(0, rate);
 }
 
 const TEXTO_NOMBRE_VALIDO = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 .,'&()\-]+$/;
@@ -810,6 +817,7 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
   const [botMessages, setBotMessages] = useState<BotMessage[]>([]);
   const [botDraft, setBotDraft] = useState('');
   const [botFeedbackByMessage, setBotFeedbackByMessage] = useState<BotFeedbackState>({});
+  const [botWorkflow, setBotWorkflow] = useState<BotWorkflowState | null>(null);
   const [pdfPositionDragging, setPdfPositionDragging] = useState(false);
   const botHistoryReadyRef = useRef(false);
   const [portalServiceQuery, setPortalServiceQuery] = useState('');
@@ -1027,6 +1035,7 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
     botHistoryReadyRef.current = false;
     setBotMessages([]);
     setBotFeedbackByMessage({});
+    setBotWorkflow(null);
     if (!userId) {
       botHistoryReadyRef.current = true;
       return () => { mounted = false; };
@@ -1034,9 +1043,13 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
     void loadBotHistory(userId).then((history) => {
       if (!mounted) return;
       if (history?.messages.length) {
-        setBotMessages((current) => current.length <= 1 && current[0]?.id === 'welcome' ? history.messages : [...history.messages, ...current]);
+        setBotMessages((current) => {
+          const currentWithoutWelcome = current.filter((message) => message.id !== 'welcome');
+          return currentWithoutWelcome.length ? [...history.messages, ...currentWithoutWelcome] : history.messages;
+        });
         setBotFeedbackByMessage((current) => ({ ...history.feedbackByMessage, ...current }));
       }
+      setBotWorkflow(history?.workflow ?? null);
       botHistoryReadyRef.current = true;
     }).catch(() => {
       if (mounted) botHistoryReadyRef.current = true;
@@ -1046,8 +1059,8 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
 
   useEffect(() => {
     if (!userId || !botHistoryReadyRef.current) return;
-    void saveBotHistory(userId, botMessages, botFeedbackByMessage);
-  }, [userId, botMessages, botFeedbackByMessage]);
+    void saveBotHistory(userId, botMessages, botFeedbackByMessage, botWorkflow);
+  }, [userId, botMessages, botFeedbackByMessage, botWorkflow]);
 
   useEffect(() => {
     if (!userId) return;
@@ -3196,7 +3209,7 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
     descripcion: producto.nombre,
     precioUnitario: getProductoPrice(producto),
     costo: getProductoPrice(producto),
-    tarifaIva: producto.tarifa ?? (producto.iva ? 12 : 0),
+    tarifaIva: normalizeFacturaIva(producto.tarifa ?? (producto.iva ? 12 : 0)),
   });
 
   const searchLocalFacturaProductos = (rawFilter: string) => {
@@ -3706,6 +3719,10 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
 
   const retryFacturaSri = async (factura: FacturaListItem) => {
     if (!catalogUserId) return;
+    if (factura.autorizado || normalizeSriState(factura.estadoSri) === 'AUTORIZADO') {
+      setDirectoryMessage({ type: 'info', text: 'Esta factura ya fue autorizada por el SRI y no se puede volver a emitir.' });
+      return;
+    }
     const prerequisitesError = await validateEmissionPrerequisites();
     if (prerequisitesError) {
       setDirectoryMessage({ type: 'error', text: prerequisitesError });
@@ -5174,6 +5191,7 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
   });
 
   const openView = (view: WorkspaceView) => {
+    botVoiceControlsRef.current?.dismiss();
     setMenuOpen(false);
     setSearch('');
 
@@ -5284,11 +5302,16 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
       '/notas-debito': 'mis-notas-debito',
       '/guias-remision': 'mis-guias-remision',
       '/compras': 'compras',
+      '/proveedores': 'proveedores',
       '/perfil': 'perfil',
       '/reportes': 'reportes',
       '/reportes/documentos': 'reportes',
       '/e-rubrica': 'e-rubrica',
       '/cuentas-cobrar': 'cuentas-cobrar',
+      '/estado-cuenta': 'estado-cuenta',
+      '/recargas': 'recargas',
+      '/comprar-documentos': 'comprar-documentos',
+      '/centro-normativo': 'centro-normativo',
       '/emisor': 'emisor',
       '/nuevo-emisor': 'nuevo-emisor',
       '/firma': 'firma',
@@ -5298,10 +5321,14 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
     const normalizedRoute = route.trim().toLowerCase().split('?')[0].replace(/\/+$/, '') || '/';
     const erubricaRouteMap: Record<string, ERubricaTab> = {
       '/e-rubrica/configuracion/firma': 'firma-config',
+      '/e-rubrica/configuracion/plan': 'plan-disponible',
+      '/e-rubrica/plan-disponible': 'plan-disponible',
       '/e-rubrica/mis-firmas': 'ver-mis-firmas',
       '/solicitud/pagos': 'historial-solicitudes',
       '/solicitud/nueva': 'nueva-solicitud',
       '/e-rubrica/documentos': 'historial-documentos',
+      '/e-rubrica/documentos-por-firmar': 'documentos-por-firmar',
+      '/e-rubrica/documentos/por-firmar': 'documentos-por-firmar',
       '/e-rubrica/documentos/firmar': 'firmar',
       '/e-rubrica/documentos/validar-firma': 'validar-firma',
     };
@@ -5505,6 +5532,18 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
     };
   }, [incomingPdfUri, canUseERubrica]);
 
+  const downloadPdfForPreview = async (url: string, target: string) => {
+    const cookie = getAuthSessionCookie();
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers: cookie ? { Cookie: cookie } : undefined,
+    });
+    if (!response.ok) throw new ApiError(response.status, 'No se pudo descargar el PDF.');
+    const bytes = await response.arrayBuffer();
+    await FileSystem.writeAsStringAsync(target, arrayBufferToBase64(bytes), { encoding: FileSystem.EncodingType.Base64 });
+    return { status: response.status, uri: target };
+  };
+
   const openPdfPreview = async (loader: () => Promise<{ url?: string | null } | string>, fileName: string) => {
     try {
       const response = await loader();
@@ -5513,10 +5552,12 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
       const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
       if (!baseDirectory) throw new Error('missing-directory');
       const target = `${baseDirectory}preview-${Date.now()}-${fileName.replace(/[^a-z0-9._-]/gi, '-')}`;
-      const cookie = getAuthSessionCookie();
-      const download = await FileSystem.downloadAsync(url, target, cookie ? { headers: { Cookie: cookie } } : undefined);
+      const download = await downloadPdfForPreview(url, target);
       const fileInfo = await FileSystem.getInfoAsync(download.uri);
-      if (download.status !== 200 || !fileInfo.exists || (fileInfo.size ?? 0) < 16) {
+      const signature = fileInfo.exists
+        ? await FileSystem.readAsStringAsync(download.uri, { encoding: FileSystem.EncodingType.Base64 })
+        : '';
+      if (download.status !== 200 || !fileInfo.exists || (fileInfo.size ?? 0) < 16 || !signature.startsWith('JVBERi0')) {
         throw new Error('invalid-pdf-download');
       }
       setPdfPreview({ uri: download.uri, name: fileName });
@@ -5566,11 +5607,20 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
       if (!url) throw new Error('empty-url');
       const cacheDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
       if (!cacheDirectory) throw new Error('missing-directory');
-      const cookie = getAuthSessionCookie();
-      const download = await FileSystem.downloadAsync(url, `${cacheDirectory}preview-${Date.now()}-${buildDeviceFileName(fileName, '.pdf')}`, cookie ? { headers: { Cookie: cookie } } : undefined);
+      const download = await downloadPdfForPreview(
+        url,
+        `${cacheDirectory}preview-${Date.now()}-${buildDeviceFileName(fileName, '.pdf')}`
+      );
+      const fileInfo = await FileSystem.getInfoAsync(download.uri);
+      const signature = fileInfo.exists
+        ? await FileSystem.readAsStringAsync(download.uri, { encoding: FileSystem.EncodingType.Base64 })
+        : '';
+      if (download.status !== 200 || !fileInfo.exists || (fileInfo.size ?? 0) < 16 || !signature.startsWith('JVBERi0')) {
+        throw new Error('invalid-pdf-download');
+      }
       await openLocalPdfInDeviceViewer(download.uri);
     } catch (error) {
-      setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo previsualizar el PDF.' });
+      setDirectoryMessage({ type: 'error', text: error instanceof ApiError ? error.message : 'No se pudo abrir el PDF.' });
     }
   };
   const sharePdf = async (loader: () => Promise<{ url?: string | null } | string>, fileName: string) => {
@@ -5792,6 +5842,7 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
       botFeedbackByMessage,
       botHistoryReadyRef,
       botMessages,
+      botWorkflow,
       botVoiceControlsRef,
       canUseERubrica,
       canUseEfact,
@@ -6176,6 +6227,7 @@ function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled, onLog
       setBotDraft,
       setBotFeedbackByMessage,
       setBotMessages,
+      setBotWorkflow,
       setCategoriaForm,
       setCategoriaFormMode,
       setCategoriaTab,
