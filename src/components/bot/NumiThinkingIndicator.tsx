@@ -1,23 +1,32 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 function getThinkingDetail(request: string) {
   const normalized = request.toLowerCase();
-  if (normalized.includes('cliente') || normalized.includes('proveedor')) return 'Consultando tus clientes y evitando pedir datos que ya existen.';
-  if (normalized.includes('producto') || normalized.includes('servicio')) return 'Consultando el catálogo y usando sus precios e IVA reales.';
-  if (normalized.includes('factura') || normalized.includes('vender') || normalized.includes('venta')) return 'Consultando cliente, productos y valores de la factura.';
-  if (normalized.includes('firma') || normalized.includes('rúbrica') || normalized.includes('rubrica')) return 'Revisando el proceso de firma y el siguiente paso.';
-  return 'Consultando la información necesaria para responderte.';
+  if (normalized.includes('cliente') || normalized.includes('proveedor')) return ['Consultando tus clientes y evitando pedir datos que ya existen.', 'Validando la información encontrada.', 'Preparando una respuesta clara.'];
+  if (normalized.includes('producto') || normalized.includes('servicio')) return ['Consultando el catálogo y usando sus precios e IVA reales.', 'Validando precios e impuestos.', 'Preparando una respuesta clara.'];
+  if (normalized.includes('factura') || normalized.includes('vender') || normalized.includes('venta')) return ['Consultando cliente, productos y valores de la factura.', 'Revisando los datos de la operación.', 'Preparando el siguiente paso.'];
+  if (normalized.includes('firma') || normalized.includes('rúbrica') || normalized.includes('rubrica')) return ['Revisando el proceso de firma y el siguiente paso.', 'Validando la información disponible.', 'Preparando una respuesta clara.'];
+  return ['Consultando la información necesaria para responderte.', 'Validando la solicitud.', 'Preparando una respuesta clara.'];
 }
 
 export function NumiThinkingIndicator({ request, reduceMotion = false }: { request: string; reduceMotion?: boolean }) {
-  const detail = getThinkingDetail(request);
+  const [detailIndex, setDetailIndex] = useState(0);
+  const thinkingDetails = getThinkingDetail(request);
+  const detail = thinkingDetails[detailIndex % thinkingDetails.length];
   const bob = useRef(new Animated.Value(0)).current;
   const glow = useRef(new Animated.Value(0.55)).current;
   const orbit = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(1)).current;
   const progress = useRef(new Animated.Value(0.1)).current;
+
+  useEffect(() => {
+    setDetailIndex(0);
+    if (thinkingDetails.length <= 1) return undefined;
+    const timer = setInterval(() => setDetailIndex((current) => current + 1), 1800);
+    return () => clearInterval(timer);
+  }, [request]);
 
   useEffect(() => {
     if (reduceMotion) {

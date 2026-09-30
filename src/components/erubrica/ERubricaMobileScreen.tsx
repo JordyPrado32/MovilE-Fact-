@@ -2,6 +2,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
+import * as SecureStore from 'expo-secure-store';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
@@ -27,6 +28,7 @@ import { ERubricaDashboard, ERubricaDocumentoFirmado, ERubricaDocumentoPendiente
 import { EFACT_THEME, ERUBRICA_COLORS } from '../../styles/theme';
 import { formatDocumentDate } from '../../utils/documentFormatting';
 import { arrayBufferToBase64, buildDeviceFileName } from '../../utils/fileUtils';
+import { buildSignatureConfirmation } from '../../utils/signatureConfirmation';
 import { validateEmail, validateIdentificacion } from '../../utils/authValidation';
 import { EmptyState } from '../ui/FeedbackStates';
 import { Field, MessageBox, PrimaryButton, SecondaryButton } from '../ui/FormControls';
@@ -35,6 +37,8 @@ import { styles } from '../../styles/appStyles';
 import type { BotFeedbackState, BotMessage } from '../../types/bot';
 import { EfactBotScreen } from '../bot/EfactBotScreen';
 import { SOLICITUD_FILES_INITIAL, SOLICITUD_FORM_INITIAL, SOLICITUD_UBICACIONES_ECUADOR, type ERubricaTab, type SolicitudDocumentoKey } from '../../features/erubrica/erubricaTypes';
+
+const MemoizedWebView = React.memo(WebView);
 
 type MessageState = {
   type: 'success' | 'error' | 'info';
@@ -57,7 +61,13 @@ function getDocumentAssetUrl(response: { url?: string | null } | string) {
 
 const PDFJS_VIEWER_URI = Image.resolveAssetSource(require('../../../assets/pdfjs/pdf.min.pdf')).uri;
 const PDFJS_WORKER_URI = Image.resolveAssetSource(require('../../../assets/pdfjs/pdf.worker.min.pdf')).uri;
+const PDF_ORIGIN_WHITELIST = ['*'];
 const TEXTO_SOLICITUD_VALIDO = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ .,'&()\-]+$/;
+
+function getSignatureDraftKey(userId: number, uri: string) {
+  const safeUri = uri.replace(/[^a-zA-Z0-9_-]/g, '_').slice(-100);
+  return `efact.erubrica.signature.${userId}.${safeUri}`;
+}
 
 const ERUBRICA_BOT_ROUTE_MAP: Record<string, ERubricaTab> = {
   '/e-rubrica': 'inicio',
@@ -184,6 +194,7 @@ export function PdfDocumentPreview({
 }) {
   const [base64, setBase64] = useState<string | null>(null);
   const [renderedHeight, setRenderedHeight] = useState(420);
+  const pdfWebViewRef = useRef<WebView>(null);
   const pdfJsViewerSource = usePdfJsSource(PDFJS_VIEWER_URI);
   const pdfJsWorkerSource = usePdfJsSource(PDFJS_WORKER_URI);
   const pdfJsSource = pdfJsViewerSource && pdfJsWorkerSource ? `${pdfJsViewerSource}\n${pdfJsWorkerSource}` : null;
@@ -198,11 +209,39 @@ export function PdfDocumentPreview({
     return () => { mounted = false; };
   }, [uri]);
 
-  const markers = selectable ? placements.map((placement, index) => ({ ...placement, index })).filter((placement) => placement.page === page).map((placement) => `<div class="marker" data-index="${placement.index}" style="left:${(placement.x * 100).toFixed(2)}%;top:${(placement.y * 100).toFixed(2)}%">${placement.label}</div>`).join('') : '';
+  const pdfCallbacksRef = useRef({ onPositionChange, onPlacementMove, onPlacementDelete, onPageSizeChange, onPageCountChange, onDragChange });
+  pdfCallbacksRef.current = { onPositionChange, onPlacementMove, onPlacementDelete, onPageSizeChange, onPageCountChange, onDragChange };
+  const syncPdfMarkers = React.useCallback(() => {
+    if (!selectable) return;
+    const markers = placements
+      .map((placement, index) => ({ ...placement, index }))
+      .filter((placement) => placement.page === page);
+    pdfWebViewRef.current?.injectJavaScript(`(()=>{const viewer=document.getElementById('viewer');if(!viewer)return;viewer.querySelectorAll('.marker').forEach(value=>value.remove());const host=document.getElementById('markers')||(()=>{const value=document.createElement('div');value.id='markers';viewer.appendChild(value);return value})();host.innerHTML='';${JSON.stringify(markers)}.forEach(m=>{const el=document.createElement('div');el.className='marker';el.dataset.index=String(m.index);el.textContent=m.label||'';el.style.left=(m.x*100).toFixed(2)+'%';el.style.top=(m.y*100).toFixed(2)+'%';host.appendChild(el)})})();true;`);
+  }, [page, placements, selectable]);
+  useEffect(() => {
+    syncPdfMarkers();
+  }, [syncPdfMarkers]);
   const clickHandler = selectable ? `let dragging=false,marker=null;const moveMarker=e=>{const r=c.getBoundingClientRect(),x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y=Math.max(0,Math.min(1,(e.clientY-r.top)/r.height));if(marker){marker.style.left=(x*100)+'%';marker.style.top=(y*100)+'%'}return{x,y}};viewer.addEventListener('pointerdown',e=>{marker=e.target.closest('.marker');if(e.target!==c&&!marker)return;dragging=true;viewer.setPointerCapture&&viewer.setPointerCapture(e.pointerId);window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:true}));moveMarker(e)});viewer.addEventListener('pointermove',e=>{if(dragging)moveMarker(e)});const finish=e=>{if(!dragging)return;dragging=false;const p=moveMarker(e);const index=marker&&Number(marker.dataset.index);window.ReactNativeWebView.postMessage(JSON.stringify(marker&&Number.isInteger(index)?{type:'move',index,x:p.x,y:p.y}:{type:'position',x:p.x,y:p.y}));marker=null;window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:false}))};viewer.addEventListener('pointerup',finish);viewer.addEventListener('pointercancel',finish);` : '';
   const sizeHandler = selectable ? `window.ReactNativeWebView.postMessage(JSON.stringify({type:'size',widthMm:v.width*25.4/72,heightMm:v.height*25.4/72}));` : '';
+  const markers = selectable ? placements.map((placement, index) => ({ ...placement, index })).filter((placement) => placement.page === page).map((placement) => `<div class="marker" data-index="${placement.index}" style="left:${(placement.x * 100).toFixed(2)}%;top:${(placement.y * 100).toFixed(2)}%">${placement.label}</div>`).join('') : '';
   const html = base64 && pdfJsSource ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>html,body{margin:0;background:#eef3f7}#stage{text-align:center;padding:12px;box-sizing:border-box}#viewer{display:inline-block;position:relative}#canvas{display:block;background:#fff;max-width:100%;box-shadow:0 2px 8px #63758755}.marker{position:absolute;transform:translate(-50%,-50%);width:84px;height:36px;border:2px solid #087c3a;background:#e5f8ebdd;color:#087c3a;font:700 11px Arial;border-radius:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;touch-action:none}</style></head><body><div id="stage"><div id="viewer"><canvas id="canvas"></canvas>${markers}</div></div><script>${pdfJsSource}</script><script>try{const r=atob('${base64}'),b=new Uint8Array(r.length);for(let i=0;i<r.length;i++)b[i]=r.charCodeAt(i);pdfjsLib.getDocument({data:b,disableWorker:true}).promise.then(d=>{window.ReactNativeWebView.postMessage(JSON.stringify({type:'pageCount',pageCount:d.numPages}));return d.getPage(Math.min(${page},d.numPages))}).then(p=>{const v=p.getViewport({scale:1}),s=Math.min((innerWidth-24)/v.width,1.5),d=Math.min(3,window.devicePixelRatio||2),q=p.getViewport({scale:s}),h=p.getViewport({scale:s*d}),c=document.getElementById('canvas'),viewer=document.getElementById('viewer');c.width=h.width;c.height=h.height;c.style.width=q.width+'px';c.style.height=q.height+'px';${sizeHandler}window.ReactNativeWebView.postMessage(JSON.stringify({type:'height',height:Math.ceil(q.height+24)}));return p.render({canvasContext:c.getContext('2d'),viewport:h}).promise.then(()=>{${clickHandler}})}).catch(()=>document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>')}catch(e){document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>'}</script></body></html>` : base64 === '' ? '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">El archivo descargado no es un PDF válido.</p>' : pdfJsUnavailable ? '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo iniciar el visor de PDF.</p>' : '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">Cargando PDF…</p>';
-  const preview = <WebView key={`${uri}-${page}-${base64 ? 'ready' : 'loading'}`} originWhitelist={['*']} source={{ html }} javaScriptEnabled domStorageEnabled allowFileAccess allowFileAccessFromFileURLs allowUniversalAccessFromFileURLs style={[styles.pdfDocumentWebView, { height: renderedHeight }]} onMessage={(event) => { try { const result = JSON.parse(event.nativeEvent.data) as { type?: string; dragging?: boolean; index?: number; x?: number; y?: number; widthMm?: number; heightMm?: number; height?: number; pageCount?: number }; if (result.type === 'drag' && typeof result.dragging === 'boolean') onDragChange?.(result.dragging); if (result.type === 'position' && typeof result.x === 'number' && typeof result.y === 'number') onPositionChange?.({ x: result.x, y: result.y }); if (result.type === 'move' && typeof result.index === 'number' && typeof result.x === 'number' && typeof result.y === 'number') onPlacementMove?.(result.index, { x: result.x, y: result.y }); if (result.type === 'size' && typeof result.widthMm === 'number' && typeof result.heightMm === 'number') onPageSizeChange?.({ widthMm: result.widthMm, heightMm: result.heightMm }); if (result.type === 'height' && typeof result.height === 'number') setRenderedHeight(Math.max(240, Math.min(820, result.height))); if (result.type === 'pageCount' && typeof result.pageCount === 'number') onPageCountChange?.(result.pageCount); } catch { /* ignore viewer messages */ } }} />;
+  const handlePdfMessage = React.useCallback((event: { nativeEvent: { data: string } }) => {
+    try {
+      const result = JSON.parse(event.nativeEvent.data) as { type?: string; dragging?: boolean; index?: number; x?: number; y?: number; widthMm?: number; heightMm?: number; height?: number; pageCount?: number };
+      const callbacks = pdfCallbacksRef.current;
+      if (result.type === 'drag' && typeof result.dragging === 'boolean') callbacks.onDragChange?.(result.dragging);
+      if (result.type === 'position' && typeof result.x === 'number' && typeof result.y === 'number') callbacks.onPositionChange?.({ x: result.x, y: result.y });
+      if (result.type === 'move' && typeof result.index === 'number' && typeof result.x === 'number' && typeof result.y === 'number') callbacks.onPlacementMove?.(result.index, { x: result.x, y: result.y });
+      if (result.type === 'size' && typeof result.widthMm === 'number' && typeof result.heightMm === 'number') callbacks.onPageSizeChange?.({ widthMm: result.widthMm, heightMm: result.heightMm });
+      if (result.type === 'height' && typeof result.height === 'number') setRenderedHeight(Math.max(240, Math.min(820, result.height)));
+      if (result.type === 'pageCount' && typeof result.pageCount === 'number') callbacks.onPageCountChange?.(result.pageCount);
+    } catch {
+      // Ignore malformed viewer messages.
+    }
+  }, []);
+  const webViewSource = React.useMemo(() => ({ html }), [uri, page, base64, pdfJsSource, selectable]);
+  const webViewStyle = React.useMemo(() => [styles.pdfDocumentWebView, { height: renderedHeight }], [renderedHeight]);
+  const preview = <MemoizedWebView ref={pdfWebViewRef} key={`${uri}-${page}-${base64 ? 'ready' : 'loading'}`} originWhitelist={PDF_ORIGIN_WHITELIST} source={webViewSource} javaScriptEnabled domStorageEnabled allowFileAccess allowFileAccessFromFileURLs allowUniversalAccessFromFileURLs style={webViewStyle} onMessage={handlePdfMessage} onLoadEnd={syncPdfMarkers} />;
   if (!selectable) return preview;
   return <View style={styles.pdfPositionCard}>
     <View style={styles.pdfPositionHeader}><View style={styles.pdfPositionCopy}><Text style={styles.clientDetailLabel}>Ubicación de la firma</Text><Text style={styles.clientMeta}>Toca el PDF para elegir dónde se colocará la firma.</Text></View><View style={styles.pdfPositionBadge}><MaterialCommunityIcons name="gesture-tap" size={16} color={ERUBRICA_COLORS.primary} /><Text style={styles.pdfPositionBadgeText}>TÁCTIL</Text></View></View>
@@ -351,6 +390,8 @@ export function ERubricaMobileScreen({
   const [signatureMarkers, setSignatureMarkers] = useState<Array<{ page: number; x: number; y: number }>>([]);
   const [signaturePlacementLimit, setSignaturePlacementLimit] = useState(1);
   const collectingSignaturePlacementRef = useRef(true);
+  const signatureDraftKeyRef = useRef<string | null>(null);
+  const signatureDraftLoadedRef = useRef(false);
   const [solicitudStep, setSolicitudStep] = useState(1);
   const [solicitudPlan, setSolicitudPlan] = useState({ label: '7 días', price: 9 });
   const [solicitudPersona, setSolicitudPersona] = useState<string | null>(null);
@@ -374,6 +415,58 @@ export function ERubricaMobileScreen({
   const [assistantMessages, setAssistantMessages] = useState<BotMessage[]>([]);
   const [assistantDraft, setAssistantDraft] = useState('');
   const [assistantFeedback, setAssistantFeedback] = useState<BotFeedbackState>({});
+  useEffect(() => {
+    if (!pdfFile?.uri) {
+      signatureDraftKeyRef.current = null;
+      signatureDraftLoadedRef.current = false;
+      return undefined;
+    }
+
+    const key = getSignatureDraftKey(userId, pdfFile.uri);
+    signatureDraftKeyRef.current = key;
+    signatureDraftLoadedRef.current = false;
+    let mounted = true;
+    void SecureStore.getItemAsync(key).then((raw) => {
+      if (!mounted) return;
+      if (raw) {
+        try {
+          const saved = JSON.parse(raw) as {
+            page?: number;
+            position?: { x?: number; y?: number };
+            pageSize?: { widthMm?: number; heightMm?: number };
+            placements?: Array<{ pagina: number; xMm: number; yMm: number; anchoMm: number; rotacion: number }>;
+            markers?: Array<{ page: number; x: number; y: number }>;
+            placementLimit?: number;
+          };
+          if (saved.page && saved.page > 0) setSignaturePage(saved.page);
+          if (saved.position && typeof saved.position.x === 'number' && typeof saved.position.y === 'number') setSignaturePosition({ x: saved.position.x, y: saved.position.y });
+          if (saved.pageSize && typeof saved.pageSize.widthMm === 'number' && typeof saved.pageSize.heightMm === 'number') setSignaturePageSize({ widthMm: saved.pageSize.widthMm, heightMm: saved.pageSize.heightMm });
+          if (Array.isArray(saved.placements)) setSignaturePlacements(saved.placements);
+          if (Array.isArray(saved.markers)) setSignatureMarkers(saved.markers);
+          if (saved.placementLimit === 2) setSignaturePlacementLimit(2);
+          collectingSignaturePlacementRef.current = (saved.markers?.length ?? 0) < (saved.placementLimit === 2 ? 2 : 1);
+        } catch {
+          void SecureStore.deleteItemAsync(key);
+        }
+      }
+      signatureDraftLoadedRef.current = true;
+    }).catch(() => {
+      if (mounted) signatureDraftLoadedRef.current = true;
+    });
+    return () => { mounted = false; };
+  }, [pdfFile?.uri, userId]);
+  useEffect(() => {
+    const key = signatureDraftKeyRef.current;
+    if (!pdfFile?.uri || !key || !signatureDraftLoadedRef.current) return;
+    void SecureStore.setItemAsync(key, JSON.stringify({
+      page: signaturePage,
+      position: signaturePosition,
+      pageSize: signaturePageSize,
+      placements: signaturePlacements,
+      markers: signatureMarkers,
+      placementLimit: signaturePlacementLimit,
+    })).catch(() => undefined);
+  }, [pdfFile?.uri, signaturePage, signaturePosition, signaturePageSize, signaturePlacements, signatureMarkers, signaturePlacementLimit]);
   const limpiarPdfTemporal = () => {
     setPdfFile(null);
     setPdfValidation(null);
@@ -953,6 +1046,7 @@ export function ERubricaMobileScreen({
       const signedName = `${(pdfFile.name || 'documento.pdf').replace(/\.pdf$/i, '')}_firmado.pdf`;
       const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}${signedName}`;
       await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
+      if (signatureDraftKeyRef.current) await SecureStore.deleteItemAsync(signatureDraftKeyRef.current);
       if (preview) {
         onPreviewPdf({ uri, name: signedName, mimeType: 'application/pdf' });
       } else {
@@ -961,11 +1055,34 @@ export function ERubricaMobileScreen({
           setDocumentosPendientes((current) => current.filter((item) => item.nombreArchivo !== documentoPendienteSeleccionado));
           setDocumentoPendienteSeleccionado(null);
         }
-        Alert.alert('Documento firmado', 'El PDF se firmó correctamente. Ya puedes compartirlo.');
+        Alert.alert('Documento firmado', 'El PDF se firmó correctamente. ¿Qué deseas hacer ahora?', [
+          { text: 'Después', style: 'cancel' },
+          { text: 'Compartir ahora', onPress: () => { void shareSignedDocument(); } },
+        ]);
       }
     } catch (error) {
       Alert.alert('No se pudo firmar', error instanceof ApiError ? error.message : 'Verifica los archivos y la clave del certificado.');
     } finally { setSigning(false); }
+  };
+  const confirmSignPdfDocument = () => {
+    if (!pdfFile) {
+      Alert.alert('Datos incompletos', 'Selecciona un PDF válido.');
+      return;
+    }
+    if (signaturePlacements.length === 0) {
+      Alert.alert('Ubicación requerida', 'Toca el PDF para registrar al menos una ubicación de firma.');
+      return;
+    }
+    const confirmation = buildSignatureConfirmation({
+      documentName: pdfFile.name || 'documento.pdf',
+      placementCount: signaturePlacements.length,
+      certificateHolder: firmaDetalleActiva?.nombreTitular
+        ?? firmaEmisores.find((item) => item.tieneCertificado && item.tieneClave)?.razonSocial,
+    });
+    Alert.alert(confirmation.title, confirmation.message, [
+      { text: 'Revisar', style: 'cancel' },
+      { text: 'Firmar ahora', onPress: () => { void signPdfDocument(); } },
+    ]);
   };
   const validatePdfSignature = async () => {
     if (!pdfFile) {
@@ -1397,7 +1514,7 @@ export function ERubricaMobileScreen({
               setCertificateFile(null);
               setCertificatePassword('');
             }} />
-            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Estampar PDF" loading={signing} onPress={signPdfDocument} />
+            <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Revisar y firmar PDF" loading={signing} onPress={confirmSignPdfDocument} />
           </View>
           {signedFileUri ? <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Compartir documento firmado" loading={false} onPress={shareSignedDocument} /> : null}
         </View>

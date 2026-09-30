@@ -1,5 +1,5 @@
 import { BOT_CHAT_PATH, BOT_HISTORY_FILE_PREFIX, BOT_SESSION_ID, BOT_SESSION_STORAGE_PREFIX } from '../config/bot';
-import { apiRequest } from './apiClient';
+import { ApiError, apiRequest } from './apiClient';
 import type { BotFeedbackState, BotMessage, BotProgressStep } from '../types/bot';
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -412,19 +412,30 @@ export async function sendBotMessage(input: { message: string; userId?: number; 
   const sessionScope = input.sessionScope ?? 'efact';
   const sessionId = input.sessionId ?? await getOrCreateBotSessionId(input.userId ?? 0, sessionScope);
   const requestId = input.requestId?.trim() || buildRequestId();
-  const response = normalizeBotResponse(await apiRequest<unknown>(BOT_CHAT_PATH, {
-    method: 'POST',
+  const requestOptions = {
+    method: 'POST' as const,
     timeoutMs: 60000,
     signal: input.signal,
     body: JSON.stringify({
       requestId,
-        sessionId,
-        scope: sessionScope,
-        mensaje: message,
-        modo: input.modo ?? 'texto',
-        contexto: input.contexto,
-      }),
-  }));
+      sessionId,
+      scope: sessionScope,
+      mensaje: message,
+      modo: input.modo ?? 'texto',
+      contexto: input.contexto,
+    }),
+  };
+  let rawResponse: unknown;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      rawResponse = await apiRequest<unknown>(BOT_CHAT_PATH, requestOptions);
+      break;
+    } catch (error) {
+      if (input.signal?.aborted || attempt >= 2 || !isRetryableBotError(error)) throw error;
+      await waitBeforeBotRetry(attempt, input.signal);
+    }
+  }
+  const response = normalizeBotResponse(rawResponse);
 
   if (!response) throw new Error('El bot devolvió una respuesta inválida.');
 
@@ -465,4 +476,36 @@ export async function sendBotMessage(input: { message: string; userId?: number; 
     suggestedRoutes: typeof response === 'string' ? [] : response.rutasSugeridas ?? [],
     pendingOperation: typeof response === 'string' ? null : response.operacionPendiente ?? null,
   };
+}
+
+function isRetryableBotError(error: unknown) {
+  if (!(error instanceof ApiError)) return false;
+  return error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500;
+}
+
+function waitBeforeBotRetry(attempt: number, signal?: AbortSignal) {
+  const delay = attempt === 0 ? 700 : 1500;
+  return new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout>;
+    let abort = () => undefined;
+    const cleanup = () => signal?.removeEventListener('abort', abort);
+    const complete = () => {
+      cleanup();
+      resolve();
+    };
+    const timerAbort = () => {
+      cleanup();
+      reject(new Error('Solicitud cancelada.'));
+    };
+    abort = () => {
+      clearTimeout(timer);
+      timerAbort();
+    };
+    timer = setTimeout(complete, delay);
+    if (signal?.aborted) {
+      clearTimeout(timer);
+      timerAbort();
+    }
+    else signal?.addEventListener('abort', abort, { once: true });
+  });
 }

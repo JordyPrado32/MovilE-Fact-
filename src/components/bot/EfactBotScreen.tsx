@@ -137,6 +137,9 @@ export function EfactBotScreen({
   const voiceFlowStateRef = useRef<VoiceFlowState>('idle');
   const voiceStartInFlightRef = useRef(false);
   const voicePermissionGrantedRef = useRef(false);
+  const voiceLanguageRef = useRef('es-EC');
+  const voiceLocalesResolvedRef = useRef(false);
+  const speechVoicePromiseRef = useRef<Promise<string | undefined> | null>(null);
   const voiceAppStateRef = useRef(AppState.currentState);
   const voiceConfidenceRef = useRef(0);
   const handsFreeNoSpeechCountRef = useRef(0);
@@ -144,6 +147,7 @@ export function EfactBotScreen({
   const speechMutedRef = useRef(false);
   const requestGenerationRef = useRef(0);
   const sendingRef = useRef(false);
+  const queuedRequestsRef = useRef<Array<{ text: string; modo: 'texto' | 'voz'; requestId?: string; messageAdded: boolean }>>([]);
   const botRequestAbortRef = useRef<AbortController | null>(null);
   const messageSequenceRef = useRef(0);
   const messagesScrollRef = useRef<ScrollView>(null);
@@ -244,12 +248,33 @@ export function EfactBotScreen({
     botRequestAbortRef.current = null;
   };
 
+  const cancelPendingRequest = () => {
+    requestGenerationRef.current += 1;
+    queuedRequestsRef.current = [];
+    abortBotRequest();
+    sendingRef.current = false;
+    setSending(false);
+    setThinkingRequest('');
+    setRetryRequest(null);
+    setError('');
+    clearVoiceTimers();
+    disableHandsFreeState();
+    void stopBotSpeech();
+    if (voiceRecognitionStarted.current) ExpoSpeechRecognitionModule?.abort();
+    setListening(false);
+    transitionVoice('idle', null);
+  };
+
   const createMessageId = (role: BotMessage['role']) => `${role}-${Date.now()}-${messageSequenceRef.current += 1}`;
 
   const speakCurrentBotText = (text: string) => {
     if (speechMutedRef.current) return Promise.resolve(false);
     const generation = ++speechGenerationRef.current;
-    return speakBotText(text, () => speechGenerationRef.current !== generation);
+    const speechVoice = speechVoicePromiseRef.current ??= resolveSpanishMaleVoice();
+    return speechVoice.then((voice) => {
+      if (speechGenerationRef.current !== generation) return false;
+      return speakBotText(text, () => speechGenerationRef.current !== generation, voice);
+    });
   };
 
   const toggleSpeechMuted = () => {
@@ -268,6 +293,7 @@ export function EfactBotScreen({
 
   const resetConversation = async () => {
     requestGenerationRef.current += 1;
+    queuedRequestsRef.current = [];
     abortBotRequest();
     sendingRef.current = false;
     setSending(false);
@@ -308,6 +334,7 @@ export function EfactBotScreen({
 
   useEffect(() => () => {
     requestGenerationRef.current += 1;
+    queuedRequestsRef.current = [];
     abortBotRequest();
     clearVoiceTimers();
     void stopBotSpeech();
@@ -388,6 +415,7 @@ export function EfactBotScreen({
   useSpeechRecognitionEvent('error', (event) => {
     voiceRecognitionStarted.current = false;
     setListening(false);
+    if (event.error === 'aborted') return;
     transitionVoice('idle', null);
     const permanentError = event.error === 'not-allowed'
       || event.error === 'service-not-allowed'
@@ -414,7 +442,7 @@ export function EfactBotScreen({
       transitionVoice(handsFreeAwaitingConfirmationRef.current ? 'awaitingConfirmation' : 'listening', handsFreeAwaitingConfirmationRef.current ? 'response' : 'listening');
       if (!handsFreeAwaitingConfirmationRef.current) scheduleHandsFreeResume(700);
     }
-    if (event.error !== 'aborted' && event.error !== 'no-speech') {
+    if (event.error !== 'no-speech') {
       voiceHolding.current = false;
       voiceShouldSubmit.current = false;
       const message = event.message || 'No se pudo reconocer la voz. Repetiré la escucha.';
@@ -465,13 +493,13 @@ export function EfactBotScreen({
             setVoiceResponse(voiceMessage);
             transitionVoice('error', 'response');
             void speakCurrentBotText(voiceMessage).then((completed) => {
-              if (completed) scheduleHandsFreeResume(1200);
+              if (completed) scheduleHandsFreeResume(350);
             });
             return;
           }
           transitionVoice('processing', 'processing');
           const command = normalizeVoiceSelectionCommand(transcript, selectionOptions);
-          handsFreeResumeTimerRef.current = setTimeout(() => void send(command, 'voz'), 1200);
+          void send(command, 'voz');
         }
       } else {
         setDraft(transcript);
@@ -488,9 +516,16 @@ export function EfactBotScreen({
     }
   }, [messages.length, setMessages, userName, welcomeText]);
 
-  const send = async (preset?: string, modo: 'texto' | 'voz' = 'texto', requestIdOverride?: string) => {
+  const send = async (preset?: string, modo: 'texto' | 'voz' = 'texto', requestIdOverride?: string, messageAlreadyAdded = false) => {
     const text = (preset ?? draft).trim();
-    if (!text || sending || sendingRef.current) return;
+    if (!text) return;
+    if (sendingRef.current) {
+      const messageAdded = !requestIdOverride;
+      if (messageAdded) setMessages((current) => [...current, { id: createMessageId('user'), role: 'user', text }]);
+      queuedRequestsRef.current.push({ text, modo, requestId: requestIdOverride, messageAdded });
+      setDraft('');
+      return;
+    }
     const voiceRequest = modo === 'voz';
     const requestGeneration = requestGenerationRef.current + 1;
     requestGenerationRef.current = requestGeneration;
@@ -503,7 +538,7 @@ export function EfactBotScreen({
     setError('');
     setRetryRequest(null);
     setWorkflowStale(false);
-    if (!requestIdOverride) {
+    if (!requestIdOverride && !messageAlreadyAdded) {
       setMessages((current) => [...current, { id: createMessageId('user'), role: 'user', text }]);
     }
     setThinkingRequest(text);
@@ -523,7 +558,8 @@ export function EfactBotScreen({
         signal: requestController.signal,
       });
       if (requestGeneration !== requestGenerationRef.current) return;
-      if (botResult.uiAction) onUiAction?.(botResult.uiAction);
+      const navigationRequested = isExplicitNavigationRequest(text);
+      if (botResult.uiAction && navigationRequested) onUiAction?.(botResult.uiAction);
       const catalogListRequest = isCatalogListRequest(text);
       const visibleSelectionOptions = catalogListRequest ? botResult.selectionOptions.slice(0, 3) : botResult.selectionOptions;
       const presentationAnswer = botResult.draft?.cliente || botResult.draft?.items?.length
@@ -558,22 +594,28 @@ export function EfactBotScreen({
       handsFreeAwaitingConfirmationRef.current = botResult.missing.length === 0
         && (!botResult.pendingOperation || hasActiveOperationExpiry(botResult.pendingOperation.expiraEn))
         && Boolean(botResult.pendingOperation || botResult.requiresConfirmation);
-      if (voiceRequest) {
+      const shouldSpeakResponse = voiceRequest || handsFreeEnabledRef.current;
+      if (shouldSpeakResponse) {
         const voiceAnswer = buildSpeechResponse(presentationAnswer, visibleSelectionOptions);
         setVoiceResponse(voiceAnswer);
         transitionVoice(handsFreeAwaitingConfirmationRef.current ? 'awaitingConfirmation' : 'speaking', 'response');
         void speakCurrentBotText(voiceAnswer).then((completed) => {
           if (!handsFreeAwaitingConfirmationRef.current) transitionVoice('idle', null);
-          if (handsFreeEnabledRef.current) scheduleHandsFreeResume(completed ? 2000 : 400);
+          if (handsFreeEnabledRef.current) scheduleHandsFreeResume(completed ? 350 : 150);
+          if (navigationRequested && shouldSpeakResponse && botResult.suggestedRoute && isSupportedBotRoute(botResult.suggestedRoute)) {
+            voiceNavigationTimerRef.current = setTimeout(() => {
+              if (requestGeneration === requestGenerationRef.current) onNavigate?.(normalizeBotRoute(botResult.suggestedRoute as string));
+            }, completed ? 150 : 0);
+          }
         });
         }
-      if (botResult.suggestedRoute && isSupportedBotRoute(botResult.suggestedRoute)) {
+      if (navigationRequested && !shouldSpeakResponse && botResult.suggestedRoute && isSupportedBotRoute(botResult.suggestedRoute)) {
         voiceNavigationTimerRef.current = setTimeout(() => {
           if (requestGeneration === requestGenerationRef.current) onNavigate?.(normalizeBotRoute(botResult.suggestedRoute as string));
-        }, voiceRequest ? 2200 : 1800);
+        }, 900);
       }
     } catch (err) {
-      if (requestGeneration !== requestGenerationRef.current) return;
+      if (requestGeneration !== requestGenerationRef.current || requestController.signal.aborted) return;
       setRetryRequest({ text, modo, requestId });
       setWorkflowStale(true);
       onWorkflowChange?.({
@@ -593,7 +635,7 @@ export function EfactBotScreen({
         setVoiceResponse(voiceError);
         transitionVoice('error', handsFreeEnabledRef.current ? 'response' : null);
         if (handsFreeEnabledRef.current) void speakCurrentBotText(voiceError).then((completed) => {
-          if (completed) scheduleHandsFreeResume(1800);
+          if (completed) scheduleHandsFreeResume(500);
         });
       }
       setError(err instanceof ApiError || err instanceof Error ? err.message : 'No se pudo contactar al bot.');
@@ -603,6 +645,10 @@ export function EfactBotScreen({
         sendingRef.current = false;
         setSending(false);
         setThinkingRequest('');
+        const nextRequest = queuedRequestsRef.current.shift();
+        if (nextRequest) {
+          setTimeout(() => void send(nextRequest.text, nextRequest.modo, nextRequest.requestId, nextRequest.messageAdded), 0);
+        }
       }
     }
   };
@@ -627,7 +673,7 @@ export function EfactBotScreen({
     try {
       await stopBotSpeech();
       const permission = voicePermissionGrantedRef.current
-        ? await ExpoSpeechRecognitionModule.getPermissionsAsync()
+        ? { granted: true }
         : await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!permission.granted) {
         voicePermissionGrantedRef.current = false;
@@ -648,15 +694,20 @@ export function EfactBotScreen({
         showVoiceError('El reconocimiento de voz no está disponible en este dispositivo. Verifica el asistente de voz del dispositivo.');
         return;
       }
-      let language = 'es-EC';
-      try {
-        const supported = await ExpoSpeechRecognitionModule.getSupportedLocales({});
-        const locales = supported.locales ?? [];
-        language = locales.find((locale) => locale.toLowerCase() === 'es-ec')
-          ?? locales.find((locale) => locale.toLowerCase().startsWith('es-'))
-          ?? language;
-      } catch {
-        // El motor puede no exponer sus locales; es-EC sigue siendo válido para el reconocimiento en línea.
+      let language = voiceLanguageRef.current;
+      if (!voiceLocalesResolvedRef.current) {
+        try {
+          const supported = await ExpoSpeechRecognitionModule.getSupportedLocales({});
+          const locales = supported.locales ?? [];
+          language = locales.find((locale) => locale.toLowerCase() === 'es-ec')
+            ?? locales.find((locale) => locale.toLowerCase().startsWith('es-'))
+            ?? language;
+          voiceLanguageRef.current = language;
+        } catch {
+          // El motor puede no exponer sus locales; es-EC sigue siendo válido para el reconocimiento en línea.
+        } finally {
+          voiceLocalesResolvedRef.current = true;
+        }
       }
       if (!voiceHolding.current) {
         voiceShouldSubmit.current = false;
@@ -667,7 +718,7 @@ export function EfactBotScreen({
         lang: language,
         interimResults: true,
         maxAlternatives: 1,
-        continuous: false,
+        continuous: !handsFreeEnabledRef.current,
         addsPunctuation: false,
         contextualStrings: [
           ...speechContext,
@@ -719,7 +770,7 @@ export function EfactBotScreen({
     if (!handsFreeEnabledRef.current || sending || sendingRef.current) return;
     try {
       if (await Speech.isSpeakingAsync()) {
-        scheduleHandsFreeResume(1200);
+        scheduleHandsFreeResume(250);
         return;
       }
     } catch {
@@ -728,7 +779,7 @@ export function EfactBotScreen({
     if (handsFreeEnabledRef.current && voiceAppStateRef.current === 'active') void startVoiceInput();
   };
 
-  const scheduleHandsFreeResume = (delay = 2200) => {
+  const scheduleHandsFreeResume = (delay = 350) => {
     if (handsFreeResumeTimerRef.current) clearTimeout(handsFreeResumeTimerRef.current);
     handsFreeResumeTimerRef.current = setTimeout(() => {
       handsFreeResumeTimerRef.current = null;
@@ -994,6 +1045,9 @@ export function EfactBotScreen({
             <Image source={require('../../../assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} />
             <NumiThinkingIndicator request={thinkingRequest} />
           </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Cancelar solicitud" onPress={cancelPendingRequest}>
+            <Text style={styles.botRetryText}>Cancelar</Text>
+          </Pressable>
         </View>
       ) : null}
       {voiceTranscript && !voiceOverlayState ? <View style={styles.botVoiceTranscript}><MaterialCommunityIcons name="waveform" size={16} color="#0878C9" /><Text style={styles.botVoiceTranscriptText}>{voiceTranscript}</Text></View> : null}
@@ -1404,6 +1458,11 @@ function isCatalogListRequest(value: string) {
     && /\b(clientes?|productos?)\b/.test(normalized);
 }
 
+function isExplicitNavigationRequest(value: string) {
+  const normalized = normalizeVoiceCommand(value);
+  return /\b(llevame|llevarme|abre|abrir|ir a|ve a|navega|navegar|muestrame la pantalla)\b/.test(normalized);
+}
+
 function limitCatalogListAnswer(answer: string, request: string) {
   if (!isCatalogListRequest(request)) return answer;
   const lines = answer.split(/\r?\n/);
@@ -1518,7 +1577,7 @@ function isExplicitCancellation(value: string) {
   return /\b(cancelar|cancelo|anular|anulo)\b/.test(normalizeVoiceCommand(value));
 }
 
-async function speakBotText(text: string, shouldCancel: () => boolean = () => false) {
+async function speakBotText(text: string, shouldCancel: () => boolean = () => false, voice?: string) {
   const maxChunkLength = Number.isFinite(Speech.maxSpeechInputLength)
     ? Math.min(Math.max(Speech.maxSpeechInputLength, 500), 3500)
     : 3500;
@@ -1544,7 +1603,10 @@ async function speakBotText(text: string, shouldCancel: () => boolean = () => fa
     const completed = await new Promise<boolean>((resolve) => {
       Speech.speak(part, {
         language: 'es-EC',
-        rate: 0.96,
+        voice,
+        pitch: 0.9,
+        rate: 0.94,
+        useApplicationAudioSession: false,
         onDone: () => resolve(true),
         onStopped: () => resolve(false),
         onError: () => resolve(false),
@@ -1553,5 +1615,17 @@ async function speakBotText(text: string, shouldCancel: () => boolean = () => fa
     if (!completed || shouldCancel()) return false;
   }
   return true;
+}
+
+async function resolveSpanishMaleVoice() {
+  try {
+    const voices = await Speech.getAvailableVoicesAsync();
+    const spanishVoices = voices.filter((item) => /^es(?:-|_)/i.test(item.language));
+    const maleVoice = spanishVoices.find((item) => /jorge|diego|carlos|miguel|juan|pablo|enrique|hombre|masculin|male/i.test(`${item.name} ${item.identifier}`));
+    const enhancedVoice = spanishVoices.find((item) => item.quality === Speech.VoiceQuality.Enhanced);
+    return (maleVoice ?? enhancedVoice ?? spanishVoices[0])?.identifier;
+  } catch {
+    return undefined;
+  }
 }
 
