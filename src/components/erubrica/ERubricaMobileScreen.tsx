@@ -28,7 +28,6 @@ import { ApiError, getAuthSessionCookie } from '../../services/apiClient';
 import { ERubricaDashboard, ERubricaDocumentoFirmado, ERubricaDocumentoPendiente, ERubricaEmisor, ERubricaFirmaEstado, ERubricaSolicitudBorrador, appendERubricaFile, buscarERubricaSolicitudesProveedor, cargarERubricaDocumentoPendiente, configurarERubricaFirma, crearERubricaSolicitud, descargarERubricaFirmaP12, eliminarERubricaDocumentoPendiente, eliminarERubricaSolicitudBorrador, enviarTransferenciaERubricaSolicitud, firmarERubricaDocumento, getERubricaDocumentosFirmados, getERubricaDocumentosPendientes, getERubricaEmisores, getERubricaFirmaEstado, getERubricaPlan, getERubricaProductos, getERubricaRenovacion, getERubricaSaldo, getERubricaSolicitudBorradores, guardarERubricaSolicitudBorrador, iniciarPagoERubricaSolicitud, sincronizarERubricaSolicitud, validarERubricaFirmaPdf, validarERubricaFirmaTemporal, validarERubricaQr } from '../../services/erubricaMobileService';
 import { EFACT_THEME, ERUBRICA_COLORS } from '../../styles/theme';
 import { formatDocumentDate } from '../../utils/documentFormatting';
-import { arrayBufferToBase64, buildDeviceFileName } from '../../utils/fileUtils';
 import { buildSignatureConfirmation } from '../../utils/signatureConfirmation';
 import { buildDeviceFileName } from '../../utils/fileUtils';
 import { validateEmail, validateIdentificacion } from '../../utils/authValidation';
@@ -1085,8 +1084,7 @@ export function ERubricaMobileScreen({
       if (documentoPendienteSeleccionado) form.append('documentoPendiente', documentoPendienteSeleccionado);
       const result = await firmarERubricaDocumento(form);
       const signedName = `${(pdfFile.name || 'documento.pdf').replace(/\.pdf$/i, '')}_firmado.pdf`;
-      const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}${signedName}`;
-      await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
+      const uri = writeBinaryCacheFile(`${Date.now()}-${buildDeviceFileName(signedName, '.pdf')}`, result.bytes);
       if (preview) {
         onPreviewPdf({ uri, name: signedName, mimeType: 'application/pdf' });
       } else {
