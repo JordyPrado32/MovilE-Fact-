@@ -1,3 +1,4 @@
+import { File } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
@@ -17,7 +18,7 @@ import { PerfilUsuario } from '../../types/business';
 import type { NuevaFacturaFormState } from '../../types/invoices';
 import type { PuntoDocumentoKey } from '../../services/puntosEmisionService';
 import { sanitizeIdentificacion, validateChangePassword, validateEmail, validateLogin, validateRegisterForm } from '../../utils/authValidation';
-import { arrayBufferToBase64, buildDeviceFileName } from '../../utils/fileUtils';
+import { buildDeviceFileName } from '../../utils/fileUtils';
 import { AppLaunchScreen, AuthCard } from './AuthShell';
 import { BiometricSetupModal, BrandLockup, BrandMark, LoadingScreen, OfflineScreen, ScreenFrame } from './AuthWidgets';
 import { Field, InlineSwitch, LoginActionTiles, MessageBox, PrimaryButton, SecondaryButton, SegmentButton, TextLink } from '../ui/FormControls';
@@ -537,8 +538,7 @@ export async function saveFileToDevice(sourceUri: string, fileName: string, mime
     if (!permissions.granted) return null;
 
     const target = await storage.createFileAsync(permissions.directoryUri, fileName, mimeType);
-    const base64 = await FileSystem.readAsStringAsync(sourceUri, { encoding: FileSystem.EncodingType.Base64 });
-    await FileSystem.writeAsStringAsync(target, base64, { encoding: FileSystem.EncodingType.Base64 });
+    new File(target).write(await new File(sourceUri).bytes());
     return target;
   }
 
@@ -556,7 +556,7 @@ export async function saveBinaryFileToDevice(bytes: ArrayBuffer, fileName: strin
   if (!baseDirectory) throw new Error('missing-directory');
 
   const sourceUri = `${baseDirectory}${safeName}`;
-  await FileSystem.writeAsStringAsync(sourceUri, arrayBufferToBase64(bytes), { encoding: FileSystem.EncodingType.Base64 });
+  new File(sourceUri).write(new Uint8Array(bytes));
   const savedUri = await saveFileToDevice(sourceUri, safeName, mimeType);
   return savedUri ? { name: safeName, uri: savedUri, shareUri: sourceUri } : null;
 }

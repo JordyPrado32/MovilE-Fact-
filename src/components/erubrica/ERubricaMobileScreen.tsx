@@ -1,4 +1,5 @@
 import * as DocumentPicker from 'expo-document-picker';
+import { File, Paths } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
@@ -29,6 +30,7 @@ import { EFACT_THEME, ERUBRICA_COLORS } from '../../styles/theme';
 import { formatDocumentDate } from '../../utils/documentFormatting';
 import { arrayBufferToBase64, buildDeviceFileName } from '../../utils/fileUtils';
 import { buildSignatureConfirmation } from '../../utils/signatureConfirmation';
+import { buildDeviceFileName } from '../../utils/fileUtils';
 import { validateEmail, validateIdentificacion } from '../../utils/authValidation';
 import { EmptyState } from '../ui/FeedbackStates';
 import { Field, MessageBox, PrimaryButton, SecondaryButton } from '../ui/FormControls';
@@ -167,6 +169,13 @@ function usePdfJsSource(uri: string) {
 
   return source;
 }
+
+function writeBinaryCacheFile(fileName: string, bytes: ArrayBuffer) {
+  const file = new File(Paths.cache, fileName);
+  file.write(new Uint8Array(bytes));
+  return file.uri;
+}
+
 export function PdfDocumentPreview({
   uri,
   selectable = false,
@@ -192,6 +201,7 @@ export function PdfDocumentPreview({
   onPageCountChange?: (pageCount: number) => void;
   onDragChange?: (dragging: boolean) => void;
 }) {
+  const webViewRef = useRef<WebView>(null);
   const [base64, setBase64] = useState<string | null>(null);
   const [renderedHeight, setRenderedHeight] = useState(420);
   const pdfWebViewRef = useRef<WebView>(null);
@@ -209,39 +219,11 @@ export function PdfDocumentPreview({
     return () => { mounted = false; };
   }, [uri]);
 
-  const pdfCallbacksRef = useRef({ onPositionChange, onPlacementMove, onPlacementDelete, onPageSizeChange, onPageCountChange, onDragChange });
-  pdfCallbacksRef.current = { onPositionChange, onPlacementMove, onPlacementDelete, onPageSizeChange, onPageCountChange, onDragChange };
-  const syncPdfMarkers = React.useCallback(() => {
-    if (!selectable) return;
-    const markers = placements
-      .map((placement, index) => ({ ...placement, index }))
-      .filter((placement) => placement.page === page);
-    pdfWebViewRef.current?.injectJavaScript(`(()=>{const viewer=document.getElementById('viewer');if(!viewer)return;viewer.querySelectorAll('.marker').forEach(value=>value.remove());const host=document.getElementById('markers')||(()=>{const value=document.createElement('div');value.id='markers';viewer.appendChild(value);return value})();host.innerHTML='';${JSON.stringify(markers)}.forEach(m=>{const el=document.createElement('div');el.className='marker';el.dataset.index=String(m.index);el.textContent=m.label||'';el.style.left=(m.x*100).toFixed(2)+'%';el.style.top=(m.y*100).toFixed(2)+'%';host.appendChild(el)})})();true;`);
-  }, [page, placements, selectable]);
-  useEffect(() => {
-    syncPdfMarkers();
-  }, [syncPdfMarkers]);
-  const clickHandler = selectable ? `let dragging=false,marker=null,offsetX=0,offsetY=0,frame=0,pending=null;const paint=()=>{frame=0;if(marker&&pending){marker.style.left=(pending.x*100)+'%';marker.style.top=(pending.y*100)+'%'}};const moveMarker=e=>{const r=c.getBoundingClientRect(),p={x:Math.max(0,Math.min(1,(e.clientX-r.left-offsetX)/r.width)),y:Math.max(0,Math.min(1,(e.clientY-r.top-offsetY)/r.height))};if(marker){pending=p;if(!frame)frame=requestAnimationFrame(paint)}return p};viewer.addEventListener('pointerdown',e=>{marker=e.target.closest('.marker');if(e.target!==c&&!marker)return;if(marker){const r=marker.getBoundingClientRect();offsetX=e.clientX-(r.left+r.width/2);offsetY=e.clientY-(r.top+r.height/2)}else{offsetX=0;offsetY=0}dragging=true;e.preventDefault();viewer.setPointerCapture&&viewer.setPointerCapture(e.pointerId);window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:true}));moveMarker(e)});viewer.addEventListener('pointermove',e=>{if(dragging){e.preventDefault();moveMarker(e)}});const finish=e=>{if(!dragging)return;dragging=false;const p=moveMarker(e);if(frame){cancelAnimationFrame(frame);frame=0;paint()}const index=marker&&Number(marker.dataset.index);window.ReactNativeWebView.postMessage(JSON.stringify(marker&&Number.isInteger(index)?{type:'move',index,x:p.x,y:p.y}:{type:'position',x:p.x,y:p.y}));marker=null;pending=null;offsetX=0;offsetY=0;window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:false}))};viewer.addEventListener('pointerup',finish);viewer.addEventListener('pointercancel',finish);` : '';
-  const sizeHandler = selectable ? `window.ReactNativeWebView.postMessage(JSON.stringify({type:'size',widthMm:v.width*25.4/72,heightMm:v.height*25.4/72}));` : '';
   const markers = selectable ? placements.map((placement, index) => ({ ...placement, index })).filter((placement) => placement.page === page).map((placement) => `<div class="marker" data-index="${placement.index}" style="left:${(placement.x * 100).toFixed(2)}%;top:${(placement.y * 100).toFixed(2)}%">${placement.label}</div>`).join('') : '';
-  const html = base64 && pdfJsSource ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>html,body{margin:0;background:#eef3f7}#stage{text-align:center;padding:12px;box-sizing:border-box}#viewer{display:inline-block;position:relative;touch-action:none}#canvas{display:block;background:#fff;max-width:100%;box-shadow:0 2px 8px #63758755}.marker{position:absolute;transform:translate(-50%,-50%);width:84px;height:36px;border:2px solid #087c3a;background:#e5f8ebdd;color:#087c3a;font:700 11px Arial;border-radius:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;touch-action:none;will-change:left,top}</style></head><body><div id="stage"><div id="viewer"><canvas id="canvas"></canvas>${markers}</div></div><script>${pdfJsSource}</script><script>try{const r=atob('${base64}'),b=new Uint8Array(r.length);for(let i=0;i<r.length;i++)b[i]=r.charCodeAt(i);pdfjsLib.getDocument({data:b,disableWorker:true}).promise.then(d=>{window.ReactNativeWebView.postMessage(JSON.stringify({type:'pageCount',pageCount:d.numPages}));return d.getPage(Math.min(${page},d.numPages))}).then(p=>{const v=p.getViewport({scale:1}),s=Math.min((innerWidth-24)/v.width,1.5),d=Math.min(3,window.devicePixelRatio||2),q=p.getViewport({scale:s}),h=p.getViewport({scale:s*d}),c=document.getElementById('canvas'),viewer=document.getElementById('viewer');c.width=h.width;c.height=h.height;c.style.width=q.width+'px';c.style.height=q.height+'px';${sizeHandler}window.ReactNativeWebView.postMessage(JSON.stringify({type:'height',height:Math.ceil(q.height+24)}));return p.render({canvasContext:c.getContext('2d'),viewport:h}).promise.then(()=>{${clickHandler}})}).catch(()=>document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>')}catch(e){document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>'}</script></body></html>` : base64 === '' ? '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">El archivo descargado no es un PDF válido.</p>' : pdfJsUnavailable ? '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo iniciar el visor de PDF.</p>' : '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">Cargando PDF…</p>';
-  const handlePdfMessage = React.useCallback((event: { nativeEvent: { data: string } }) => {
-    try {
-      const result = JSON.parse(event.nativeEvent.data) as { type?: string; dragging?: boolean; index?: number; x?: number; y?: number; widthMm?: number; heightMm?: number; height?: number; pageCount?: number };
-      const callbacks = pdfCallbacksRef.current;
-      if (result.type === 'drag' && typeof result.dragging === 'boolean') callbacks.onDragChange?.(result.dragging);
-      if (result.type === 'position' && typeof result.x === 'number' && typeof result.y === 'number') callbacks.onPositionChange?.({ x: result.x, y: result.y });
-      if (result.type === 'move' && typeof result.index === 'number' && typeof result.x === 'number' && typeof result.y === 'number') callbacks.onPlacementMove?.(result.index, { x: result.x, y: result.y });
-      if (result.type === 'size' && typeof result.widthMm === 'number' && typeof result.heightMm === 'number') callbacks.onPageSizeChange?.({ widthMm: result.widthMm, heightMm: result.heightMm });
-      if (result.type === 'height' && typeof result.height === 'number') setRenderedHeight(Math.max(240, Math.min(820, result.height)));
-      if (result.type === 'pageCount' && typeof result.pageCount === 'number') callbacks.onPageCountChange?.(result.pageCount);
-    } catch {
-      // Ignore malformed viewer messages.
-    }
-  }, []);
-  const webViewSource = React.useMemo(() => ({ html }), [uri, page, base64, pdfJsSource, selectable]);
-  const webViewStyle = React.useMemo(() => [styles.pdfDocumentWebView, { height: renderedHeight }], [renderedHeight]);
-  const preview = <MemoizedWebView ref={pdfWebViewRef} key={`${uri}-${page}-${base64 ? 'ready' : 'loading'}`} originWhitelist={PDF_ORIGIN_WHITELIST} source={webViewSource} javaScriptEnabled domStorageEnabled allowFileAccess allowFileAccessFromFileURLs allowUniversalAccessFromFileURLs style={webViewStyle} onMessage={handlePdfMessage} onLoadEnd={syncPdfMarkers} />;
+  const clickHandler = selectable ? `let dragging=false,marker=null;const moveMarker=e=>{const r=c.getBoundingClientRect(),x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y=Math.max(0,Math.min(1,(e.clientY-r.top)/r.height));if(marker){marker.style.left=(x*100)+'%';marker.style.top=(y*100)+'%'}return{x,y}};viewer.addEventListener('pointerdown',e=>{marker=e.target.closest('.marker');if(e.target!==c&&!marker)return;dragging=true;viewer.setPointerCapture&&viewer.setPointerCapture(e.pointerId);window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:true}));moveMarker(e)});viewer.addEventListener('pointermove',e=>{if(dragging)moveMarker(e)});const finish=e=>{if(!dragging)return;dragging=false;const p=moveMarker(e);const index=marker&&Number(marker.dataset.index);window.ReactNativeWebView.postMessage(JSON.stringify(marker&&Number.isInteger(index)?{type:'move',index,x:p.x,y:p.y}:{type:'position',x:p.x,y:p.y}));marker=null;window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:false}))};viewer.addEventListener('pointerup',finish);viewer.addEventListener('pointercancel',finish);` : '';
+  const sizeHandler = selectable ? `window.ReactNativeWebView.postMessage(JSON.stringify({type:'size',widthMm:v.width*25.4/72,heightMm:v.height*25.4/72}));` : '';
+  const html = base64 && pdfJsSource ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>html,body{margin:0;background:#eef3f7}#stage{text-align:center;padding:12px;box-sizing:border-box}#viewer{display:inline-block;position:relative}#canvas{display:block;background:#fff;max-width:100%;box-shadow:0 2px 8px #63758755}.marker{position:absolute;transform:translate(-50%,-50%);width:84px;height:36px;border:2px solid #087c3a;background:#e5f8ebdd;color:#087c3a;font:700 11px Arial;border-radius:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;touch-action:none}</style></head><body><div id="stage"><div id="viewer"><canvas id="canvas"></canvas>${markers}</div></div><script>${pdfJsSource}</script><script>try{const r=atob('${base64}'),b=new Uint8Array(r.length);for(let i=0;i<r.length;i++)b[i]=r.charCodeAt(i);pdfjsLib.getDocument({data:b,disableWorker:true}).promise.then(d=>{window.ReactNativeWebView.postMessage(JSON.stringify({type:'pageCount',pageCount:d.numPages}));return d.getPage(Math.min(${page},d.numPages))}).then(p=>{const v=p.getViewport({scale:1}),s=Math.min((innerWidth-24)/v.width,1.5),d=Math.min(3,window.devicePixelRatio||2),q=p.getViewport({scale:s}),h=p.getViewport({scale:s*d}),c=document.getElementById('canvas'),viewer=document.getElementById('viewer');c.width=h.width;c.height=h.height;c.style.width=q.width+'px';c.style.height=q.height+'px';${sizeHandler}window.ReactNativeWebView.postMessage(JSON.stringify({type:'height',height:Math.ceil(q.height+24)}));return p.render({canvasContext:c.getContext('2d'),viewport:h}).promise.then(()=>{${clickHandler}})}).catch(()=>document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>')}catch(e){document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>'}</script></body></html>` : base64 === '' ? '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">El archivo descargado no es un PDF válido.</p>' : pdfJsUnavailable ? '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo iniciar el visor de PDF.</p>' : '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">Cargando PDF…</p>';
+  const preview = <WebView originWhitelist={['*']} source={{ html }} javaScriptEnabled style={[styles.pdfDocumentWebView, { height: renderedHeight }]} onMessage={(event) => { try { const result = JSON.parse(event.nativeEvent.data) as { type?: string; dragging?: boolean; index?: number; x?: number; y?: number; widthMm?: number; heightMm?: number; height?: number; pageCount?: number }; if (result.type === 'drag' && typeof result.dragging === 'boolean') onDragChange?.(result.dragging); if (result.type === 'position' && typeof result.x === 'number' && typeof result.y === 'number') onPositionChange?.({ x: result.x, y: result.y }); if (result.type === 'move' && typeof result.index === 'number' && typeof result.x === 'number' && typeof result.y === 'number') onPlacementMove?.(result.index, { x: result.x, y: result.y }); if (result.type === 'size' && typeof result.widthMm === 'number' && typeof result.heightMm === 'number') onPageSizeChange?.({ widthMm: result.widthMm, heightMm: result.heightMm }); if (result.type === 'height' && typeof result.height === 'number') setRenderedHeight(Math.max(240, Math.min(820, result.height))); if (result.type === 'pageCount' && typeof result.pageCount === 'number') onPageCountChange?.(result.pageCount); } catch { /* ignore viewer messages */ } }} />;
   if (!selectable) return preview;
   return <View style={styles.pdfPositionCard}>
     <View style={styles.pdfPositionHeader}><View style={styles.pdfPositionCopy}><Text style={styles.clientDetailLabel}>Ubicación de la firma</Text><Text style={styles.clientMeta}>Toca el PDF para elegir dónde se colocará la firma.</Text></View><View style={styles.pdfPositionBadge}><MaterialCommunityIcons name="gesture-tap" size={16} color={ERUBRICA_COLORS.primary} /><Text style={styles.pdfPositionBadgeText}>TÁCTIL</Text></View></View>
@@ -356,9 +338,11 @@ export function ERubricaMobileScreen({
   const [certificateFile, setCertificateFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [certificatePassword, setCertificatePassword] = useState('');
   const [signing, setSigning] = useState(false);
+  const signingRef = useRef(false);
   const [signedFileUri, setSignedFileUri] = useState<string | null>(null);
   const [pdfValidation, setPdfValidation] = useState<unknown>(null);
   const [validatingPdf, setValidatingPdf] = useState(false);
+  const validatingPdfRef = useRef(false);
   const [catalogos, setCatalogos] = useState<unknown[]>([]);
   const [saldo, setSaldo] = useState<number | null>(null);
   const [renovacion, setRenovacion] = useState<unknown>(null);
@@ -390,6 +374,7 @@ export function ERubricaMobileScreen({
   const [signaturePosition, setSignaturePosition] = useState({ x: 0.68, y: 0.82 });
   const [signaturePageSize, setSignaturePageSize] = useState({ widthMm: 210, heightMm: 297 });
   const [signaturePlacements, setSignaturePlacements] = useState<Array<{ pagina: number; xMm: number; yMm: number; anchoMm: number; rotacion: number }>>([]);
+  const signaturePlacementsRef = useRef(signaturePlacements);
   const [signatureMarkers, setSignatureMarkers] = useState<Array<{ page: number; x: number; y: number }>>([]);
   const [signaturePlacementLimit, setSignaturePlacementLimit] = useState(1);
   const collectingSignaturePlacementRef = useRef(true);
@@ -499,6 +484,7 @@ export function ERubricaMobileScreen({
     setValidationPageCount(1);
     setSignaturePosition({ x: 0.68, y: 0.82 });
     setSignaturePlacements([]);
+    signaturePlacementsRef.current = [];
     setSignatureMarkers([]);
     setSignaturePlacementLimit(1);
     collectingSignaturePlacementRef.current = true;
@@ -514,16 +500,19 @@ export function ERubricaMobileScreen({
     collectingSignaturePlacementRef.current = true;
   };
   const registrarUbicacionFirma = (position: { x: number; y: number }) => {
-    if (!collectingSignaturePlacementRef.current || signaturePlacements.length >= signaturePlacementLimit) return;
+    const currentPlacements = signaturePlacementsRef.current;
+    if (!collectingSignaturePlacementRef.current || currentPlacements.length >= signaturePlacementLimit) return;
 
     setSignaturePosition(position);
     const anchoMm = 60;
     const altoMm = 35;
     const xMm = Math.min(Math.max(0, signaturePageSize.widthMm - anchoMm), Math.max(0, position.x * signaturePageSize.widthMm - anchoMm / 2));
     const yMm = Math.min(Math.max(0, signaturePageSize.heightMm - altoMm), Math.max(0, position.y * signaturePageSize.heightMm - altoMm / 2));
-    setSignaturePlacements((current) => [...current, { pagina: signaturePage, xMm: Math.round(xMm), yMm: Math.round(yMm), anchoMm, rotacion: 0 }]);
+    const nextPlacements = [...currentPlacements, { pagina: signaturePage, xMm: Math.round(xMm), yMm: Math.round(yMm), anchoMm, rotacion: 0 }];
+    signaturePlacementsRef.current = nextPlacements;
+    setSignaturePlacements(nextPlacements);
     setSignatureMarkers((current) => [...current, { page: signaturePage, x: position.x, y: position.y }]);
-    collectingSignaturePlacementRef.current = signaturePlacements.length + 1 < signaturePlacementLimit;
+    collectingSignaturePlacementRef.current = nextPlacements.length < signaturePlacementLimit;
   };
   const moverUbicacionFirma = (index: number, position: { x: number; y: number }) => {
     if (index < 0 || index >= signaturePlacements.length) return;
@@ -534,13 +523,17 @@ export function ERubricaMobileScreen({
     const yMm = Math.min(Math.max(0, signaturePageSize.heightMm - altoMm), Math.max(0, position.y * signaturePageSize.heightMm - altoMm / 2));
     setSignaturePosition(position);
     setSignatureMarkers((current) => current.map((marker, markerIndex) => markerIndex === index ? { ...marker, x: position.x, y: position.y } : marker));
-    setSignaturePlacements((current) => current.map((placement, placementIndex) => placementIndex === index
+    const nextPlacements = signaturePlacementsRef.current.map((placement, placementIndex) => placementIndex === index
       ? { ...placement, xMm: Math.round(xMm), yMm: Math.round(yMm), anchoMm }
-      : placement));
+      : placement);
+    signaturePlacementsRef.current = nextPlacements;
+    setSignaturePlacements(nextPlacements);
   };
   const eliminarUbicacionFirma = (index: number) => {
     setSignatureMarkers((current) => current.filter((_, markerIndex) => markerIndex !== index));
-    setSignaturePlacements((current) => current.filter((_, placementIndex) => placementIndex !== index));
+    const nextPlacements = signaturePlacementsRef.current.filter((_, placementIndex) => placementIndex !== index);
+    signaturePlacementsRef.current = nextPlacements;
+    setSignaturePlacements(nextPlacements);
     collectingSignaturePlacementRef.current = true;
   };
   const selectTab = (nextTab: ERubricaTab) => {
@@ -880,8 +873,7 @@ export function ERubricaMobileScreen({
   const descargarFirmaSolicitud = async (solicitudId: number) => {
     try {
       const result = await descargarERubricaFirmaP12(solicitudId);
-      const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}firma-${solicitudId}.p12`;
-      await FileSystem.writeAsStringAsync(uri, arrayBufferToBase64(result.bytes), { encoding: FileSystem.EncodingType.Base64 });
+      const uri = writeBinaryCacheFile(`firma-${solicitudId}.p12`, result.bytes);
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/x-pkcs12', dialogTitle: 'Guardar firma .p12' });
     } catch (error) {
       Alert.alert('No se pudo descargar la firma', error instanceof ApiError ? error.message : 'La firma aún no está disponible.');
@@ -901,6 +893,7 @@ export function ERubricaMobileScreen({
       setSignaturePage(1);
       setSignaturePageCount(1);
       setSignaturePlacements([]);
+      signaturePlacementsRef.current = [];
       setSignatureMarkers([]);
       setSignaturePlacementLimit(1);
       collectingSignaturePlacementRef.current = true;
@@ -1007,6 +1000,7 @@ export function ERubricaMobileScreen({
       setValidationPageCount(1);
       setSignaturePosition({ x: 0.68, y: 0.82 });
       setSignaturePlacements([]);
+      signaturePlacementsRef.current = [];
       setSignatureMarkers([]);
       setSignaturePlacementLimit(1);
       collectingSignaturePlacementRef.current = true;
@@ -1040,6 +1034,7 @@ export function ERubricaMobileScreen({
     }
   };
   const signPdfDocument = async (preview = false) => {
+    if (signingRef.current) return;
     if (!pdfFile) {
       Alert.alert('Datos incompletos', 'Selecciona un PDF válido.');
       return;
@@ -1048,6 +1043,7 @@ export function ERubricaMobileScreen({
       Alert.alert('Ubicación requerida', 'Toca el PDF para registrar al menos una ubicación de firma.');
       return;
     }
+    signingRef.current = true;
     setSigning(true);
     setSignedFileUri(null);
     try {
@@ -1088,11 +1084,9 @@ export function ERubricaMobileScreen({
       form.append('posiciones', JSON.stringify(signaturePlacements));
       if (documentoPendienteSeleccionado) form.append('documentoPendiente', documentoPendienteSeleccionado);
       const result = await firmarERubricaDocumento(form);
-      const base64 = arrayBufferToBase64(result.bytes);
       const signedName = `${(pdfFile.name || 'documento.pdf').replace(/\.pdf$/i, '')}_firmado.pdf`;
       const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}${signedName}`;
       await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
-      if (signatureDraftKeyRef.current) await SecureStore.deleteItemAsync(signatureDraftKeyRef.current);
       if (preview) {
         onPreviewPdf({ uri, name: signedName, mimeType: 'application/pdf' });
       } else {
@@ -1108,7 +1102,10 @@ export function ERubricaMobileScreen({
       }
     } catch (error) {
       Alert.alert('No se pudo firmar', error instanceof ApiError ? error.message : 'Verifica los archivos y la clave del certificado.');
-    } finally { setSigning(false); }
+    } finally {
+      signingRef.current = false;
+      setSigning(false);
+    }
   };
   const confirmSignPdfDocument = () => {
     if (!pdfFile) {
@@ -1131,15 +1128,20 @@ export function ERubricaMobileScreen({
     ]);
   };
   const validatePdfSignature = async () => {
+    if (validatingPdfRef.current) return;
     if (!pdfFile) {
       Alert.alert('Selecciona un PDF', 'Carga primero el documento que deseas validar.');
       return;
     }
+    validatingPdfRef.current = true;
     setValidatingPdf(true);
     setPdfValidation(null);
     try { setPdfValidation(await validarERubricaFirmaPdf(pdfFile)); }
     catch (error) { setPdfValidation({ mensaje: error instanceof ApiError ? error.message : 'No se pudo validar el PDF.' }); }
-    finally { setValidatingPdf(false); }
+    finally {
+      validatingPdfRef.current = false;
+      setValidatingPdf(false);
+    }
   };
   const shareSignedDocument = async () => {
     if (!signedFileUri) return;
@@ -2252,8 +2254,7 @@ export function ERubricaMobileScreen({
                 try {
               const solId = Number(label(item, ['solId', 'SolId', 'id'], '0'));
                   const result = await descargarERubricaFirmaP12(solId);
-                  const uri = `${FileSystem.cacheDirectory ?? FileSystem.documentDirectory}firma-${solId}.p12`;
-                  await FileSystem.writeAsStringAsync(uri, arrayBufferToBase64(result.bytes), { encoding: FileSystem.EncodingType.Base64 });
+                  const uri = writeBinaryCacheFile(`firma-${solId}.p12`, result.bytes);
                   if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/x-pkcs12', dialogTitle: 'Compartir firma .p12' });
                 } catch (error) { Alert.alert('No se pudo descargar', error instanceof ApiError ? error.message : 'La firma no está disponible.'); }
               }} /> : null}
