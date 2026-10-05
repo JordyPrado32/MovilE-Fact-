@@ -27,8 +27,35 @@ const useSpeechRecognitionEvent: SpeechRecognitionBindings['useSpeechRecognition
 const voiceRecognitionAvailable = ExpoSpeechRecognitionModule !== null;
 export const botVoiceRecognitionAvailable = voiceRecognitionAvailable;
 const speechContext = [
-  'Númi', 'e-fact', 'factura', 'RUC', 'cédula', 'cliente', 'producto', 'IVA', 'subtotal', 'impuesto',
-  'retención', 'guía de remisión', 'emitir', 'anular', 'cancelar', 'confirmar', 'contado', 'crédito',
+  'Númi', 'e-fact', 'Jordy Prado', 'Jordy', 'Prado', 'factura', 'facturación', 'RUC', 'cédula', 'identificación',
+  'cliente', 'proveedor', 'producto', 'servicio', 'cantidad', 'precio', 'descuento', 'IVA', 'subtotal', 'impuesto', 'total',
+  'retención', 'guía de remisión', 'nota de crédito', 'nota de débito', 'emitir', 'anular', 'cancelar', 'confirmar', 'confirmado',
+  'contado', 'crédito', 'efectivo', 'transferencia', 'tarjeta', 'débito', 'cheque', 'banco', 'plazo', 'vencimiento',
+  'modificar IVA', 'cambiar IVA', 'IVA cero', 'IVA quince', 'quitar IVA', 'aplicar IVA',
+  'modificar precio', 'cambiar precio', 'subir precio', 'bajar precio', 'precio unitario',
+  'modificar cantidad', 'cambiar cantidad', 'agregar cantidad', 'quitar cantidad',
+  'aplicar descuento', 'quitar descuento', 'descuento porcentual', 'descuento en dólares',
+  'un producto', 'varios productos', 'todos los productos', 'cada producto', 'este producto', 'ese producto',
+  'crear factura', 'nueva factura', 'hacer factura', 'preparar factura', 'resumen de factura',
+  'buscar cliente', 'seleccionar cliente', 'cliente existente', 'crear cliente', 'datos del cliente',
+  'buscar producto', 'seleccionar producto', 'producto existente', 'crear producto', 'catálogo de productos',
+  'agregar producto', 'eliminar producto', 'quitar producto', 'reemplazar producto', 'duplicar producto',
+  'costo', 'valor', 'valor unitario', 'importe', 'importe total', 'base imponible', 'sin IVA',
+  'cero por ciento', 'cinco por ciento', 'ocho por ciento', 'quince por ciento',
+  'descuento global', 'descuento por producto', 'porcentaje', 'por ciento', 'dólares',
+  'pagar en efectivo', 'pagar con tarjeta', 'pagar por transferencia', 'pago a crédito', 'días de crédito',
+  'editar factura', 'corregir factura', 'revisar factura', 'continuar', 'volver', 'siguiente', 'anterior',
+  'opción uno', 'opción dos', 'opción tres', 'primera opción', 'segunda opción', 'tercera opción',
+  'NC', 'nota de crédito', 'anular factura', 'devolución', 'corrección de factura',
+  'ND', 'nota de débito', 'recargo', 'intereses', 'valor adicional',
+  'liquidación', 'liquidación de compra', 'proveedor', 'compra', 'comprobante de compra',
+  'retención', 'comprobante de retención', 'retener', 'impuesto retenido', 'SRI',
+  'guía de remisión', 'traslado', 'destinatario', 'punto de partida', 'punto de llegada',
+  'XML', 'PDF', 'autorización', 'clave de acceso', 'documento electrónico', 'comprobante electrónico',
+  'COT', 'cotización', 'proforma', 'presupuesto', 'oferta comercial', 'pedido',
+  'GR', 'guía de remisión', 'remitente', 'transportista', 'placa', 'fecha de traslado',
+  'factura de compra', 'documento de sustento', 'sustento tributario', 'reembolso',
+  'ver documentos', 'documentos generados', 'historial de documentos', 'consultar comprobantes',
 ];
 
 const supportedBotRoutes = new Set([
@@ -154,7 +181,6 @@ export function EfactBotScreen({
   const botContainerRef = useRef<View>(null);
   const voiceInputRef = useRef<TextInput>(null);
   const scopedHistoryReadyRef = useRef(sessionScope !== 'erubrica');
-  const previousViewKeyRef = useRef(viewKey);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const compactLayout = windowWidth < 360;
   const windowHeightRef = useRef(windowHeight);
@@ -323,7 +349,7 @@ export function EfactBotScreen({
     setPendingOperation(null);
     setRetryRequest(null);
     setWorkflowStale(false);
-    transitionVoice('idle', null);
+    transitionVoice('idle', handsFreeEnabledRef.current ? 'listening' : null);
     setVoiceResponse('');
     setQuickActionsOpen(false);
   };
@@ -404,10 +430,11 @@ export function EfactBotScreen({
   });
 
   useSpeechRecognitionEvent('result', (event) => {
-    const transcript = event.results?.[0]?.transcript?.trim() ?? '';
+    const result = selectVoiceResult(event.results ?? [], selectionOptions);
+    const transcript = result?.transcript.trim() ?? '';
     if (!transcript) return;
     handsFreeNoSpeechCountRef.current = 0;
-    voiceConfidenceRef.current = event.results?.[0]?.confidence ?? 0;
+    voiceConfidenceRef.current = result?.confidence ?? 0;
     voiceTranscriptRef.current = transcript;
     setVoiceTranscript(transcript);
   });
@@ -484,8 +511,12 @@ export function EfactBotScreen({
             transitionVoice('processing', 'processing');
             void send('cancelar', 'voz');
           } else {
-            setVoiceResponse('Para ejecutar esta operación di “confirmado” o pulsa el botón Confirmar.');
+            const voiceMessage = 'Para ejecutar esta operación di “confirmado” o pulsa el botón Confirmar.';
+            setVoiceResponse(voiceMessage);
             transitionVoice('awaitingConfirmation', 'response');
+            void speakCurrentBotText(voiceMessage).then((completed) => {
+              if (completed) scheduleHandsFreeResume(350);
+            });
           }
         } else {
           if ((voiceConfidenceRef.current > 0 && voiceConfidenceRef.current < 0.45) || isLikelyAmbientVoice(transcript)) {
@@ -506,7 +537,7 @@ export function EfactBotScreen({
         transitionVoice('idle', 'review');
       }
     } else {
-      transitionVoice('idle', null);
+      transitionVoice('idle', handsFreeEnabledRef.current ? 'listening' : null);
     }
   });
 
@@ -558,8 +589,10 @@ export function EfactBotScreen({
         signal: requestController.signal,
       });
       if (requestGeneration !== requestGenerationRef.current) return;
-      const navigationRequested = isExplicitNavigationRequest(text);
-      if (botResult.uiAction && navigationRequested) onUiAction?.(botResult.uiAction);
+      const navigationRequested = isExplicitNavigationRequest(text)
+        || isDocumentWorkflowRequest(text)
+        || (sessionScope === 'erubrica' && isErubricaActionRequest(text));
+      if (botResult.uiAction && (navigationRequested || sessionScope === 'erubrica')) onUiAction?.(botResult.uiAction);
       const catalogListRequest = isCatalogListRequest(text);
       const visibleSelectionOptions = catalogListRequest ? botResult.selectionOptions.slice(0, 3) : botResult.selectionOptions;
       const presentationAnswer = botResult.draft?.cliente || botResult.draft?.items?.length
@@ -596,11 +629,11 @@ export function EfactBotScreen({
         && Boolean(botResult.pendingOperation || botResult.requiresConfirmation);
       const shouldSpeakResponse = voiceRequest || handsFreeEnabledRef.current;
       if (shouldSpeakResponse) {
-        const voiceAnswer = buildSpeechResponse(presentationAnswer, visibleSelectionOptions);
+        const voiceAnswer = `${buildSpeechResponse(presentationAnswer, visibleSelectionOptions)}${sessionScope === 'erubrica' ? getErubricaRouteVoiceHint(botResult.suggestedRoute) : ''}`.trim();
         setVoiceResponse(voiceAnswer);
         transitionVoice(handsFreeAwaitingConfirmationRef.current ? 'awaitingConfirmation' : 'speaking', 'response');
         void speakCurrentBotText(voiceAnswer).then((completed) => {
-          if (!handsFreeAwaitingConfirmationRef.current) transitionVoice('idle', null);
+          if (!handsFreeAwaitingConfirmationRef.current) transitionVoice('idle', handsFreeEnabledRef.current ? 'listening' : null);
           if (handsFreeEnabledRef.current) scheduleHandsFreeResume(completed ? 350 : 150);
           if (navigationRequested && shouldSpeakResponse && botResult.suggestedRoute && isSupportedBotRoute(botResult.suggestedRoute)) {
             voiceNavigationTimerRef.current = setTimeout(() => {
@@ -654,7 +687,7 @@ export function EfactBotScreen({
   };
 
   const startVoiceInput = async () => {
-    if (sending || sendingRef.current || voiceStartInFlightRef.current || voiceAppStateRef.current !== 'active') return;
+    if (voiceStartInFlightRef.current || voiceAppStateRef.current !== 'active') return;
     if (voiceRecognitionStarted.current) {
       if (handsFreeEnabledRef.current) scheduleHandsFreeResume(400);
       return;
@@ -717,7 +750,7 @@ export function EfactBotScreen({
       ExpoSpeechRecognitionModule.start({
         lang: language,
         interimResults: true,
-        maxAlternatives: 1,
+        maxAlternatives: 3,
         continuous: !handsFreeEnabledRef.current,
         addsPunctuation: false,
         contextualStrings: [
@@ -726,7 +759,10 @@ export function EfactBotScreen({
           ...(invoiceDraft?.items?.map((item) => item.descripcion) ?? []),
           ...selectionOptions.map((option) => option.etiqueta),
         ].filter((value): value is string => Boolean(value?.trim())).slice(0, 40),
-        iosTaskHint: 'dictation',
+        iosTaskHint: selectionOptions.length > 0 || handsFreeAwaitingConfirmationRef.current ? 'confirmation' : 'dictation',
+        androidIntentOptions: selectionOptions.length > 0 || handsFreeAwaitingConfirmationRef.current
+          ? { EXTRA_LANGUAGE_MODEL: 'web_search' }
+          : undefined,
       });
     } catch (err) {
       voiceHolding.current = false;
@@ -842,7 +878,7 @@ export function EfactBotScreen({
     handsFreeNoSpeechCountRef.current = 0;
     setHandsFreeEnabled(true);
     setVoiceResponse('');
-    transitionVoice('idle', null);
+    transitionVoice('idle', 'listening');
     void startVoiceInput();
   };
 
@@ -882,18 +918,6 @@ export function EfactBotScreen({
       if (voiceControlsRef.current?.start === startVoiceInput) voiceControlsRef.current = null;
     };
   }, [voiceControlsRef, startHandsFree, startVoiceInput, stopVoiceInput]);
-
-  useEffect(() => {
-    if (!voiceOnly) return;
-    cancelVoiceInput();
-  }, [voiceOnly]);
-
-  useEffect(() => {
-    if (viewKey === undefined) return;
-    const changed = previousViewKeyRef.current !== viewKey;
-    previousViewKeyRef.current = viewKey;
-    if (changed && viewKey !== 'bot') cancelVoiceInput();
-  }, [viewKey]);
 
   const renderVoiceOverlay = () => voiceOverlayState ? (
     <VoiceInteractionOverlay
@@ -1092,7 +1116,7 @@ export function EfactBotScreen({
           accessibilityRole="button"
           accessibilityLabel={listening ? 'Detener reconocimiento de voz' : 'Hablar con Númi'}
           style={[styles.botVoiceButton, compactLayout && styles.botVoiceButtonCompact, listening && styles.botVoiceButtonActive]}
-          disabled={sending || !voiceRecognitionAvailable}
+          disabled={!voiceRecognitionAvailable}
           onPress={() => {
             if (listening || voiceRecognitionStarted.current) stopVoiceInput();
             else void startVoiceInput();
@@ -1100,11 +1124,11 @@ export function EfactBotScreen({
         >
           <MaterialCommunityIcons name={listening ? 'stop' : 'microphone-outline'} size={20} color={listening ? '#FFFFFF' : '#0878C9'} />
         </Pressable>
-        <TextInput ref={voiceInputRef} value={draft} onChangeText={(value) => { setDraft(value); if (retryRequest && value.trim() !== retryRequest.text) setRetryRequest(null); }} placeholder={listening ? 'Escuchando... toca para detener' : voiceRecognitionAvailable ? 'Escribe o toca el micrófono para hablar...' : 'Escribe tu orden...'} placeholderTextColor="#8DA1B4" style={[styles.botInput, compactLayout && styles.botInputCompact]} editable={!sending && !listening} multiline maxLength={800} returnKeyType="send" blurOnSubmit accessibilityLabel="Escribe una instrucción para Númi" onFocus={() => { setTimeout(() => scrollMessagesToEnd(), 80); }} onSubmitEditing={() => void send()} />
+        <TextInput ref={voiceInputRef} value={draft} onChangeText={(value) => { setDraft(value); if (retryRequest && value.trim() !== retryRequest.text) setRetryRequest(null); }} placeholder={listening ? 'Escuchando... toca para detener' : voiceRecognitionAvailable ? 'Escribe o toca el micrófono para hablar...' : 'Escribe tu orden...'} placeholderTextColor="#8DA1B4" style={[styles.botInput, compactLayout && styles.botInputCompact]} editable={!listening} multiline maxLength={800} returnKeyType="send" blurOnSubmit accessibilityLabel="Escribe una instrucción para Númi" onFocus={() => { setTimeout(() => scrollMessagesToEnd(), 80); }} onSubmitEditing={() => void send()} />
         <Pressable accessibilityRole="button" accessibilityLabel="Mostrar acciones rápidas" style={[styles.botToolButton, compactLayout && styles.botToolButtonCompact, quickActionsOpen && styles.botToolButtonActive]} disabled={sending || listening} onPress={() => setQuickActionsOpen((value) => !value)}>
           <MaterialCommunityIcons name="lightning-bolt-outline" size={19} color={quickActionsOpen ? '#FFFFFF' : '#6E94B4'} />
         </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Enviar instrucción" style={[styles.botSendButton, compactLayout && styles.botSendButtonCompact, (!draft.trim() || sending) && styles.botSendButtonDisabled]} onPress={() => send()} disabled={!draft.trim() || sending}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Enviar instrucción" style={[styles.botSendButton, compactLayout && styles.botSendButtonCompact, !draft.trim() && styles.botSendButtonDisabled]} onPress={() => send()} disabled={!draft.trim()}>
           <Text style={styles.botSendText}>➤</Text>
         </Pressable>
       </View>
@@ -1463,6 +1487,30 @@ function isExplicitNavigationRequest(value: string) {
   return /\b(llevame|llevarme|abre|abrir|ir a|ve a|navega|navegar|muestrame la pantalla)\b/.test(normalized);
 }
 
+function isDocumentWorkflowRequest(value: string) {
+  const normalized = normalizeVoiceCommand(value);
+  return /\b(?:nc|nota de credito|nd|nota de debito|liq|liquidacion|ret|retencion|gr|guia de remision|cot|cotizacion|proforma|importar xml)\b/.test(normalized);
+}
+
+function isErubricaActionRequest(value: string) {
+  const normalized = normalizeVoiceCommand(value);
+  return /\b(firmar|firma|validar|solicitar|comprar|renovar|documentos por firmar|mis firmas)\b/.test(normalized);
+}
+
+function getErubricaRouteVoiceHint(route?: string | null) {
+  switch (normalizeBotRoute(route ?? '')) {
+    case '/e-rubrica/configuracion/firma':
+      return ' La clave del certificado ya debe estar configurada; aquí solo revisaremos su estado.';
+    case '/e-rubrica/documentos/firmar':
+    case '/e-rubrica/documentos-por-firmar':
+      return ' En la siguiente pantalla selecciona el PDF y toca el documento para ubicar la firma.';
+    case '/e-rubrica/documentos/validar-firma':
+      return ' En la siguiente pantalla selecciona el PDF que deseas validar.';
+    default:
+      return '';
+  }
+}
+
 function limitCatalogListAnswer(answer: string, request: string) {
   if (!isCatalogListRequest(request)) return answer;
   const lines = answer.split(/\r?\n/);
@@ -1544,6 +1592,16 @@ function normalizeVoiceSelectionCommand(value: string, options: BotSelectionOpti
   return options.some((option) => option.indice === index) ? String(index) : value;
 }
 
+function selectVoiceResult<T extends { transcript: string; confidence: number }>(results: T[], options: BotSelectionOption[]) {
+  const primary = results[0];
+  if (!primary || options.length === 0) return primary;
+
+  return results.find((result) => {
+    const command = normalizeVoiceSelectionCommand(result.transcript, options);
+    return /^\d+$/.test(command);
+  }) ?? primary;
+}
+
 function buildSpeechResponse(answer: string, options: BotSelectionOption[] = []) {
   const compact = sanitizeSpeechText(answer)
     .replace(/\s+/g, ' ')
@@ -1561,7 +1619,7 @@ function buildSpeechResponse(answer: string, options: BotSelectionOption[] = [])
 }
 
 function isExplicitConfirmation(value: string) {
-  return /\b(confirmado|confirmo|autorizo|autorizado|acepto)\b/.test(normalizeVoiceCommand(value));
+  return /\b(confirmado|confirmo)\b/.test(normalizeVoiceCommand(value));
 }
 
 function sanitizeSpeechText(value: string) {

@@ -4,7 +4,7 @@ export function buildSignatureConfirmation(input: {
   certificateHolder?: string | null;
 }) {
   const placementLabel = input.placementCount === 1 ? '1 ubicación' : `${input.placementCount} ubicaciones`;
-  const certificate = input.certificateHolder?.trim() || 'certificado configurado';
+  const certificate = input.certificateHolder?.trim() || 'certificado previamente configurado';
 
   return {
     title: 'Confirmar firma',

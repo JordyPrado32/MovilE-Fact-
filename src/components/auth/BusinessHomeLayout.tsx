@@ -365,6 +365,7 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
             onDownloadRemotePdf={(urlOrPath: any, fileName: string) => downloadPdf(async () => urlOrPath, fileName)}
             onOpenBot={() => setErubricaTabRequest('asistente')}
             onPdfPositionDragChange={setPdfPositionDragging}
+            voiceControlsRef={botVoiceControlsRef}
             userName={portalFirstName}
             userId={userId}
             solicitudPrefill={{

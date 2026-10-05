@@ -35,7 +35,7 @@ import { Field, MessageBox, PrimaryButton, SecondaryButton } from '../ui/FormCon
 import { ResultCollection } from '../data/ResultCollection';
 import { styles } from '../../styles/appStyles';
 import type { BotFeedbackState, BotMessage } from '../../types/bot';
-import { EfactBotScreen } from '../bot/EfactBotScreen';
+import { EfactBotScreen, type BotVoiceControls } from '../bot/EfactBotScreen';
 import { SOLICITUD_FILES_INITIAL, SOLICITUD_FORM_INITIAL, SOLICITUD_UBICACIONES_ECUADOR, type ERubricaTab, type SolicitudDocumentoKey } from '../../features/erubrica/erubricaTypes';
 
 const MemoizedWebView = React.memo(WebView);
@@ -221,10 +221,10 @@ export function PdfDocumentPreview({
   useEffect(() => {
     syncPdfMarkers();
   }, [syncPdfMarkers]);
-  const clickHandler = selectable ? `let dragging=false,marker=null;const moveMarker=e=>{const r=c.getBoundingClientRect(),x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y=Math.max(0,Math.min(1,(e.clientY-r.top)/r.height));if(marker){marker.style.left=(x*100)+'%';marker.style.top=(y*100)+'%'}return{x,y}};viewer.addEventListener('pointerdown',e=>{marker=e.target.closest('.marker');if(e.target!==c&&!marker)return;dragging=true;viewer.setPointerCapture&&viewer.setPointerCapture(e.pointerId);window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:true}));moveMarker(e)});viewer.addEventListener('pointermove',e=>{if(dragging)moveMarker(e)});const finish=e=>{if(!dragging)return;dragging=false;const p=moveMarker(e);const index=marker&&Number(marker.dataset.index);window.ReactNativeWebView.postMessage(JSON.stringify(marker&&Number.isInteger(index)?{type:'move',index,x:p.x,y:p.y}:{type:'position',x:p.x,y:p.y}));marker=null;window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:false}))};viewer.addEventListener('pointerup',finish);viewer.addEventListener('pointercancel',finish);` : '';
+  const clickHandler = selectable ? `let dragging=false,marker=null,offsetX=0,offsetY=0,frame=0,pending=null;const paint=()=>{frame=0;if(marker&&pending){marker.style.left=(pending.x*100)+'%';marker.style.top=(pending.y*100)+'%'}};const moveMarker=e=>{const r=c.getBoundingClientRect(),p={x:Math.max(0,Math.min(1,(e.clientX-r.left-offsetX)/r.width)),y:Math.max(0,Math.min(1,(e.clientY-r.top-offsetY)/r.height))};if(marker){pending=p;if(!frame)frame=requestAnimationFrame(paint)}return p};viewer.addEventListener('pointerdown',e=>{marker=e.target.closest('.marker');if(e.target!==c&&!marker)return;if(marker){const r=marker.getBoundingClientRect();offsetX=e.clientX-(r.left+r.width/2);offsetY=e.clientY-(r.top+r.height/2)}else{offsetX=0;offsetY=0}dragging=true;e.preventDefault();viewer.setPointerCapture&&viewer.setPointerCapture(e.pointerId);window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:true}));moveMarker(e)});viewer.addEventListener('pointermove',e=>{if(dragging){e.preventDefault();moveMarker(e)}});const finish=e=>{if(!dragging)return;dragging=false;const p=moveMarker(e);if(frame){cancelAnimationFrame(frame);frame=0;paint()}const index=marker&&Number(marker.dataset.index);window.ReactNativeWebView.postMessage(JSON.stringify(marker&&Number.isInteger(index)?{type:'move',index,x:p.x,y:p.y}:{type:'position',x:p.x,y:p.y}));marker=null;pending=null;offsetX=0;offsetY=0;window.ReactNativeWebView.postMessage(JSON.stringify({type:'drag',dragging:false}))};viewer.addEventListener('pointerup',finish);viewer.addEventListener('pointercancel',finish);` : '';
   const sizeHandler = selectable ? `window.ReactNativeWebView.postMessage(JSON.stringify({type:'size',widthMm:v.width*25.4/72,heightMm:v.height*25.4/72}));` : '';
   const markers = selectable ? placements.map((placement, index) => ({ ...placement, index })).filter((placement) => placement.page === page).map((placement) => `<div class="marker" data-index="${placement.index}" style="left:${(placement.x * 100).toFixed(2)}%;top:${(placement.y * 100).toFixed(2)}%">${placement.label}</div>`).join('') : '';
-  const html = base64 && pdfJsSource ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>html,body{margin:0;background:#eef3f7}#stage{text-align:center;padding:12px;box-sizing:border-box}#viewer{display:inline-block;position:relative}#canvas{display:block;background:#fff;max-width:100%;box-shadow:0 2px 8px #63758755}.marker{position:absolute;transform:translate(-50%,-50%);width:84px;height:36px;border:2px solid #087c3a;background:#e5f8ebdd;color:#087c3a;font:700 11px Arial;border-radius:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;touch-action:none}</style></head><body><div id="stage"><div id="viewer"><canvas id="canvas"></canvas>${markers}</div></div><script>${pdfJsSource}</script><script>try{const r=atob('${base64}'),b=new Uint8Array(r.length);for(let i=0;i<r.length;i++)b[i]=r.charCodeAt(i);pdfjsLib.getDocument({data:b,disableWorker:true}).promise.then(d=>{window.ReactNativeWebView.postMessage(JSON.stringify({type:'pageCount',pageCount:d.numPages}));return d.getPage(Math.min(${page},d.numPages))}).then(p=>{const v=p.getViewport({scale:1}),s=Math.min((innerWidth-24)/v.width,1.5),d=Math.min(3,window.devicePixelRatio||2),q=p.getViewport({scale:s}),h=p.getViewport({scale:s*d}),c=document.getElementById('canvas'),viewer=document.getElementById('viewer');c.width=h.width;c.height=h.height;c.style.width=q.width+'px';c.style.height=q.height+'px';${sizeHandler}window.ReactNativeWebView.postMessage(JSON.stringify({type:'height',height:Math.ceil(q.height+24)}));return p.render({canvasContext:c.getContext('2d'),viewport:h}).promise.then(()=>{${clickHandler}})}).catch(()=>document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>')}catch(e){document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>'}</script></body></html>` : base64 === '' ? '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">El archivo descargado no es un PDF válido.</p>' : pdfJsUnavailable ? '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo iniciar el visor de PDF.</p>' : '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">Cargando PDF…</p>';
+  const html = base64 && pdfJsSource ? `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/><style>html,body{margin:0;background:#eef3f7}#stage{text-align:center;padding:12px;box-sizing:border-box}#viewer{display:inline-block;position:relative;touch-action:none}#canvas{display:block;background:#fff;max-width:100%;box-shadow:0 2px 8px #63758755}.marker{position:absolute;transform:translate(-50%,-50%);width:84px;height:36px;border:2px solid #087c3a;background:#e5f8ebdd;color:#087c3a;font:700 11px Arial;border-radius:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;touch-action:none;will-change:left,top}</style></head><body><div id="stage"><div id="viewer"><canvas id="canvas"></canvas>${markers}</div></div><script>${pdfJsSource}</script><script>try{const r=atob('${base64}'),b=new Uint8Array(r.length);for(let i=0;i<r.length;i++)b[i]=r.charCodeAt(i);pdfjsLib.getDocument({data:b,disableWorker:true}).promise.then(d=>{window.ReactNativeWebView.postMessage(JSON.stringify({type:'pageCount',pageCount:d.numPages}));return d.getPage(Math.min(${page},d.numPages))}).then(p=>{const v=p.getViewport({scale:1}),s=Math.min((innerWidth-24)/v.width,1.5),d=Math.min(3,window.devicePixelRatio||2),q=p.getViewport({scale:s}),h=p.getViewport({scale:s*d}),c=document.getElementById('canvas'),viewer=document.getElementById('viewer');c.width=h.width;c.height=h.height;c.style.width=q.width+'px';c.style.height=q.height+'px';${sizeHandler}window.ReactNativeWebView.postMessage(JSON.stringify({type:'height',height:Math.ceil(q.height+24)}));return p.render({canvasContext:c.getContext('2d'),viewport:h}).promise.then(()=>{${clickHandler}})}).catch(()=>document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>')}catch(e){document.body.innerHTML='<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo mostrar el PDF.</p>'}</script></body></html>` : base64 === '' ? '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">El archivo descargado no es un PDF válido.</p>' : pdfJsUnavailable ? '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">No se pudo iniciar el visor de PDF.</p>' : '<p style="padding:24px;text-align:center;font-family:Arial;color:#637587">Cargando PDF…</p>';
   const handlePdfMessage = React.useCallback((event: { nativeEvent: { data: string } }) => {
     try {
       const result = JSON.parse(event.nativeEvent.data) as { type?: string; dragging?: boolean; index?: number; x?: number; y?: number; widthMm?: number; heightMm?: number; height?: number; pageCount?: number };
@@ -324,6 +324,7 @@ export function ERubricaMobileScreen({
   onSync,
   onOpenBot,
   onPdfPositionDragChange,
+  voiceControlsRef,
   userName,
   userId,
   solicitudPrefill,
@@ -342,6 +343,7 @@ export function ERubricaMobileScreen({
   onSync: () => Promise<void>;
   onOpenBot: () => void;
   onPdfPositionDragChange: (dragging: boolean) => void;
+  voiceControlsRef?: React.MutableRefObject<BotVoiceControls | null>;
   userName: string;
   userId: number;
   solicitudPrefill?: ERubricaSolicitudPrefill;
@@ -368,6 +370,7 @@ export function ERubricaMobileScreen({
   const [documentosFirmados, setDocumentosFirmados] = useState<ERubricaDocumentoFirmado[]>([]);
   const [loadingDocumentosFirmados, setLoadingDocumentosFirmados] = useState(false);
   const [firmaEmisores, setFirmaEmisores] = useState<ERubricaEmisor[]>([]);
+  const [firmaEmisorSeleccionadoId, setFirmaEmisorSeleccionadoId] = useState<number | null>(null);
   const [firmaEmisoresCargados, setFirmaEmisoresCargados] = useState(false);
   const [firmaDetalleActiva, setFirmaDetalleActiva] = useState<ERubricaFirmaEstado | null>(null);
   const [loadingFirmaDetalle, setLoadingFirmaDetalle] = useState(false);
@@ -415,6 +418,23 @@ export function ERubricaMobileScreen({
   const [assistantMessages, setAssistantMessages] = useState<BotMessage[]>([]);
   const [assistantDraft, setAssistantDraft] = useState('');
   const [assistantFeedback, setAssistantFeedback] = useState<BotFeedbackState>({});
+  const [assistantActionTab, setAssistantActionTab] = useState<ERubricaTab | null>(null);
+  const voiceStartPendingRef = useRef(false);
+  const contentTab = assistantActionTab ?? tab;
+  const guidedByVoice = tab === 'asistente' && assistantActionTab === 'nueva-solicitud';
+  const openAssistantDocumentArea = (nextTab?: ERubricaTab) => {
+    if (nextTab !== 'firmar' && nextTab !== 'validar-firma' && nextTab !== 'nueva-solicitud') return;
+    if (nextTab === 'nueva-solicitud') setSolicitudStep(4);
+    setAssistantActionTab(nextTab);
+  };
+  useEffect(() => {
+    if (tab !== 'asistente' || !voiceStartPendingRef.current || !voiceControlsRef) return undefined;
+    const timer = setTimeout(() => {
+      voiceStartPendingRef.current = false;
+      voiceControlsRef.current?.startHandsFree();
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [tab, voiceControlsRef]);
   useEffect(() => {
     if (!pdfFile?.uri) {
       signatureDraftKeyRef.current = null;
@@ -489,6 +509,10 @@ export function ERubricaMobileScreen({
       { text: 'Firmar en dos lugares', onPress: () => { setSignaturePlacementLimit(2); collectingSignaturePlacementRef.current = true; } },
     ]);
   };
+  const agregarSegundaUbicacionFirma = () => {
+    setSignaturePlacementLimit(2);
+    collectingSignaturePlacementRef.current = true;
+  };
   const registrarUbicacionFirma = (position: { x: number; y: number }) => {
     if (!collectingSignaturePlacementRef.current || signaturePlacements.length >= signaturePlacementLimit) return;
 
@@ -521,12 +545,16 @@ export function ERubricaMobileScreen({
   };
   const selectTab = (nextTab: ERubricaTab) => {
     onPdfPositionDragChange(false);
-    if ((tab === 'firmar' || tab === 'validar-firma') && nextTab !== tab) {
+    if ((contentTab === 'firmar' || contentTab === 'validar-firma') && nextTab !== contentTab) {
       limpiarPdfTemporal();
     }
     if (nextTab === 'firmar' && !puedeFirmarPdf) {
       Alert.alert('Firma no disponible', 'Primero adquiere una firma de E-RÚBRICA para usar Firmar PDF.');
       nextTab = 'plan-disponible';
+    }
+    if (tab === 'asistente' && assistantActionTab) {
+      setAssistantActionTab(nextTab === 'inicio' ? null : nextTab);
+      return;
     }
     setTab(nextTab);
     onTabChange(nextTab);
@@ -574,6 +602,7 @@ export function ERubricaMobileScreen({
     const nextTab = requestedTab ?? 'inicio';
     if ((tab === 'firmar' || tab === 'validar-firma') && nextTab !== tab)
       limpiarPdfTemporal();
+    if (nextTab !== 'asistente') setAssistantActionTab(null);
     setTab(nextTab);
   }, [requestedTab]);
   const dashboardRecord = data as (ERubricaDashboard & Record<string, unknown>) | null;
@@ -665,7 +694,12 @@ export function ERubricaMobileScreen({
   };
   const renovacionActual = planDisponible ?? renovacion ?? dashboardPayload?.renovacion ?? dashboardPayload?.Renovacion;
   const activeFirma = firmas[0] ?? null;
-  const firmaEfact = firmaEmisores.find((item) => item.tieneCertificado && item.tieneClave) ?? null;
+  const firmaEmisorOptions = firmaEmisores.map((item) => ({
+    label: item.nomComercial || item.razonSocial || item.ruc || `Emisor ${item.id}`,
+    value: String(item.id),
+  }));
+  const firmasConfiguradas = firmaEmisores.filter((item) => item.tieneCertificado && item.tieneClave);
+  const firmaEfact = firmasConfiguradas.find((item) => item.id === firmaEmisorSeleccionadoId) ?? null;
   const firmaEfactValida = Boolean(firmaDetalleActiva?.esValida ?? firmaEfact?.esValida);
   const firmaTitular = firmaDetalleActiva?.nombreTitular || firmaEfact?.razonSocial || 'Titular no disponible';
   const firmaIdentificacion = firmaDetalleActiva?.identificacion || label(activeFirma, ['identificacion', 'solIdentificacion', 'SolIdentificacion', 'ruc', 'cedula', 'documento'], 'Sin dato');
@@ -746,7 +780,11 @@ export function ERubricaMobileScreen({
       setLoadingFirmaDetalle(true);
       const emisores = (await getERubricaEmisores()).filter((item) => item.id > 0);
       setFirmaEmisores(emisores);
-      const emisorActivo = emisores.find((item) => item.tieneCertificado && item.tieneClave) ?? null;
+      const configurados = emisores.filter((item) => item.tieneCertificado && item.tieneClave);
+      const emisorSeleccionado = configurados.find((item) => item.id === firmaEmisorSeleccionadoId)
+        ?? (configurados.length === 1 ? configurados[0] : emisores.length === 1 ? emisores[0] : null);
+      setFirmaEmisorSeleccionadoId(emisorSeleccionado?.id ?? null);
+      const emisorActivo = emisorSeleccionado;
       setFirmaDetalleActiva(emisorActivo ? await getERubricaFirmaEstado(emisorActivo.id) : null);
     } catch (error) {
       setFirmaDetalleActiva(null);
@@ -757,16 +795,16 @@ export function ERubricaMobileScreen({
     }
   };
   useEffect(() => {
-    if ((tab === 'catalogos' || tab === 'plan-disponible' || tab === 'nueva-solicitud') && catalogos.length === 0) {
+    if ((contentTab === 'catalogos' || contentTab === 'plan-disponible' || contentTab === 'nueva-solicitud') && catalogos.length === 0) {
       void Promise.all([getERubricaProductos(), getERubricaSaldo()]).then(([items, balance]) => {
         setCatalogos(items ?? []);
         setSaldo(Number(balance?.balance ?? 0));
       }).catch(() => undefined);
     }
-    if ((tab === 'renovacion' || tab === 'plan-disponible' || tab === 'nueva-solicitud') && renovacion === null) void getERubricaRenovacion().then(setRenovacion).catch(() => undefined);
-    if (tab === 'plan-disponible' && planDisponible === null) void getERubricaPlan().then(setPlanDisponible).catch(() => undefined);
-    if (tab === 'firma-config' && !firmaEmisoresCargados) void cargarFirmaActiva();
-  }, [catalogos.length, firmaEmisoresCargados, renovacion, tab]);
+    if ((contentTab === 'renovacion' || contentTab === 'plan-disponible' || contentTab === 'nueva-solicitud') && renovacion === null) void getERubricaRenovacion().then(setRenovacion).catch(() => undefined);
+    if (contentTab === 'plan-disponible' && planDisponible === null) void getERubricaPlan().then(setPlanDisponible).catch(() => undefined);
+    if ((contentTab === 'firma-config' || contentTab === 'firmar') && !firmaEmisoresCargados) void cargarFirmaActiva();
+  }, [catalogos.length, contentTab, firmaEmisoresCargados, renovacion]);
   const cargarDocumentosFirmados = async () => {
     try {
       setLoadingDocumentosFirmados(true);
@@ -908,7 +946,7 @@ export function ERubricaMobileScreen({
     ]);
   };
   const saveConfiguredSignature = async () => {
-    const emisorId = firmaEfact?.id ?? firmaEmisores[0]?.id;
+    const emisorId = firmaEmisorSeleccionadoId ?? (firmaEmisores.length === 1 ? firmaEmisores[0]?.id : undefined);
     if (!certificateFile || !certificatePassword.trim()) {
       if (firmaEfact) {
         Alert.alert(firmaEfactValida ? 'Firma vigente' : 'Firma configurada', firmaEfactValida ? 'Ya estás usando la firma configurada.' : 'La firma existente requiere revisión antes de usarla.');
@@ -918,7 +956,7 @@ export function ERubricaMobileScreen({
       return;
     }
     if (!emisorId) {
-      Alert.alert('Emisor no disponible', 'No existe un emisor activo para configurar la firma.');
+      Alert.alert('Selecciona un emisor', 'Elige el emisor donde se cargará el certificado.');
       return;
     }
     try {
@@ -956,8 +994,8 @@ export function ERubricaMobileScreen({
     const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true });
     if (!result.canceled) {
       const file = result.assets[0];
-      if (!file.name.toLowerCase().endsWith('.pdf') || (file.size ?? 0) > 15 * 1024 * 1024) {
-        Alert.alert('Archivo no válido', 'Selecciona un PDF de máximo 15 MB.');
+      if (!file.name.toLowerCase().endsWith('.pdf') || (file.size ?? 0) > 10 * 1024 * 1024) {
+        Alert.alert('Archivo no válido', 'Selecciona un PDF de máximo 10 MB.');
         return;
       }
       setPdfFile(file);
@@ -1013,14 +1051,22 @@ export function ERubricaMobileScreen({
     setSigning(true);
     setSignedFileUri(null);
     try {
-      let emisorFirma = firmaEmisores.find((item) => item.tieneCertificado && item.tieneClave) ?? null;
+      let configuredCount = firmasConfiguradas.length;
+      let emisorFirma = firmaEmisores.find((item) => item.id === firmaEmisorSeleccionadoId && item.tieneCertificado && item.tieneClave) ?? null;
       if (!emisorFirma) {
         const emisores = (await getERubricaEmisores()).filter((item) => item.id > 0);
         setFirmaEmisores(emisores);
-        emisorFirma = emisores.find((item) => item.tieneCertificado && item.tieneClave) ?? null;
+        const configurados = emisores.filter((item) => item.tieneCertificado && item.tieneClave);
+        configuredCount = configurados.length;
+        const seleccionado = configurados.find((item) => item.id === firmaEmisorSeleccionadoId)
+          ?? (configurados.length === 1 ? configurados[0] : null);
+        setFirmaEmisorSeleccionadoId(seleccionado?.id ?? null);
+        emisorFirma = seleccionado;
       }
       if (!emisorFirma) {
-        Alert.alert('Firma no configurada', 'Configura primero el certificado .p12 y su clave en la vista Firma.');
+        Alert.alert('Selecciona una firma', configuredCount > 1
+          ? 'Selecciona el certificado previamente configurado que deseas utilizar.'
+          : 'Configura primero el certificado .p12 y su clave en la vista Firma.');
         return;
       }
       const form = new FormData();
@@ -1418,7 +1464,7 @@ export function ERubricaMobileScreen({
               <View style={styles.erubricaNumiCopy}><Text style={styles.erubricaNumiName}>Númi</Text><Text style={styles.erubricaNumiSubtitle}>Tu asistente de E-RÚBRICA</Text><View style={styles.erubricaNumiBubble}><Text style={styles.erubricaNumiBubbleText}>Te ayudo a firmar, validar y gestionar tus documentos.</Text></View></View>
               <Image source={require('../../../assets/numi-home.png')} style={styles.erubricaNumiImage} resizeMode="contain" />
             </View>
-            <View style={styles.erubricaNumiActions}><View style={styles.erubricaNumiAction}><MaterialCommunityIcons name="message-processing-outline" size={22} color="#BDF5CD" /><View style={styles.erubricaNumiActionCopy}><Text style={styles.erubricaNumiActionTitle}>Consultas</Text><Text style={styles.erubricaNumiActionText}>Haz tus preguntas</Text></View></View><View style={styles.erubricaNumiAction}><MaterialCommunityIcons name="file-sign" size={22} color="#BDF5CD" /><View style={styles.erubricaNumiActionCopy}><Text style={styles.erubricaNumiActionTitle}>Firmas</Text><Text style={styles.erubricaNumiActionText}>Guías y pasos</Text></View></View></View>
+            <View style={styles.erubricaNumiActions}><View style={styles.erubricaNumiAction}><MaterialCommunityIcons name="message-processing-outline" size={22} color="#BDF5CD" /><View style={styles.erubricaNumiActionCopy}><Text style={styles.erubricaNumiActionTitle}>Consultas</Text><Text style={styles.erubricaNumiActionText}>Haz tus preguntas</Text></View></View><View style={styles.erubricaNumiAction}><MaterialCommunityIcons name="file-sign" size={22} color="#BDF5CD" /><View style={styles.erubricaNumiActionCopy}><Text style={styles.erubricaNumiActionTitle}>Firmas</Text><Text style={styles.erubricaNumiActionText}>Guías y pasos</Text></View></View><Pressable style={styles.erubricaNumiAction} onPress={() => { voiceStartPendingRef.current = true; onOpenBot(); }}><MaterialCommunityIcons name="headset" size={22} color="#BDF5CD" /><View style={styles.erubricaNumiActionCopy}><Text style={styles.erubricaNumiActionTitle}>Manos libres</Text><Text style={styles.erubricaNumiActionText}>Habla con Númi</Text></View></Pressable></View>
           </Pressable>
           <View style={styles.erubricaHomeStateCard}><View style={styles.erubricaHomeSectionHeader}><Text style={styles.erubricaHomeSectionTitle}>Estado de la firma</Text><Text style={styles.erubricaHomeSectionHint}>Solicitud más reciente</Text></View><View style={styles.erubricaHomeStateGrid}><View style={styles.erubricaHomeStateItem}><View style={styles.erubricaHomeStateIcon}><MaterialCommunityIcons name="cash-check" size={18} color="#079349" /></View><View><Text style={styles.erubricaHomeStateLabel}>Estado de pago</Text><Text style={styles.erubricaHomeStateValue}>{pagoInicio}</Text></View></View><View style={styles.erubricaHomeStateItem}><View style={[styles.erubricaHomeStateIcon, styles.erubricaHomeStateIconBlue]}><MaterialCommunityIcons name="send-outline" size={18} color="#2563B8" /></View><View><Text style={styles.erubricaHomeStateLabel}>Estado Uanataca</Text><Text style={styles.erubricaHomeStateValue}>{uanatacaInicio}</Text></View></View></View></View>
           <View style={styles.erubricaHomeQuickGrid}>{[['file-sign', 'Firmar documento', 'Firma tus documentos en pocos pasos', 'firmar'], ['cart-outline', 'Comprar / Renovar firma', 'Adquiere o renueva tu firma electrónica', 'plan-disponible'], ['folder-open-outline', 'Mis documentos', 'Accede a tus documentos firmados', 'historial-documentos'], ['shield-check-outline', 'Validar firma', 'Verifica documentos firmados', 'validar-firma']].map(([icon, title, description, destination], index) => <Pressable key={destination} style={[styles.erubricaHomeQuickCard, index === 0 && styles.erubricaHomeQuickCardPrimary]} onPress={() => selectTab(destination as ERubricaTab)}><View style={styles.erubricaHomeQuickIcon}><MaterialCommunityIcons name={icon as keyof typeof MaterialCommunityIcons.glyphMap} size={22} color={index === 0 ? '#FFFFFF' : ERUBRICA_COLORS.primary} /></View><View style={styles.erubricaHomeQuickCopy}><Text style={[styles.erubricaHomeQuickTitle, index === 0 && styles.erubricaHomeQuickTitlePrimary]}>{title}</Text><Text style={[styles.erubricaHomeQuickText, index === 0 && styles.erubricaHomeQuickTextPrimary]}>{description}</Text></View><MaterialCommunityIcons name="chevron-right" size={20} color={index === 0 ? '#FFFFFF' : '#607887'} /></Pressable>)}</View>
@@ -1427,10 +1473,10 @@ export function ERubricaMobileScreen({
         </View>
       ) : null}
 
-      {tab === 'asistente' ? <EfactBotScreen userName={userName} userId={userId} onNavigate={(route) => { const nextTab = getERubricaBotTab(route); if (nextTab) onTabChange(nextTab); }} onUiAction={(action) => { const nextTab = getERubricaBotActionTab(action); if (nextTab) onTabChange(nextTab); }} sessionScope="erubrica" messages={assistantMessages} setMessages={setAssistantMessages} draft={assistantDraft} setDraft={setAssistantDraft} feedbackByMessage={assistantFeedback} setFeedbackByMessage={setAssistantFeedback} welcomeText={`Hola ${userName || ''}. Soy Númi, tu asistente de E-RÚBRICA. Puedo ayudarte con firmas, solicitudes, pagos y validación de documentos.`} assistantContext="asistente de E-RÚBRICA. Ayuda únicamente con firma electrónica: comprar o renovar certificados, crear y seguir solicitudes, requisitos de persona natural o representante legal, pagos, Uanataca, configurar certificado .p12, firmar PDF, ubicar la firma, documentos firmados y validar firmas. No ofrezcas crear facturas ni acciones de E-FACT. Usa únicamente información real disponible y no inventes datos. Usa lenguaje neutral; no asumas el género de la persona ni uses bienvenido/bienvenida." quickActions={[{ label: 'Comprar o renovar firma', command: 'Quiero comprar o renovar mi firma electrónica' }, { label: 'Estado de mi firma', command: '¿Cuál es el estado de mi firma electrónica?' }, { label: 'Solicitar firma', command: '¿Qué necesito para solicitar una firma electrónica?' }, { label: 'Firmar PDF', command: '¿Cómo firmo un PDF?' }, { label: 'Validar firma', command: '¿Cómo valido la firma de un documento?' }]} theme="erubrica" /> : null}
+      <EfactBotScreen voiceOnly={tab !== 'asistente'} embedded={tab === 'asistente'} viewKey={tab} userName={userName} userId={userId} voiceControlsRef={voiceControlsRef} onNavigate={(route) => openAssistantDocumentArea(getERubricaBotTab(route))} onUiAction={(action) => openAssistantDocumentArea(getERubricaBotActionTab(action))} sessionScope="erubrica" messages={assistantMessages} setMessages={setAssistantMessages} draft={assistantDraft} setDraft={setAssistantDraft} feedbackByMessage={assistantFeedback} setFeedbackByMessage={setAssistantFeedback} welcomeText={`Hola ${userName || ''}. Soy Númi, tu asistente de E-RÚBRICA. Puedo ayudarte con firmas, solicitudes, pagos y validación de documentos.`} assistantContext="asistente de E-RÚBRICA. La compra o renovación se realiza completamente por conversación y voz: pide un solo dato a la vez, valida cada dato antes de continuar y conserva los datos ya confirmados. No abras formularios ni indiques que el usuario vaya a otra pantalla. Solo cuando se necesite adjuntar un documento, responde con la acción abrir_solicitud para mostrar el cargador dentro del chat; después continúa la conversación. Para firmar o validar un PDF, responde con abrir_firma_pdf o abrir_validar_firma únicamente cuando se deba seleccionar el archivo, y continúa guiando dentro del chat. Ayuda únicamente con firma electrónica: comprar o renovar certificados, crear y seguir solicitudes, requisitos de persona natural o representante legal, pagos, Uanataca, configurar certificado .p12, firmar PDF, ubicar la firma, documentos firmados y validar firmas. No ofrezcas crear facturas ni acciones de E-FACT. Usa únicamente información real disponible y no inventes datos. Usa lenguaje neutral; no asumas el género de la persona ni uses bienvenido/bienvenida." quickActions={[{ label: 'Comprar o renovar firma', command: 'Quiero comprar o renovar mi firma electrónica' }, { label: 'Estado de mi firma', command: '¿Cuál es el estado de mi firma electrónica?' }, { label: 'Solicitar firma', command: '¿Qué necesito para solicitar una firma electrónica?' }, { label: 'Firmar PDF', command: '¿Cómo firmo un PDF?' }, { label: 'Validar firma', command: '¿Cómo valido la firma de un documento?' }]} theme="erubrica" />
 
       {loading ? <View style={styles.directoryLoading}><ActivityIndicator color={ERUBRICA_COLORS.primary} /><Text style={styles.mutedText}>Cargando E-RÚBRICA...</Text></View> : null}
-      {tab === 'firmar' ? (
+      {contentTab === 'firmar' ? (
         <View style={styles.erubricaSignFlow}>
           <View style={styles.erubricaSignCard}>
             <View style={styles.erubricaSignHeader}>
@@ -1467,6 +1513,7 @@ export function ERubricaMobileScreen({
             {pdfFile ? (
               <>
                 <PdfPageToolbar page={signaturePage} pageCount={signaturePageCount} onPageChange={setSignaturePage} />
+                {signaturePlacements.length === 1 && signaturePlacementLimit === 1 ? <Pressable onPress={agregarSegundaUbicacionFirma} style={{ alignSelf: 'flex-end', marginBottom: 8 }}><Text style={{ color: ERUBRICA_COLORS.primary, fontSize: 12, fontWeight: '800' }}>Agregar firma en otra página</Text></Pressable> : null}
                 <PdfDocumentPreview
                   uri={pdfFile.uri}
                   selectable
@@ -1492,12 +1539,33 @@ export function ERubricaMobileScreen({
             )}
           </View>
 
-          <View style={styles.erubricaAdviceCard}>
+           {firmasConfiguradas.length > 1 ? (
+             <View style={styles.erubricaSignCard}>
+               <Text style={styles.erubricaSignStep}>Certificado con el que se firmará</Text>
+               <Text style={styles.erubricaSignHint}>Usa uno de los certificados cargados previamente.</Text>
+               <CompactSelect
+                 title="Seleccionar certificado"
+                 placeholder="Selecciona un certificado"
+                 value={firmaEmisorSeleccionadoId ? String(firmaEmisorSeleccionadoId) : ''}
+                 options={firmasConfiguradas.map((item) => ({
+                   label: item.nomComercial || item.razonSocial || item.ruc || `Emisor ${item.id}`,
+                   value: String(item.id),
+                 }))}
+                 disabled={signing}
+                 onValueChange={(value) => {
+                   const id = Number(value);
+                   setFirmaEmisorSeleccionadoId(Number.isFinite(id) ? id : null);
+                 }}
+               />
+             </View>
+           ) : null}
+
+           <View style={styles.erubricaAdviceCard}>
             <View style={styles.erubricaAdviceHeader}>
               <MaterialCommunityIcons name="lightbulb-on-outline" size={18} color="#D77416" />
               <Text style={styles.erubricaAdviceTitle}>Consejos y validación</Text>
             </View>
-            {['Revisa que el documento seleccionado sea el correcto.', 'Verifica que el contenido sea legible antes de firmar.', 'La firma se aplicará con la configuración actual de tu certificado.'].map((tip) => (
+             {['Revisa que el documento seleccionado sea el correcto.', 'Verifica que el contenido sea legible antes de firmar.', 'Se utilizará el certificado y la clave cargados previamente; no se solicitarán otra vez.'].map((tip) => (
               <View key={tip} style={styles.erubricaAdviceRow}>
                 <MaterialCommunityIcons name="check-circle-outline" size={15} color={ERUBRICA_COLORS.primary} />
                 <Text style={styles.erubricaAdviceText}>{tip}</Text>
@@ -1511,8 +1579,6 @@ export function ERubricaMobileScreen({
           <View style={styles.erubricaSignActions}>
             <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar formulario" onPress={() => {
               limpiarPdfTemporal();
-              setCertificateFile(null);
-              setCertificatePassword('');
             }} />
             <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Revisar y firmar PDF" loading={signing} onPress={confirmSignPdfDocument} />
           </View>
@@ -1660,9 +1726,13 @@ export function ERubricaMobileScreen({
           </View>
         </View>
       ) : null}
-      {tab === 'nueva-solicitud' ? (
+      {contentTab === 'nueva-solicitud' ? (
         <View style={styles.erubricaRequestStack}>
-          <View style={styles.erubricaPendingHeader}>
+          {guidedByVoice ? <View style={styles.erubricaValidationStrip}>
+            <MaterialCommunityIcons name="microphone-outline" size={18} color={ERUBRICA_COLORS.primary} />
+            <Text style={styles.erubricaValidationStripText}>Númi continúa contigo por voz. Adjunta aquí únicamente los documentos que te solicite.</Text>
+          </View> : null}
+          {!guidedByVoice ? <View style={styles.erubricaPendingHeader}>
             <View style={styles.erubricaHistoryHeroCopy}>
               <Text style={styles.erubricaHistoryEyebrow}>FIRMA ELECTRÓNICA</Text>
               <Text style={styles.erubricaHistoryTitle}>Nueva solicitud de firma</Text>
@@ -1672,9 +1742,9 @@ export function ERubricaMobileScreen({
               <MaterialCommunityIcons name="account-group-outline" size={15} color={ERUBRICA_COLORS.text} />
               <Text style={styles.erubricaPendingLoadText}>{loadingSolicitudBorradores ? 'Cargando...' : 'Solicitudes de clientes'}</Text>
             </Pressable>
-          </View>
+          </View> : null}
 
-          <View style={styles.erubricaRequestSteps}>
+          {!guidedByVoice ? <View style={styles.erubricaRequestSteps}>
             {['Configuración', 'Titular', 'Información', 'Documentos', 'Confirmación'].map((step, index) => {
               const active = solicitudStep >= index + 1;
               return (
@@ -1686,7 +1756,7 @@ export function ERubricaMobileScreen({
                 </Pressable>
               );
             })}
-          </View>
+          </View> : null}
 
           {solicitudStep === 1 ? <View style={styles.erubricaRequestPanel}>
             <Text style={styles.erubricaSignStep}>Configura tu firma electrónica</Text>
@@ -1798,7 +1868,7 @@ export function ERubricaMobileScreen({
 
           </> : null}
 
-          {solicitudStep === 4 && solicitudPersona ? <View style={styles.erubricaRequestPanel}>
+          {solicitudStep === 4 && (solicitudPersona || guidedByVoice) ? <View style={styles.erubricaRequestPanel}>
             <Text style={styles.erubricaHistoryEyebrow}>DOCUMENTOS DE SOPORTE</Text>
             <Text style={styles.erubricaSignStep}>Adjunta los archivos requeridos</Text>
             {solicitudDocumentoItems.map((item) => {
@@ -1816,7 +1886,7 @@ export function ERubricaMobileScreen({
             })}
           </View> : null}
 
-          {solicitudStep === 5 ? <>
+          {!guidedByVoice && solicitudStep === 5 ? <>
             <View style={styles.erubricaRequestPanel}>
               <Text style={styles.erubricaHistoryEyebrow}>REVISIÓN</Text>
               <Text style={styles.erubricaSignStep}>Confirma la información de la solicitud</Text>
@@ -1829,10 +1899,12 @@ export function ERubricaMobileScreen({
               <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Guardar solicitud" onPress={() => void guardarSolicitudBorrador()} />
               <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Confirmar y pagar" loading={solicitudSaving} onPress={openPaymentSummary} />
             </View>
-          </> : <View style={styles.erubricaSignActions}>
+          </> : !guidedByVoice ? <View style={styles.erubricaSignActions}>
             {solicitudStep > 1 ? <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Anterior" onPress={() => setSolicitudStep((current) => Math.max(1, current - 1))} /> : <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Limpiar formulario" onPress={() => { setSolicitudPersona(null); setSolicitudForm(SOLICITUD_FORM_INITIAL); setSolicitudFiles(SOLICITUD_FILES_INITIAL); setSolicitudId(null); }} />}
             <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Guardar solicitud" onPress={() => void guardarSolicitudBorrador()} />
             <PrimaryButton accentColor={ERUBRICA_COLORS.primary} label="Siguiente" loading={false} onPress={avanzarSolicitudPaso} />
+          </View> : <View style={styles.erubricaSignActions}>
+            <SecondaryButton accentColor={ERUBRICA_COLORS.primary} label="Continuar con Númi" onPress={() => { setAssistantActionTab(null); voiceControlsRef?.current?.startHandsFree(); }} />
           </View>}
         </View>
       ) : null}
@@ -1941,7 +2013,7 @@ export function ERubricaMobileScreen({
           {catalogos.length === 0 ? <EmptyState title="Sin productos" text="No hay productos disponibles para tu cuenta." /> : catalogos.slice(0, 20).map((item, index) => <Text key={`erubrica-producto-${index}`} style={styles.clientDetailValue}>{label(item, ['nombre', 'descripcion', 'name'], 'Producto')}</Text>)}
         </View>
       ) : null}
-      {tab === 'plan-disponible' ? (
+      {contentTab === 'plan-disponible' ? (
         <View style={styles.erubricaPlanStack}>
           <View style={styles.erubricaPlanHeader}>
             <View style={styles.erubricaPlanHeaderTop}>
@@ -2038,9 +2110,28 @@ export function ERubricaMobileScreen({
               <Text style={styles.erubricaConfigStatusText}>{firmaEfactValida ? `${firmaEfact?.diasRestantes ?? 'Sin dato'} días para renovar. Expira el ${firmaEfactExpira}.` : firmaEfact?.mensaje ?? 'Carga un certificado .p12 para habilitar la firma electrónica.'}</Text>
               {firmaEfact ? <Text style={styles.erubricaConfigStatusText}>Titular: {firmaTitular}</Text> : null}
             </View>
-          </View>
+           </View>
 
-          <View style={styles.erubricaConfigStepCard}>
+           {firmaEmisorOptions.length > 1 ? (
+             <View style={styles.erubricaConfigStepCard}>
+               <Text style={styles.erubricaConfigStepTitle}>Emisor de la firma</Text>
+               <Text style={styles.erubricaConfigStepHint}>Selecciona el emisor donde está o quedará cargado el certificado.</Text>
+               <CompactSelect
+                 title="Seleccionar emisor"
+                 placeholder="Selecciona un emisor"
+                 value={firmaEmisorSeleccionadoId ? String(firmaEmisorSeleccionadoId) : ''}
+                 options={firmaEmisorOptions}
+                 disabled={savingConfiguredSignature}
+                 onValueChange={(value) => {
+                   const id = Number(value);
+                   setFirmaEmisorSeleccionadoId(Number.isFinite(id) ? id : null);
+                   setFirmaDetalleActiva(null);
+                 }}
+               />
+             </View>
+           ) : null}
+
+           <View style={styles.erubricaConfigStepCard}>
             <View style={styles.erubricaConfigStepHeader}>
               <View style={styles.erubricaConfigStepNumber}><Text style={styles.erubricaConfigStepNumberText}>1</Text></View>
               <View style={styles.erubricaPendingDocCopy}>
