@@ -5,7 +5,7 @@ import * as Speech from 'expo-speech';
 import type * as SpeechRecognition from 'expo-speech-recognition';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ApiError } from '../../services/apiClient';
-import { clearBotHistory, loadBotHistory, saveBotHistory, sendBotMessage } from '../../services/botService';
+import { clearBotHistory, inferERubricaAttachmentAction, loadBotHistory, saveBotHistory, sendBotMessage } from '../../services/botService';
 import type { BotFacturaDraft, BotSelectionOption, BotSessionScope, BotWorkflowState } from '../../services/botService';
 import type { BotFeedbackState, BotMessage, BotProgressStep } from '../../types/bot';
 import { NumiThinkingIndicator } from './NumiThinkingIndicator';
@@ -85,6 +85,7 @@ export function EfactBotScreen({
   userId,
   onNavigate,
   onUiAction,
+  attachmentActions,
   voiceControlsRef,
   voiceOnly = false,
   embedded = false,
@@ -109,6 +110,7 @@ export function EfactBotScreen({
   userId: number;
   onNavigate?: (route: string) => void;
   onUiAction?: (action: string) => void;
+  attachmentActions?: Array<{ label: string; onPress: () => void }>;
   voiceControlsRef?: MutableRefObject<BotVoiceControls | null>;
   voiceOnly?: boolean;
   embedded?: boolean;
@@ -150,6 +152,7 @@ export function EfactBotScreen({
   const [handsFreeEnabled, setHandsFreeEnabled] = useState(false);
   const [speechMuted, setSpeechMuted] = useState(false);
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  const [attachmentsOpen, setAttachmentsOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardTop, setKeyboardTop] = useState<number | null>(null);
   const [chatTop, setChatTop] = useState<number | null>(null);
@@ -311,9 +314,9 @@ export function EfactBotScreen({
   };
 
   const startNewConversation = async () => {
-    Alert.alert('Nueva conversación', 'Se limpiará el chat actual y se iniciará una nueva sesión con Númi.', [
+    Alert.alert('Borrar historial', 'Se borrarán las conversaciones guardadas en este dispositivo y se iniciará una nueva sesión con Númi.', [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Continuar', style: 'destructive', onPress: () => void resetConversation() },
+      { text: 'Borrar', style: 'destructive', onPress: () => void resetConversation() },
     ]);
   };
 
@@ -352,6 +355,7 @@ export function EfactBotScreen({
     transitionVoice('idle', handsFreeEnabledRef.current ? 'listening' : null);
     setVoiceResponse('');
     setQuickActionsOpen(false);
+    setAttachmentsOpen(false);
   };
 
   useEffect(() => {
@@ -592,7 +596,15 @@ export function EfactBotScreen({
       const navigationRequested = isExplicitNavigationRequest(text)
         || isDocumentWorkflowRequest(text)
         || (sessionScope === 'erubrica' && isErubricaActionRequest(text));
-      if (botResult.uiAction && (navigationRequested || sessionScope === 'erubrica')) onUiAction?.(botResult.uiAction);
+      const attachmentAction = sessionScope === 'erubrica'
+        ? inferERubricaAttachmentAction(botResult.answer, [...messages.slice(-6).map((message) => message.text), text])
+        : undefined;
+      const uiAction = botResult.uiAction ?? attachmentAction;
+      if (attachmentAction && attachmentActions?.length) {
+        setQuickActionsOpen(false);
+        setAttachmentsOpen(true);
+      }
+      if (uiAction && (navigationRequested || sessionScope === 'erubrica')) onUiAction?.(uiAction);
       const catalogListRequest = isCatalogListRequest(text);
       const visibleSelectionOptions = catalogListRequest ? botResult.selectionOptions.slice(0, 3) : botResult.selectionOptions;
       const presentationAnswer = botResult.draft?.cliente || botResult.draft?.items?.length
@@ -978,8 +990,8 @@ export function EfactBotScreen({
           </View>
         </View>
         <View style={styles.botWidgetHeaderActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Iniciar nueva conversación" onPress={() => void startNewConversation()} hitSlop={8} disabled={sending} style={[styles.botHeaderActionButton, sending && styles.botHeaderActionDisabled]}>
-            <MaterialCommunityIcons name="refresh" size={18} color="#FFFFFF" />
+          <Pressable accessibilityRole="button" accessibilityLabel="Borrar historial de conversaciones" onPress={() => void startNewConversation()} hitSlop={8} disabled={sending} style={[styles.botHeaderActionButton, sending && styles.botHeaderActionDisabled]}>
+            <MaterialCommunityIcons name="trash-can-outline" size={18} color="#FFFFFF" />
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel={speechMuted ? 'Activar lectura en voz alta' : 'Silenciar lectura en voz alta'} onPress={toggleSpeechMuted} hitSlop={8} style={styles.botHeaderActionButton}>
             <MaterialCommunityIcons name={speechMuted ? 'volume-off' : 'volume-high'} size={19} color="#FFFFFF" />
@@ -1108,7 +1120,20 @@ export function EfactBotScreen({
           ))}
         </View>
       ) : null}
+      {attachmentsOpen && attachmentActions?.length ? (
+        <View style={styles.botQuickActionsTray}>
+          {attachmentActions.map((action) => (
+            <Pressable key={action.label} accessibilityRole="button" accessibilityLabel={action.label} style={styles.botQuickActionChip} disabled={sending || listening} onPress={() => { setAttachmentsOpen(false); action.onPress(); }}>
+              <MaterialCommunityIcons name="paperclip" size={15} color="#0867A9" />
+              <Text style={styles.botQuickActionText}>{action.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
       <View style={[styles.botComposer, compactLayout && styles.botComposerCompact]}>
+        {attachmentActions?.length ? <Pressable accessibilityRole="button" accessibilityLabel="Adjuntar archivo" accessibilityState={{ expanded: attachmentsOpen, disabled: sending || listening }} style={[styles.botToolButton, compactLayout && styles.botToolButtonCompact, attachmentsOpen && styles.botToolButtonActive]} disabled={sending || listening} onPress={() => { setQuickActionsOpen(false); setAttachmentsOpen((value) => !value); }}>
+          <MaterialCommunityIcons name="paperclip" size={19} color={attachmentsOpen ? '#FFFFFF' : '#6E94B4'} />
+        </Pressable> : null}
         <Pressable accessibilityRole="button" accessibilityLabel={handsFreeEnabled ? 'Desactivar modo manos libres' : 'Activar modo manos libres'} style={[styles.botToolButton, compactLayout && styles.botToolButtonCompact, handsFreeEnabled && styles.botToolButtonActive]} disabled={sending || !voiceRecognitionAvailable} onPress={toggleHandsFreeMode}>
           <MaterialCommunityIcons name="headset" size={19} color={handsFreeEnabled ? '#FFFFFF' : '#6E94B4'} />
         </Pressable>
@@ -1278,8 +1303,8 @@ function BotInvoiceWorkflowCard({ draft, missing, requiresConfirmation, state, p
     { id: 'confirmacion', label: 'Confirmar', status: isCompleted ? 'completed' : undefined },
   ];
   const hasDraftWorkflow = Boolean(draft?.cliente || draft?.items?.length || hasCalculatedValues || actualMissing.length || needsConfirmation || pendingOperation);
-  const workflowSteps = progress.length ? progress : hasDraftWorkflow ? fallbackSteps : [];
-  const currentStep = Math.max(0, workflowSteps.findIndex((step) => step.status === 'pending' || step.status === 'warning'));
+  const workflowSteps = hasDraftWorkflow ? fallbackSteps : progress;
+  const currentStep = Math.max(0, workflowSteps.findIndex((step) => step.status !== 'completed'));
   const hasWorkflow = isCompleted || isCancelled || operationBlocked || actualMissing.length > 0 || needsConfirmation || selectionOptions.length > 0 || configurationRoutes.length > 0 || progress.length > 0 || Boolean(draft?.cliente || draft?.items?.length) || hasCalculatedValues || Boolean(pendingOperation);
   const workflowTone = isCompleted
     ? { backgroundColor: '#E8F7EF', borderColor: '#8FD1AA', color: '#0F6B32' }

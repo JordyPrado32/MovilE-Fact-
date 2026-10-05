@@ -336,6 +336,7 @@ export function FirmaForm({
 
       <View style={styles.formSectionBox}>
         <Text style={styles.clientFormSubtitle}>Archivo de firma</Text>
+        <Text style={styles.mutedText}>Para facturar, el certificado debe contener un RUC de 13 dígitos. Una firma con solo cédula puede utilizarse en E-Rúbrica, pero no es válida para facturar.</Text>
         <SecondaryButton label={configured ? 'Cambiar archivo .p12' : 'Seleccionar archivo .p12 *'} onPress={onSelectArchivo} />
         <Text style={styles.mutedText}>{archivoLabel}</Text>
         <Field label="Clave del certificado *" value={form.claveCertificado} onChangeText={(value) => onChange('claveCertificado', value)} secureTextEntry />

@@ -407,9 +407,17 @@ export function ERubricaMobileScreen({
   const contentTab = assistantActionTab ?? tab;
   const guidedByVoice = tab === 'asistente' && assistantActionTab === 'nueva-solicitud';
   const openAssistantDocumentArea = (nextTab?: ERubricaTab) => {
-    if (nextTab !== 'firmar' && nextTab !== 'validar-firma' && nextTab !== 'nueva-solicitud') return;
+    if (nextTab !== 'firmar' && nextTab !== 'validar-firma' && nextTab !== 'nueva-solicitud' && nextTab !== 'firma-config') return;
     if (nextTab === 'nueva-solicitud') setSolicitudStep(4);
     setAssistantActionTab(nextTab);
+  };
+  const handleAssistantUiAction = (action: string) => {
+    if (action === 'adjuntar_comprobante_pago') {
+      setPaymentMethod('transferencia');
+      setPaymentModalOpen(true);
+      return;
+    }
+    openAssistantDocumentArea(getERubricaBotActionTab(action));
   };
   useEffect(() => {
     if (tab !== 'asistente' || !voiceStartPendingRef.current || !voiceControlsRef) return undefined;
@@ -591,10 +599,10 @@ export function ERubricaMobileScreen({
     return () => { mounted = false; };
   }, [initialPdf]);
   useEffect(() => {
-    const nextTab = requestedTab ?? 'inicio';
+    const nextTab = requestedTab === 'asistente' ? 'inicio' : requestedTab ?? 'inicio';
     if ((tab === 'firmar' || tab === 'validar-firma') && nextTab !== tab)
       limpiarPdfTemporal();
-    if (nextTab !== 'asistente') setAssistantActionTab(null);
+    setAssistantActionTab(null);
     setTab(nextTab);
   }, [requestedTab]);
   const dashboardRecord = data as (ERubricaDashboard & Record<string, unknown>) | null;
@@ -788,10 +796,8 @@ export function ERubricaMobileScreen({
   };
   useEffect(() => {
     if ((contentTab === 'catalogos' || contentTab === 'plan-disponible' || contentTab === 'nueva-solicitud') && catalogos.length === 0) {
-      void Promise.all([getERubricaProductos(), getERubricaSaldo()]).then(([items, balance]) => {
-        setCatalogos(items ?? []);
-        setSaldo(Number(balance?.balance ?? 0));
-      }).catch(() => undefined);
+      void getERubricaProductos().then((items) => setCatalogos(items ?? [])).catch(() => undefined);
+      void getERubricaSaldo().then((balance) => setSaldo(Number(balance?.balance ?? 0))).catch(() => undefined);
     }
     if ((contentTab === 'renovacion' || contentTab === 'plan-disponible' || contentTab === 'nueva-solicitud') && renovacion === null) void getERubricaRenovacion().then(setRenovacion).catch(() => undefined);
     if (contentTab === 'plan-disponible' && planDisponible === null) void getERubricaPlan().then(setPlanDisponible).catch(() => undefined);
@@ -1458,22 +1464,12 @@ export function ERubricaMobileScreen({
 
       {tab === 'inicio' ? (
         <View style={styles.erubricaHomeStack}>
-          <Pressable style={styles.erubricaNumiPanel} onPress={onOpenBot}>
-            <View style={styles.erubricaNumiAccentPanel} /><View style={styles.erubricaNumiConfettiDotLarge} /><View style={styles.erubricaNumiConfettiDotSmall} /><View style={styles.erubricaNumiConfettiRing} />
-            <View style={styles.erubricaNumiHeader}>
-              <View style={styles.erubricaNumiCopy}><Text style={styles.erubricaNumiName}>Númi</Text><Text style={styles.erubricaNumiSubtitle}>Tu asistente de E-RÚBRICA</Text><View style={styles.erubricaNumiBubble}><Text style={styles.erubricaNumiBubbleText}>Te ayudo a firmar, validar y gestionar tus documentos.</Text></View></View>
-              <Image source={require('../../../assets/numi-home.png')} style={styles.erubricaNumiImage} resizeMode="contain" />
-            </View>
-            <View style={styles.erubricaNumiActions}><View style={styles.erubricaNumiAction}><MaterialCommunityIcons name="message-processing-outline" size={22} color="#BDF5CD" /><View style={styles.erubricaNumiActionCopy}><Text style={styles.erubricaNumiActionTitle}>Consultas</Text><Text style={styles.erubricaNumiActionText}>Haz tus preguntas</Text></View></View><View style={styles.erubricaNumiAction}><MaterialCommunityIcons name="file-sign" size={22} color="#BDF5CD" /><View style={styles.erubricaNumiActionCopy}><Text style={styles.erubricaNumiActionTitle}>Firmas</Text><Text style={styles.erubricaNumiActionText}>Guías y pasos</Text></View></View><Pressable style={styles.erubricaNumiAction} onPress={() => { voiceStartPendingRef.current = true; onOpenBot(); }}><MaterialCommunityIcons name="headset" size={22} color="#BDF5CD" /><View style={styles.erubricaNumiActionCopy}><Text style={styles.erubricaNumiActionTitle}>Manos libres</Text><Text style={styles.erubricaNumiActionText}>Habla con Númi</Text></View></Pressable></View>
-          </Pressable>
           <View style={styles.erubricaHomeStateCard}><View style={styles.erubricaHomeSectionHeader}><Text style={styles.erubricaHomeSectionTitle}>Estado de la firma</Text><Text style={styles.erubricaHomeSectionHint}>Solicitud más reciente</Text></View><View style={styles.erubricaHomeStateGrid}><View style={styles.erubricaHomeStateItem}><View style={styles.erubricaHomeStateIcon}><MaterialCommunityIcons name="cash-check" size={18} color="#079349" /></View><View><Text style={styles.erubricaHomeStateLabel}>Estado de pago</Text><Text style={styles.erubricaHomeStateValue}>{pagoInicio}</Text></View></View><View style={styles.erubricaHomeStateItem}><View style={[styles.erubricaHomeStateIcon, styles.erubricaHomeStateIconBlue]}><MaterialCommunityIcons name="send-outline" size={18} color="#2563B8" /></View><View><Text style={styles.erubricaHomeStateLabel}>Estado Uanataca</Text><Text style={styles.erubricaHomeStateValue}>{uanatacaInicio}</Text></View></View></View></View>
           <View style={styles.erubricaHomeQuickGrid}>{[['file-sign', 'Firmar documento', 'Firma tus documentos en pocos pasos', 'firmar'], ['cart-outline', 'Comprar / Renovar firma', 'Adquiere o renueva tu firma electrónica', 'plan-disponible'], ['folder-open-outline', 'Mis documentos', 'Accede a tus documentos firmados', 'historial-documentos'], ['shield-check-outline', 'Validar firma', 'Verifica documentos firmados', 'validar-firma']].map(([icon, title, description, destination], index) => <Pressable key={destination} style={[styles.erubricaHomeQuickCard, index === 0 && styles.erubricaHomeQuickCardPrimary]} onPress={() => selectTab(destination as ERubricaTab)}><View style={styles.erubricaHomeQuickIcon}><MaterialCommunityIcons name={icon as keyof typeof MaterialCommunityIcons.glyphMap} size={22} color={index === 0 ? '#FFFFFF' : ERUBRICA_COLORS.primary} /></View><View style={styles.erubricaHomeQuickCopy}><Text style={[styles.erubricaHomeQuickTitle, index === 0 && styles.erubricaHomeQuickTitlePrimary]}>{title}</Text><Text style={[styles.erubricaHomeQuickText, index === 0 && styles.erubricaHomeQuickTextPrimary]}>{description}</Text></View><MaterialCommunityIcons name="chevron-right" size={20} color={index === 0 ? '#FFFFFF' : '#607887'} /></Pressable>)}</View>
           <View style={styles.erubricaHomeOverviewCard}><Text style={styles.erubricaHomeSectionTitle}>Resumen de firmas y documentos</Text><View style={styles.erubricaHomeOverviewContent}><View style={styles.erubricaHomeRing}><Text style={styles.erubricaHomeRingValue}>{solicitudHistoryItems.length}</Text><Text style={styles.erubricaHomeRingLabel}>TOTAL</Text></View><View style={styles.erubricaHomeLegend}><Text style={styles.erubricaHomeLegendText}>● Pendientes: {solicitudesPendientes}</Text><Text style={styles.erubricaHomeLegendText}>● Pagadas: {solicitudesPagadas}</Text><Text style={styles.erubricaHomeLegendText}>● Firmados: {historialDocumentos.length}</Text></View></View><View style={styles.erubricaHomeMetricsGrid}>{[[porFirmarInicio, 'Por firmar'], [historialDocumentos.length, 'Firmados'], [signedMonthCount, 'Firmas del mes']].map(([value, title]) => <View key={String(title)} style={[styles.erubricaHomeMetric, inicioCompacto && styles.erubricaHomeMetricCompact]}><Text style={styles.erubricaHomeMetricValue}>{value}</Text><Text style={styles.erubricaHomeMetricLabel}>{title}</Text></View>)}</View></View>
           <View style={styles.erubricaHomeRecentCard}><View style={styles.erubricaHomeSectionHeader}><Text style={styles.erubricaHomeSectionTitle}>Documentos recientes</Text><Pressable onPress={() => selectTab('historial-documentos')}><Text style={styles.erubricaHomeLink}>Ver todos</Text></Pressable></View>{recientesInicio.length ? recientesInicio.map((item, index) => { const fecha = formatSignedDate(item); return <Pressable key={`${itemValue(item, ['id', 'nombre', 'fileName'])}-${index}`} style={styles.erubricaHomeRecentRow} onPress={() => selectTab('historial-documentos')}><View style={styles.erubricaHomeRecentIcon}><MaterialCommunityIcons name="file-pdf-box" size={20} color="#F04444" /></View><View style={styles.erubricaHomeRecentCopy}><Text style={styles.erubricaHomeRecentName} numberOfLines={1}>{label(item, ['nombreDocumento', 'nombreArchivo', 'fileName', 'nombre'], 'Documento firmado')}</Text><Text style={styles.erubricaHomeRecentMeta}>PDF firmado desde E-RÚBRICA · {fecha.date}</Text></View><View style={styles.erubricaHomeValidPill}><Text style={styles.erubricaHomeValidText}>VÁLIDO</Text></View></Pressable>; }) : <Text style={styles.erubricaHomeEmpty}>Todavía no tienes documentos firmados.</Text>}</View>
         </View>
       ) : null}
-
-      <EfactBotScreen voiceOnly={tab !== 'asistente'} embedded={tab === 'asistente'} viewKey={tab} userName={userName} userId={userId} voiceControlsRef={voiceControlsRef} onNavigate={(route) => openAssistantDocumentArea(getERubricaBotTab(route))} onUiAction={(action) => openAssistantDocumentArea(getERubricaBotActionTab(action))} sessionScope="erubrica" messages={assistantMessages} setMessages={setAssistantMessages} draft={assistantDraft} setDraft={setAssistantDraft} feedbackByMessage={assistantFeedback} setFeedbackByMessage={setAssistantFeedback} welcomeText={`Hola ${userName || ''}. Soy Númi, tu asistente de E-RÚBRICA. Puedo ayudarte con firmas, solicitudes, pagos y validación de documentos.`} assistantContext="asistente de E-RÚBRICA. La compra o renovación se realiza completamente por conversación y voz: pide un solo dato a la vez, valida cada dato antes de continuar y conserva los datos ya confirmados. No abras formularios ni indiques que el usuario vaya a otra pantalla. Solo cuando se necesite adjuntar un documento, responde con la acción abrir_solicitud para mostrar el cargador dentro del chat; después continúa la conversación. Para firmar o validar un PDF, responde con abrir_firma_pdf o abrir_validar_firma únicamente cuando se deba seleccionar el archivo, y continúa guiando dentro del chat. Ayuda únicamente con firma electrónica: comprar o renovar certificados, crear y seguir solicitudes, requisitos de persona natural o representante legal, pagos, Uanataca, configurar certificado .p12, firmar PDF, ubicar la firma, documentos firmados y validar firmas. No ofrezcas crear facturas ni acciones de E-FACT. Usa únicamente información real disponible y no inventes datos. Usa lenguaje neutral; no asumas el género de la persona ni uses bienvenido/bienvenida." quickActions={[{ label: 'Comprar o renovar firma', command: 'Quiero comprar o renovar mi firma electrónica' }, { label: 'Estado de mi firma', command: '¿Cuál es el estado de mi firma electrónica?' }, { label: 'Solicitar firma', command: '¿Qué necesito para solicitar una firma electrónica?' }, { label: 'Firmar PDF', command: '¿Cómo firmo un PDF?' }, { label: 'Validar firma', command: '¿Cómo valido la firma de un documento?' }]} theme="erubrica" />
 
       {loading ? <View style={styles.directoryLoading}><ActivityIndicator color={ERUBRICA_COLORS.primary} /><Text style={styles.mutedText}>Cargando E-RÚBRICA...</Text></View> : null}
       {contentTab === 'firmar' ? (

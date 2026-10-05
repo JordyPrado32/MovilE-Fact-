@@ -32,6 +32,21 @@ export type BotChatResponse = {
 
 export type BotSessionScope = 'efact' | 'erubrica';
 
+export function inferERubricaAttachmentAction(answer: string, recentMessages: string[]) {
+  const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const response = normalize(answer);
+  if (!/\b(adjunt\w*|seleccion\w*|sub[ei]\w*|carg\w*|envi\w*)\b/.test(response)
+      || !/\b(pdf|archivo|documento|cedula|ruc|selfie|certificado|p12|comprobante)\b/.test(response)) return undefined;
+  if (/\b(comprobante|recibo)\b/.test(response)) return 'adjuntar_comprobante_pago';
+  if (/\b(p12)\b/.test(response) || (/\b(certificado)\b/.test(response) && !/\b(pdf)\b/.test(response))) return 'abrir_configuracion_firma';
+  if (/\b(cedula|ruc|selfie|nombramiento|constitucion|solicitud)\b/.test(response)) return 'abrir_solicitud';
+  const intent = [...recentMessages, answer].reverse().map(normalize)
+    .find((message) => /\b(valid\w*|firmar|firma\w*|solicitud|certificado)\b/.test(message)) ?? response;
+  if (/\b(valid\w*)\b/.test(intent)) return 'abrir_validar_firma';
+  if (/\b(solicitud)\b/.test(intent)) return 'abrir_solicitud';
+  return 'abrir_firma_pdf';
+}
+
 export type BotWorkflowState = {
   invoiceDraft: BotFacturaDraft | null;
   missingData: string[];
@@ -189,6 +204,7 @@ function normalizeBotResponse(value: unknown): BotChatResponse | string | null {
     emitida: typeof value.emitida === 'boolean' ? value.emitida : undefined,
     codigoError: value.codigoError === null ? null : asString(value.codigoError),
     accionDetectada: value.accionDetectada === null ? null : asString(value.accionDetectada),
+    accionUi: value.accionUi === null ? null : asString(value.accionUi),
     rutaSugerida: value.rutaSugerida === null ? null : asString(value.rutaSugerida),
     rutasSugeridas: Array.isArray(value.rutasSugeridas) ? value.rutasSugeridas.filter((item): item is string => typeof item === 'string') : [],
     seleccionPendienteTipo: value.seleccionPendienteTipo === null ? null : asString(value.seleccionPendienteTipo),

@@ -50,8 +50,8 @@ export function getFirmaSummary(emisores: Emisor[], estados: Record<number, Firm
   const tone: 'success' | 'warning' | 'danger' = active ? 'success' : hasInvalidState ? 'danger' : 'warning';
   return {
     active,
-    label: active ? 'Activa' : hasInvalidState ? 'Caducada' : 'Pendiente',
-    caption: estado?.fechaExpiracion ? `Vence: ${formatDocumentDate(estado.fechaExpiracion)}` : fallback ? 'Certificado configurado' : 'Sin firma',
+    label: active ? 'Activa' : hasInvalidState ? estado?.estadoVigencia === 'CADUCADA' ? 'Caducada' : 'No válida' : 'Pendiente',
+    caption: hasInvalidState && estado?.mensaje ? estado.mensaje : estado?.fechaExpiracion ? `Vence: ${formatDocumentDate(estado.fechaExpiracion)}` : fallback ? 'Certificado configurado' : 'Sin firma',
     tone,
   };
 }

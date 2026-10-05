@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ActivityIndicator, Alert, Image, Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, Pressable, Text, View, useWindowDimensions } from 'react-native';
 
 import type { FacturaListItem } from '../../services/facturasMobileService';
 import { DashboardActivityItem, DashboardPrimaryAction } from './DashboardWidgets';
@@ -33,13 +33,6 @@ export function DashboardHomeScreen({
   const veryCompact = width < 360;
   const latestFacturas = facturas.slice(0, 3);
   const recentFactura = facturas[0];
-  const openConsultas = () => {
-    Alert.alert('Consultas con Númi', '¿Cómo quieres hacer tu consulta?', [
-      { text: 'Chat', onPress: () => onOpenView('bot') },
-      { text: 'Comando de voz', onPress: onOpenVoice },
-      { text: 'Cancelar', style: 'cancel' },
-    ]);
-  };
 
   const completedSteps = [initialSetup.issuer, initialSetup.signature, initialSetup.documents].filter(Boolean).length;
   const setupComplete = completedSteps === 3;
@@ -77,7 +70,7 @@ export function DashboardHomeScreen({
 
   return (
     <View style={styles.dashboardHome}>
-      <Pressable style={styles.dashboardNumiPanel} onPress={openConsultas}>
+      <View style={styles.dashboardNumiPanel}>
         <View style={styles.dashboardNumiAccentPanel} />
         <View style={styles.dashboardNumiConfettiDotLarge} />
         <View style={styles.dashboardNumiConfettiDotSmall} />
@@ -93,29 +86,12 @@ export function DashboardHomeScreen({
           <Image source={require('../../../assets/numi-home.png')} style={[styles.dashboardNumiImage, veryCompact && styles.dashboardNumiImageCompact]} resizeMode="contain" />
         </View>
         <View style={[styles.dashboardNumiActions, veryCompact && styles.dashboardNumiActionsCompact]}>
-          <View style={styles.dashboardNumiAction}>
-            <MaterialCommunityIcons name="message-processing-outline" size={24} color="#49D7FF" />
-            <View style={styles.dashboardNumiActionCopy}>
-              <Text style={styles.dashboardNumiActionTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>Consultas</Text>
-              <Text style={styles.dashboardNumiActionText} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.82}>Haz tus preguntas</Text>
-            </View>
-          </View>
-          <View style={styles.dashboardNumiAction}>
-            <MaterialCommunityIcons name="lightning-bolt-outline" size={24} color="#49D7FF" />
-            <View style={styles.dashboardNumiActionCopy}>
-              <Text style={styles.dashboardNumiActionTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>Ayuda rápida</Text>
-              <Text style={styles.dashboardNumiActionText} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.82}>Guías y pasos</Text>
-            </View>
-          </View>
-          <View style={styles.dashboardNumiAction}>
-            <MaterialCommunityIcons name="headset" size={24} color="#49D7FF" />
-            <View style={styles.dashboardNumiActionCopy}>
-              <Text style={[styles.dashboardNumiActionTitle, styles.dashboardNumiSupportTitle]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>Soporte</Text>
-              <Text style={styles.dashboardNumiActionText} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.82}>Te acompañamos</Text>
-            </View>
-          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Facturar por voz" style={styles.dashboardNumiAction} onPress={onOpenVoice}>
+            <MaterialCommunityIcons name="microphone" size={24} color="#49D7FF" />
+            <Text style={styles.dashboardNumiActionTitle}>Facturar por voz</Text>
+          </Pressable>
         </View>
-      </Pressable>
+      </View>
 
       <View style={styles.dashboardSectionHeader}>
         <Text style={styles.dashboardSectionTitle}>Acciones principales</Text>
