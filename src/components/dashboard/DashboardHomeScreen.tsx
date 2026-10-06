@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useState } from 'react';
 import { ActivityIndicator, Image, Pressable, Text, View, useWindowDimensions } from 'react-native';
 
 import type { FacturaListItem } from '../../services/facturasMobileService';
@@ -29,8 +30,8 @@ export function DashboardHomeScreen({
   onOpenVoice: () => void;
 }) {
   const { width } = useWindowDimensions();
-  const compact = width < 390;
-  const veryCompact = width < 360;
+  const [bannerWidth, setBannerWidth] = useState(Math.max(width - 30, 1));
+  const bannerHeight = Math.round(bannerWidth * 941 / 1672);
   const latestFacturas = facturas.slice(0, 3);
   const recentFactura = facturas[0];
 
@@ -70,27 +71,10 @@ export function DashboardHomeScreen({
 
   return (
     <View style={styles.dashboardHome}>
-      <View style={styles.dashboardNumiPanel}>
-        <View style={styles.dashboardNumiAccentPanel} />
-        <View style={styles.dashboardNumiConfettiDotLarge} />
-        <View style={styles.dashboardNumiConfettiDotSmall} />
-        <View style={styles.dashboardNumiConfettiRing} />
-        <View style={[styles.dashboardNumiHeader, veryCompact && styles.dashboardNumiHeaderCompact]}>
-          <View style={[styles.dashboardNumiCopy, veryCompact && styles.dashboardNumiCopyCompact]}>
-            <Text style={[styles.dashboardNumiName, veryCompact && styles.dashboardNumiNameCompact]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.86}>Númi</Text>
-            <Text style={styles.dashboardNumiSubtitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>Tu asistente inteligente</Text>
-            <View style={styles.dashboardNumiBubble}>
-              <Text style={styles.dashboardNumiBubbleText} numberOfLines={4} adjustsFontSizeToFit minimumFontScale={0.86}>¡Hola! Soy Númi, tu asistente. Estoy aquí para ayudarte en lo que necesites.</Text>
-            </View>
-          </View>
-          <Image source={require('../../../assets/numi-home.png')} style={[styles.dashboardNumiImage, veryCompact && styles.dashboardNumiImageCompact]} resizeMode="contain" />
-        </View>
-        <View style={[styles.dashboardNumiActions, veryCompact && styles.dashboardNumiActionsCompact]}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Facturar por voz" style={styles.dashboardNumiAction} onPress={onOpenVoice}>
-            <MaterialCommunityIcons name="microphone" size={24} color="#49D7FF" />
-            <Text style={styles.dashboardNumiActionTitle}>Facturar por voz</Text>
-          </Pressable>
-        </View>
+      <View style={styles.dashboardNumiPanel} onLayout={({ nativeEvent }) => setBannerWidth(nativeEvent.layout.width)}>
+        <Image source={require('../../../assets/numi-dashboard-banner.png')} style={[styles.dashboardNumiBanner, { height: bannerHeight }]} resizeMode="contain" />
+        <Pressable accessibilityRole="button" accessibilityLabel="Generar documentos por voz con Númi" style={[styles.dashboardNumiBannerAction, styles.dashboardNumiBannerVoiceAction]} onPress={onOpenVoice} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Abrir chat con Númi" style={[styles.dashboardNumiBannerAction, styles.dashboardNumiBannerChatAction]} onPress={() => onOpenView('bot')} />
       </View>
 
       <View style={styles.dashboardSectionHeader}>
