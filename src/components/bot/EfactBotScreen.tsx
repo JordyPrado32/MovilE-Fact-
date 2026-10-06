@@ -162,7 +162,7 @@ export function EfactBotScreen({
   const voiceTranscriptRef = useRef('');
   const handsFreeEnabledRef = useRef(false);
   const handsFreeAwaitingConfirmationRef = useRef(false);
-  const handsFreeResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+ 
   const voiceNavigationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceFlowStateRef = useRef<VoiceFlowState>('idle');
   const voiceStartInFlightRef = useRef(false);
@@ -241,8 +241,6 @@ export function EfactBotScreen({
   const clearVoiceTimers = () => {
     if (voiceNavigationTimerRef.current) clearTimeout(voiceNavigationTimerRef.current);
     voiceNavigationTimerRef.current = null;
-    if (handsFreeResumeTimerRef.current) clearTimeout(handsFreeResumeTimerRef.current);
-    handsFreeResumeTimerRef.current = null;
   };
 
   const transitionVoice = (state: VoiceFlowState, overlay: VoiceOverlayState | null) => {
@@ -352,7 +350,7 @@ export function EfactBotScreen({
     setPendingOperation(null);
     setRetryRequest(null);
     setWorkflowStale(false);
-    transitionVoice('idle', handsFreeEnabledRef.current ? 'listening' : null);
+    transitionVoice('idle', handsFreeEnabledRef.current ? 'response' : null);
     setVoiceResponse('');
     setQuickActionsOpen(false);
     setAttachmentsOpen(false);
@@ -382,8 +380,6 @@ export function EfactBotScreen({
         if (handsFreeEnabledRef.current) transitionVoice('idle', null);
         return;
       }
-
-      if (handsFreeEnabledRef.current && !sending) scheduleHandsFreeResume(700);
     });
 
     return () => subscription.remove();
@@ -430,7 +426,12 @@ export function EfactBotScreen({
   useSpeechRecognitionEvent('start', () => {
     voiceRecognitionStarted.current = true;
     setListening(true);
-    transitionVoice('listening', 'listening');
+    if (!voiceHolding.current) {
+      ExpoSpeechRecognitionModule?.stop();
+      return;
+    }
+    voiceFlowStateRef.current = 'listening';
+    if (!handsFreeEnabledRef.current) setVoiceOverlayState('listening');
   });
 
   useSpeechRecognitionEvent('result', (event) => {
@@ -470,34 +471,31 @@ export function EfactBotScreen({
         void speakCurrentBotText(voiceMessage);
         return;
       }
-      transitionVoice(handsFreeAwaitingConfirmationRef.current ? 'awaitingConfirmation' : 'listening', handsFreeAwaitingConfirmationRef.current ? 'response' : 'listening');
-      if (!handsFreeAwaitingConfirmationRef.current) scheduleHandsFreeResume(700);
+      transitionVoice(handsFreeAwaitingConfirmationRef.current ? 'awaitingConfirmation' : 'listening', 'response');
     }
     if (event.error !== 'no-speech') {
       voiceHolding.current = false;
       voiceShouldSubmit.current = false;
-      const message = event.message || 'No se pudo reconocer la voz. Repetiré la escucha.';
+      const message = event.message || 'No se pudo reconocer la voz. Mantén presionado el micrófono para reintentar.';
       showVoiceError(message);
       if (handsFreeEnabledRef.current && !permanentError) {
-        const voiceError = 'No pude entenderte bien. Repetiré la escucha; puedes decir la orden nuevamente.';
+        const voiceError = 'No pude entenderte bien. Mantén presionado el micrófono para repetir la orden.';
         setVoiceResponse(voiceError);
         transitionVoice('error', 'response');
-        void speakCurrentBotText(voiceError).then((completed) => {
-          if (completed) scheduleHandsFreeResume(1400);
-        });
+        void speakCurrentBotText(voiceError);
       }
     }
   });
 
-  useSpeechRecognitionEvent('end', () => {
+  const handleVoiceEnd = () => {
     voiceRecognitionStarted.current = false;
     setListening(false);
+    if (handsFreeEnabledRef.current && voiceHolding.current) return;
     const shouldProcessTranscript = voiceShouldSubmit.current || voiceHolding.current;
     voiceHolding.current = false;
     if (!shouldProcessTranscript) {
       if (handsFreeEnabledRef.current && voiceAppStateRef.current === 'active') {
-        transitionVoice(handsFreeAwaitingConfirmationRef.current ? 'awaitingConfirmation' : 'listening', handsFreeAwaitingConfirmationRef.current ? 'response' : 'listening');
-        scheduleHandsFreeResume(500);
+        transitionVoice(handsFreeAwaitingConfirmationRef.current ? 'awaitingConfirmation' : 'listening', 'response');
       } else {
         transitionVoice('idle', null);
       }
@@ -518,18 +516,14 @@ export function EfactBotScreen({
             const voiceMessage = 'Para ejecutar esta operación di “confirmado” o pulsa el botón Confirmar.';
             setVoiceResponse(voiceMessage);
             transitionVoice('awaitingConfirmation', 'response');
-            void speakCurrentBotText(voiceMessage).then((completed) => {
-              if (completed) scheduleHandsFreeResume(350);
-            });
+            void speakCurrentBotText(voiceMessage);
           }
         } else {
           if ((voiceConfidenceRef.current > 0 && voiceConfidenceRef.current < 0.45) || isLikelyAmbientVoice(transcript)) {
-            const voiceMessage = 'No estoy suficientemente segura de lo que entendí. Repetiré la escucha.';
+            const voiceMessage = 'No estoy suficientemente segura de lo que entendí. Mantén presionado el micrófono para repetir la orden.';
             setVoiceResponse(voiceMessage);
             transitionVoice('error', 'response');
-            void speakCurrentBotText(voiceMessage).then((completed) => {
-              if (completed) scheduleHandsFreeResume(350);
-            });
+            void speakCurrentBotText(voiceMessage);
             return;
           }
           transitionVoice('processing', 'processing');
@@ -541,9 +535,11 @@ export function EfactBotScreen({
         transitionVoice('idle', 'review');
       }
     } else {
-      transitionVoice('idle', handsFreeEnabledRef.current ? 'listening' : null);
+      transitionVoice('idle', handsFreeEnabledRef.current ? 'response' : null);
     }
-  });
+  };
+
+  useSpeechRecognitionEvent('end', handleVoiceEnd);
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -645,8 +641,7 @@ export function EfactBotScreen({
         setVoiceResponse(voiceAnswer);
         transitionVoice(handsFreeAwaitingConfirmationRef.current ? 'awaitingConfirmation' : 'speaking', 'response');
         void speakCurrentBotText(voiceAnswer).then((completed) => {
-          if (!handsFreeAwaitingConfirmationRef.current) transitionVoice('idle', handsFreeEnabledRef.current ? 'listening' : null);
-          if (handsFreeEnabledRef.current) scheduleHandsFreeResume(completed ? 350 : 150);
+          if (!handsFreeAwaitingConfirmationRef.current) transitionVoice('idle', handsFreeEnabledRef.current ? 'response' : null);
           if (navigationRequested && shouldSpeakResponse && botResult.suggestedRoute && isSupportedBotRoute(botResult.suggestedRoute)) {
             voiceNavigationTimerRef.current = setTimeout(() => {
               if (requestGeneration === requestGenerationRef.current) onNavigate?.(normalizeBotRoute(botResult.suggestedRoute as string));
@@ -679,9 +674,7 @@ export function EfactBotScreen({
         const voiceError = 'No pude completar la operación. Repetiré la escucha para que puedas intentarlo nuevamente.';
         setVoiceResponse(voiceError);
         transitionVoice('error', handsFreeEnabledRef.current ? 'response' : null);
-        if (handsFreeEnabledRef.current) void speakCurrentBotText(voiceError).then((completed) => {
-          if (completed) scheduleHandsFreeResume(500);
-        });
+        if (handsFreeEnabledRef.current) void speakCurrentBotText(voiceError);
       }
       setError(err instanceof ApiError || err instanceof Error ? err.message : 'No se pudo contactar al bot.');
     } finally {
@@ -701,7 +694,6 @@ export function EfactBotScreen({
   const startVoiceInput = async () => {
     if (voiceStartInFlightRef.current || voiceAppStateRef.current !== 'active') return;
     if (voiceRecognitionStarted.current) {
-      if (handsFreeEnabledRef.current) scheduleHandsFreeResume(400);
       return;
     }
     if (!ExpoSpeechRecognitionModule) {
@@ -763,7 +755,7 @@ export function EfactBotScreen({
         lang: language,
         interimResults: true,
         maxAlternatives: 3,
-        continuous: !handsFreeEnabledRef.current,
+        continuous: true,
         addsPunctuation: false,
         contextualStrings: [
           ...speechContext,
@@ -814,35 +806,13 @@ export function EfactBotScreen({
           { label: 'Ver cartera', command: 'Muéstrame mis cuentas por cobrar', icon: 'cash-multiple' as const },
         ];
 
-  const resumeHandsFreeListening = async () => {
-    if (!handsFreeEnabledRef.current || sending || sendingRef.current) return;
-    try {
-      if (await Speech.isSpeakingAsync()) {
-        scheduleHandsFreeResume(250);
-        return;
-      }
-    } catch {
-      // Si el motor de audio no informa su estado, se respeta igualmente la espera prudente.
-    }
-    if (handsFreeEnabledRef.current && voiceAppStateRef.current === 'active') void startVoiceInput();
-  };
-
-  const scheduleHandsFreeResume = (delay = 350) => {
-    if (handsFreeResumeTimerRef.current) clearTimeout(handsFreeResumeTimerRef.current);
-    handsFreeResumeTimerRef.current = setTimeout(() => {
-      handsFreeResumeTimerRef.current = null;
-      void resumeHandsFreeListening();
-    }, delay);
-  };
-
   const stopVoiceInput = () => {
     voiceHolding.current = false;
     voiceShouldSubmit.current = true;
     if (voiceRecognitionStarted.current) {
       ExpoSpeechRecognitionModule?.stop();
-    } else {
-      voiceShouldSubmit.current = false;
-      transitionVoice('idle', null);
+    } else if (!voiceStartInFlightRef.current) {
+      handleVoiceEnd();
     }
   };
 
@@ -872,12 +842,13 @@ export function EfactBotScreen({
     handsFreeAwaitingConfirmationRef.current = false;
     handsFreeNoSpeechCountRef.current = 0;
     setHandsFreeEnabled(true);
-    void startVoiceInput();
+    setVoiceResponse('Mantén presionado el micrófono para hablar y suéltalo para enviar.');
+    transitionVoice('idle', 'response');
   };
 
   const startHandsFree = () => {
     if (handsFreeEnabledRef.current) {
-      void startVoiceInput();
+      transitionVoice('idle', 'response');
       return;
     }
     toggleHandsFreeMode();
@@ -889,8 +860,6 @@ export function EfactBotScreen({
     handsFreeAwaitingConfirmationRef.current = true;
     handsFreeNoSpeechCountRef.current = 0;
     setHandsFreeEnabled(true);
-    setVoiceResponse('');
-    transitionVoice('idle', 'listening');
     void startVoiceInput();
   };
 
@@ -948,6 +917,7 @@ export function EfactBotScreen({
       selectionOptions={selectionOptions}
       showWorkflow={voiceOnly}
       handsFreeEnabled={handsFreeEnabled}
+      listening={listening}
       onChangeTranscript={(value) => {
         voiceTranscriptRef.current = value;
         setVoiceTranscript(value);
@@ -960,6 +930,8 @@ export function EfactBotScreen({
       }}
       onReviewSend={() => void send(voiceTranscriptRef.current, 'voz')}
       onStartConfirmationVoice={startHandsFreeConfirmation}
+      onStopVoice={stopVoiceInput}
+      onStartVoice={() => void startVoiceInput()}
         onNavigate={onNavigate}
       onCommand={(command) => {
         clearVoiceTimers();
@@ -1096,7 +1068,7 @@ export function EfactBotScreen({
       {handsFreeEnabled ? (
         <View style={styles.botHandsFreeBanner}>
           <MaterialCommunityIcons name="headset" size={16} color="#0878C9" />
-          <Text style={styles.botHandsFreeBannerText}>Manos libres activo · Númi esperará antes de volver a escuchar</Text>
+          <Text style={styles.botHandsFreeBannerText}>Mantén presionado el micrófono · Suelta para enviar</Text>
           <Pressable accessibilityLabel="Desactivar modo manos libres" onPress={stopHandsFreeMode} hitSlop={8}><Text style={styles.botHandsFreeBannerAction}>Detener</Text></Pressable>
         </View>
       ) : null}
@@ -1142,7 +1114,9 @@ export function EfactBotScreen({
           accessibilityLabel={listening ? 'Detener reconocimiento de voz' : 'Hablar con Númi'}
           style={[styles.botVoiceButton, compactLayout && styles.botVoiceButtonCompact, listening && styles.botVoiceButtonActive]}
           disabled={!voiceRecognitionAvailable}
-          onPress={() => {
+          onPressIn={handsFreeEnabled ? () => void startVoiceInput() : undefined}
+          onPressOut={handsFreeEnabled ? stopVoiceInput : undefined}
+          onPress={handsFreeEnabled ? undefined : () => {
             if (listening || voiceRecognitionStarted.current) stopVoiceInput();
             else void startVoiceInput();
           }}
@@ -1163,7 +1137,7 @@ export function EfactBotScreen({
   );
 }
 
-function VoiceInteractionOverlay({ state, transcript, response, draft, missing, pendingOperation, requiresConfirmation, invoiceState, progress, configurationRoutes, reduceMotion, stale, selectionOptions, showWorkflow, handsFreeEnabled, onChangeTranscript, onCancel, onReviewEdit, onReviewSend, onStartConfirmationVoice, onNavigate, onCommand }: {
+function VoiceInteractionOverlay({ state, transcript, response, draft, missing, pendingOperation, requiresConfirmation, invoiceState, progress, configurationRoutes, reduceMotion, stale, selectionOptions, showWorkflow, handsFreeEnabled, listening, onChangeTranscript, onCancel, onReviewEdit, onReviewSend, onStartConfirmationVoice, onStartVoice, onStopVoice, onNavigate, onCommand }: {
   state: VoiceOverlayState;
   transcript: string;
   response: string;
@@ -1179,11 +1153,14 @@ function VoiceInteractionOverlay({ state, transcript, response, draft, missing, 
   selectionOptions: BotSelectionOption[];
   showWorkflow: boolean;
   handsFreeEnabled: boolean;
+  listening: boolean;
   onChangeTranscript: (value: string) => void;
   onCancel: () => void;
   onReviewEdit: () => void;
   onReviewSend: () => void;
   onStartConfirmationVoice: () => void;
+  onStartVoice: () => void;
+  onStopVoice: () => void;
   onNavigate?: (route: string) => void;
   onCommand: (command: string) => void;
 }) {
@@ -1211,7 +1188,7 @@ function VoiceInteractionOverlay({ state, transcript, response, draft, missing, 
   }, [pulse, reduceMotion, state]);
 
   const title = state === 'listening' ? 'Númi está escuchando' : state === 'review' ? 'Revisa lo que entendí' : state === 'processing' ? 'Procesando comando' : confirmationExpiryInvalid ? 'Confirmación no disponible' : confirmationExpired ? 'Confirmación vencida' : needsConfirmation ? 'Revisa antes de continuar' : 'Númi respondió';
-  const subtitle = state === 'listening' ? 'Habla con claridad; volveré a escuchar cuando termines.' : state === 'review' ? 'Corrige cualquier palabra antes de enviarla.' : state === 'processing' ? 'Estoy revisando tus datos y preparando el siguiente paso.' : confirmationExpiryInvalid ? 'La operación no tiene una vigencia válida. Solicítala nuevamente.' : confirmationExpired ? 'La operación no se ejecutó. Solicítala nuevamente para generar una nueva confirmación.' : needsConfirmation ? 'Di “confirmado” para ejecutar o usa el botón Confirmar.' : 'Esta respuesta también se guardó en el chat.';
+  const subtitle = state === 'listening' ? 'Mantén presionado el micrófono; suéltalo para enviar.' : state === 'review' ? 'Corrige cualquier palabra antes de enviarla.' : state === 'processing' ? 'Estoy revisando tus datos y preparando el siguiente paso.' : confirmationExpiryInvalid ? 'La operación no tiene una vigencia válida. Solicítala nuevamente.' : confirmationExpired ? 'La operación no se ejecutó. Solicítala nuevamente para generar una nueva confirmación.' : needsConfirmation ? 'Di “confirmado” para ejecutar o usa el botón Confirmar.' : 'Esta respuesta también se guardó en el chat.';
   const icon = state === 'listening' ? 'microphone' : state === 'review' ? 'text-box-check-outline' : state === 'processing' ? 'loading' : confirmationBlocked ? 'alert-circle-outline' : needsConfirmation ? 'shield-check-outline' : 'check-circle-outline';
 
   return (
@@ -1228,6 +1205,7 @@ function VoiceInteractionOverlay({ state, transcript, response, draft, missing, 
             <Text style={styles.botVoiceOverlaySubtitle}>{subtitle}</Text>
           </View>
         </View>
+        {handsFreeEnabled && state === 'response' && !needsConfirmation ? <Pressable accessibilityRole="button" accessibilityLabel="Mantén presionado para hablar y suelta para enviar" style={styles.botVoiceOverlayContinueButton} onPressIn={onStartVoice} onPressOut={onStopVoice}><MaterialCommunityIcons name="microphone" size={24} color="#FFFFFF" /><Text style={styles.botVoiceOverlayContinueText}>{listening ? 'Escuchando · Suelta para enviar' : 'Mantén para hablar'}</Text></Pressable> : null}
         <Animated.View style={[styles.botVoiceOverlayOrb, state !== 'response' && { transform: [{ scale: pulse }] }]}>
           <MaterialCommunityIcons name={icon} size={34} color="#FFFFFF" />
         </Animated.View>
@@ -1249,7 +1227,7 @@ function VoiceInteractionOverlay({ state, transcript, response, draft, missing, 
           <>
             <View style={styles.botVoiceOverlayActions}>
               <Pressable style={styles.botVoiceOverlayCancelButton} onPress={() => onCommand('cancelar')}><Text style={styles.botVoiceOverlayCancelText}>Cancelar</Text></Pressable>
-              {handsFreeEnabled ? <Pressable style={styles.botVoiceOverlayContinueButton} onPress={onStartConfirmationVoice}><MaterialCommunityIcons name="microphone" size={16} color="#FFFFFF" /><Text style={styles.botVoiceOverlayContinueText}>Decir confirmado</Text></Pressable> : null}
+              {handsFreeEnabled ? <Pressable style={styles.botVoiceOverlayContinueButton} onPressIn={onStartConfirmationVoice} onPressOut={onStopVoice}><MaterialCommunityIcons name="microphone" size={16} color="#FFFFFF" /><Text style={styles.botVoiceOverlayContinueText}>{listening ? 'Escuchando · Suelta para confirmar' : 'Mantén para confirmar'}</Text></Pressable> : null}
             </View>
             <Pressable style={styles.botVoiceOverlayConfirmButtonFull} onPress={() => onCommand(pendingOperation ? 'confirmar' : 'emitir')}><MaterialCommunityIcons name="check" size={17} color="#FFFFFF" /><Text style={styles.botVoiceOverlayConfirmText}>Confirmar con botón</Text></Pressable>
           </>
