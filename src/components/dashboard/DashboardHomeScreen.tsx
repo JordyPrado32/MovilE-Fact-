@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { ActivityIndicator, Image, Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { Image, Pressable, Text, View, useWindowDimensions } from 'react-native';
 
 import type { FacturaListItem } from '../../services/facturasMobileService';
 import { DashboardActivityItem, DashboardPrimaryAction } from './DashboardWidgets';
@@ -36,13 +36,9 @@ export function DashboardHomeScreen({
   const recentFactura = facturas[0];
 
   const completedSteps = [initialSetup.issuer, initialSetup.signature, initialSetup.documents].filter(Boolean).length;
-  const setupComplete = completedSteps === 3;
+  const setupComplete = initialSetup.loading || completedSteps === 3;
   const nextView = !initialSetup.issuer ? 'emisor' : !initialSetup.signature ? 'firma' : 'comprar-documentos';
   const nextLabel = !initialSetup.issuer ? 'Configurar emisor y punto' : !initialSetup.signature ? 'Configurar firma' : 'Comprar documentos';
-
-  if (initialSetup.loading) {
-    return <View style={styles.dashboardSetupLoading}><ActivityIndicator color={EFACT_THEME.colors.primary} /><Text style={styles.dashboardSetupLoadingText}>Revisando la configuración de tu cuenta...</Text></View>;
-  }
 
   if (!setupComplete) {
     return (

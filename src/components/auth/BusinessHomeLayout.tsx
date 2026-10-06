@@ -259,7 +259,7 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
         <ScreenTransition key={activeView} reduceMotion={reduceMotion}>
         {menuMessage ? <MessageBox message={menuMessage} /> : null}
 
-        {loadingMenus ? (
+        {loadingMenus && activeView !== 'dashboard' ? (
           <View style={styles.directoryLoading}>
             <ActivityIndicator color="#0072BD" />
             <Text style={styles.mutedText}>Cargando menus autorizados...</Text>
@@ -325,7 +325,7 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
           />
         ) : null}
 
-        {!loadingMenus && activeView === 'dashboard' ? (
+        {activeView === 'dashboard' ? (
           <ExtractedDashboardHomeScreen
             facturas={facturasList}
             initialSetup={{
@@ -337,7 +337,7 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
             }}
             onOpenView={(view: any) => openView(view as WorkspaceView)}
             onOpenERubricaRequest={() => openERubricaTab('nueva-solicitud')}
-            onOpenVoice={() => botVoiceControlsRef.current?.startHandsFree()}
+            onOpenVoice={() => openView('bot')}
           />
         ) : null}
 

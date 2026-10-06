@@ -28,7 +28,7 @@ const voiceRecognitionAvailable = ExpoSpeechRecognitionModule !== null;
 export const botVoiceRecognitionAvailable = voiceRecognitionAvailable;
 const speechContext = [
   'Númi', 'e-fact', 'Jordy Prado', 'Jordy', 'Prado', 'factura', 'facturación', 'RUC', 'cédula', 'identificación',
-  'cliente', 'proveedor', 'producto', 'servicio', 'cantidad', 'precio', 'descuento', 'IVA', 'subtotal', 'impuesto', 'total',
+  'cliente', 'proveedor', 'producto', 'servicio', 'servicios prestados', 'cantidad', 'precio', 'descuento', 'IVA', 'subtotal', 'impuesto', 'total',
   'retención', 'guía de remisión', 'nota de crédito', 'nota de débito', 'emitir', 'anular', 'cancelar', 'confirmar', 'confirmado',
   'contado', 'crédito', 'efectivo', 'transferencia', 'tarjeta', 'débito', 'cheque', 'banco', 'plazo', 'vencimiento',
   'modificar IVA', 'cambiar IVA', 'IVA cero', 'IVA quince', 'quitar IVA', 'aplicar IVA',
@@ -585,7 +585,7 @@ export function EfactBotScreen({
         requestId,
         modo,
         sessionScope,
-        contexto: assistantContext ?? 'asistente de facturación: ayuda a crear facturas, buscar clientes y productos, completar datos faltantes, revisar subtotal, IVA y total, confirmar o cancelar la emisión. Cuando la persona pida una lista de clientes o productos, muestra únicamente los 3 primeros resultados y ofrece continuar con los siguientes. Usa datos reales del usuario y no inventes información. Usa lenguaje neutral; no asumas el género de la persona ni uses bienvenido/bienvenida.',
+        contexto: assistantContext ?? 'asistente de facturación: ayuda a crear facturas, buscar clientes y productos, completar datos faltantes, revisar subtotal, IVA y total, confirmar o cancelar la emisión. Cuando la persona pida una lista de clientes o productos, muestra únicamente los 3 primeros resultados y ofrece continuar con los siguientes. Si solicita un servicio o producto concreto, como "servicios prestados", usa una coincidencia exacta del catálogo o muestra opciones para que el usuario elija; nunca selecciones otro producto solo por ser el primero. Usa datos reales del usuario y no inventes información. Usa lenguaje neutral; no asumas el género de la persona ni uses bienvenido/bienvenida.',
         signal: requestController.signal,
       });
       if (requestGeneration !== requestGenerationRef.current) return;
@@ -814,6 +814,18 @@ export function EfactBotScreen({
     } else if (!voiceStartInFlightRef.current) {
       handleVoiceEnd();
     }
+  };
+
+  const startPushToTalk = () => {
+    if (!voiceRecognitionAvailable) {
+      showVoiceError('El reconocimiento de voz requiere abrir la app en un development build, no en Expo Go.');
+      return;
+    }
+    handsFreeEnabledRef.current = true;
+    handsFreeAwaitingConfirmationRef.current = false;
+    handsFreeNoSpeechCountRef.current = 0;
+    setHandsFreeEnabled(true);
+    void startVoiceInput();
   };
 
   const stopHandsFreeMode = () => {
@@ -1106,20 +1118,13 @@ export function EfactBotScreen({
         {attachmentActions?.length ? <Pressable accessibilityRole="button" accessibilityLabel="Adjuntar archivo" accessibilityState={{ expanded: attachmentsOpen, disabled: sending || listening }} style={[styles.botToolButton, compactLayout && styles.botToolButtonCompact, attachmentsOpen && styles.botToolButtonActive]} disabled={sending || listening} onPress={() => { setQuickActionsOpen(false); setAttachmentsOpen((value) => !value); }}>
           <MaterialCommunityIcons name="paperclip" size={19} color={attachmentsOpen ? '#FFFFFF' : '#6E94B4'} />
         </Pressable> : null}
-        <Pressable accessibilityRole="button" accessibilityLabel={handsFreeEnabled ? 'Desactivar modo manos libres' : 'Activar modo manos libres'} style={[styles.botToolButton, compactLayout && styles.botToolButtonCompact, handsFreeEnabled && styles.botToolButtonActive]} disabled={sending || !voiceRecognitionAvailable} onPress={toggleHandsFreeMode}>
-          <MaterialCommunityIcons name="headset" size={19} color={handsFreeEnabled ? '#FFFFFF' : '#6E94B4'} />
-        </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={listening ? 'Detener reconocimiento de voz' : 'Hablar con Númi'}
+          accessibilityLabel={listening ? 'Soltar para enviar la orden de voz' : 'Mantener presionado para hablar con Númi'}
           style={[styles.botVoiceButton, compactLayout && styles.botVoiceButtonCompact, listening && styles.botVoiceButtonActive]}
           disabled={!voiceRecognitionAvailable}
-          onPressIn={handsFreeEnabled ? () => void startVoiceInput() : undefined}
-          onPressOut={handsFreeEnabled ? stopVoiceInput : undefined}
-          onPress={handsFreeEnabled ? undefined : () => {
-            if (listening || voiceRecognitionStarted.current) stopVoiceInput();
-            else void startVoiceInput();
-          }}
+          onPressIn={startPushToTalk}
+          onPressOut={stopVoiceInput}
         >
           <MaterialCommunityIcons name={listening ? 'stop' : 'microphone-outline'} size={20} color={listening ? '#FFFFFF' : '#0878C9'} />
         </Pressable>
@@ -1530,8 +1535,19 @@ function limitCatalogListAnswer(answer: string, request: string) {
 function buildVoiceResponse(answer: string, draft: BotFacturaDraft | null, missing: string[]) {
   const details: string[] = [];
   if (draft?.cliente?.nombre) details.push(`Cliente ${draft.cliente.nombre} encontrado.`);
-  const products = draft?.items?.map((item) => item.descripcion).filter((value): value is string => Boolean(value?.trim())) ?? [];
-  if (products.length === 1) details.push(`Producto ${products[0]} encontrado.`);
+  const items = draft?.items ?? [];
+  const products = items.map((item) => item.descripcion).filter((value): value is string => Boolean(value?.trim()));
+  const productDetails = items
+    .filter((item) => item.descripcion?.trim())
+    .map((item) => [
+      `Producto ${item.descripcion}`,
+      item.cantidad !== undefined ? `cantidad ${item.cantidad}` : '',
+      item.precioUnitario !== undefined ? `valor unitario ${formatMoney(item.precioUnitario)}` : '',
+      item.impuesto !== undefined ? `IVA ${formatMoney(item.impuesto)}` : '',
+      item.total !== undefined ? `total ${formatMoney(item.total)}` : '',
+    ].filter(Boolean).join(', '));
+  if (productDetails.length) details.push(`${productDetails.join('. ')}.`);
+  else if (products.length === 1) details.push(`Producto ${products[0]} encontrado.`);
   else if (products.length > 1) details.push(`${products.length} productos encontrados.`);
   if (draft?.items?.length && (draft.subtotal !== undefined || draft.impuesto !== undefined || draft.total !== undefined)) {
     details.push(`Valores calculados: subtotal ${formatMoney(draft.subtotal ?? 0)}, IVA ${formatMoney(draft.impuesto ?? 0)} y total ${formatMoney(draft.total ?? 0)}.`);
@@ -1628,10 +1644,7 @@ function isExplicitConfirmation(value: string) {
 function sanitizeSpeechText(value: string) {
   return value
     .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, 'el correo registrado')
-    .replace(/\b\d{10,13}\b/g, 'la identificación registrada')
-    .replace(/\b(cliente|producto|proveedor)\s+[^.;\n]+\s+encontrado(?:s)?/gi, '$1 encontrado')
-    .replace(/\b(cliente|producto|proveedor)\s*:\s*[^.;\n]+/gi, '$1 registrado')
-    .replace(/\b(subtotal|iva|impuesto|total)\s*:?\s*\$?\s*[\d.,]+/gi, '$1 disponible');
+    .replace(/\b\d{10,13}\b/g, 'la identificación registrada');
 }
 
 function isExplicitCancellation(value: string) {

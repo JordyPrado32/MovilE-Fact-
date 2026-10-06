@@ -879,7 +879,7 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
   }, [activeView, authorizedViews, catalogUserId, reloadKey]);
 
   useEffect(() => {
-    if (!catalogUserId || !authorizedViews.has('dashboard')) return;
+    if (!catalogUserId || !authorizedViews.has('dashboard') || activeView === 'dashboard') return;
 
     let mounted = true;
     const views: WorkspaceView[] = ['cuentas-cobrar', 'estado-cuenta', 'comprar-documentos', 'recargas', 'centro-normativo'];
@@ -910,7 +910,7 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
     return () => {
       mounted = false;
     };
-  }, [authorizedViews, catalogUserId, reloadKey]);
+  }, [activeView, authorizedViews, catalogUserId, reloadKey]);
 
   useEffect(() => {
     if (!catalogUserId || !canUseEfact) return;
@@ -1018,7 +1018,8 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
   }, [authorizedViews, clienteLookups]);
 
   useEffect(() => {
-    if (!catalogUserId || (!authorizedViews.has('productos') && !authorizedViews.has('categorias'))) return;
+    const needsCatalog = ['productos', 'nuevo-producto', 'categorias', 'nueva-categoria', 'nueva-subcategoria', 'nueva-factura'].includes(activeView);
+    if (!catalogUserId || !needsCatalog || (!authorizedViews.has('productos') && !authorizedViews.has('categorias'))) return;
 
     let mounted = true;
     setLoadingProductos(true);
@@ -1039,10 +1040,11 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
     return () => {
       mounted = false;
     };
-  }, [authorizedViews, catalogUserId, reloadKey]);
+  }, [activeView, authorizedViews, catalogUserId, reloadKey]);
 
   useEffect(() => {
-    if ((!authorizedViews.has('productos') && !authorizedViews.has('categorias')) || productoLookups) return;
+    const needsCatalog = ['productos', 'nuevo-producto', 'categorias', 'nueva-categoria', 'nueva-subcategoria', 'nueva-factura'].includes(activeView);
+    if (!catalogUserId || !needsCatalog || (!authorizedViews.has('productos') && !authorizedViews.has('categorias')) || productoLookups) return;
 
     let mounted = true;
     setLoadingProductoLookups(true);
@@ -1063,10 +1065,11 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
     return () => {
       mounted = false;
     };
-  }, [authorizedViews, catalogUserId, productoLookups]);
+  }, [activeView, authorizedViews, catalogUserId, productoLookups]);
 
   useEffect(() => {
-    if (!catalogUserId || !authorizedViews.has('categorias')) return;
+    const needsCategories = ['categorias', 'nueva-categoria', 'nueva-subcategoria', 'productos', 'nuevo-producto'].includes(activeView);
+    if (!catalogUserId || !needsCategories || !authorizedViews.has('categorias')) return;
 
     let mounted = true;
     setLoadingCategorias(true);
@@ -1099,7 +1102,7 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
     return () => {
       mounted = false;
     };
-  }, [authorizedViews, catalogUserId, productoLookups, reloadKey]);
+  }, [activeView, authorizedViews, catalogUserId, productoLookups, reloadKey]);
 
   useEffect(() => {
     if (!catalogUserId || (!authorizedViews.has('emisor') && !authorizedViews.has('firma'))) return;
@@ -1126,7 +1129,8 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
   }, [authorizedViews, catalogUserId, reloadKey]);
 
   useEffect(() => {
-    if (!userId || (!authorizedViews.has('perfil') && !canUseERubrica)) return;
+    const needsProfile = ['perfil', 'perfil-e-rubrica', 'e-rubrica'].includes(activeView);
+    if (!userId || !needsProfile || (!authorizedViews.has('perfil') && !canUseERubrica)) return;
 
     let mounted = true;
     setLoadingPerfil(true);
@@ -1149,7 +1153,7 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
     return () => {
       mounted = false;
     };
-  }, [authorizedViews, canUseERubrica, reloadKey, userId]);
+  }, [activeView, authorizedViews, canUseERubrica, reloadKey, userId]);
 
   useEffect(() => {
     const needsPuntos = authorizedViews.has('punto-emision') || ['nueva-factura', 'nueva-nota-credito', 'nueva-nota-debito', 'nueva-liquidacion-compra', 'nueva-guia-remision'].includes(activeView);
@@ -1178,7 +1182,8 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
 
   useEffect(() => {
     const isInsideEfact = activeView !== 'portal' && activeView !== 'e-rubrica' && activeView !== 'perfil-e-rubrica' && activeView !== 'no-autorizado';
-    if (!catalogUserId || (!canUseFirma && !authorizedViews.has('emisor')) || !isInsideEfact) return;
+    const needsFirma = ['emisor', 'nuevo-emisor', 'firma', 'nueva-firma'].includes(activeView);
+    if (!catalogUserId || !needsFirma || (!canUseFirma && !authorizedViews.has('emisor')) || !isInsideEfact) return;
 
     let mounted = true;
     setLoadingFirma(true);
@@ -4893,7 +4898,7 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
   const hasEmissionPoint = Boolean(puntosData?.emisor && puntosData.cajas?.length);
   const hasDocumentsAvailable = documentPlan.unlimited || Number(compraDocumentosEstado?.saldoDocumentos ?? 0) > 0;
   const initialSetupComplete = hasActiveEmisor && hasEmissionPoint && hasConfiguredFirma && hasDocumentsAvailable;
-  const initialSetupLoading = loadingEmisores || loadingPuntos || loadingFirma || loadingCompraDocumentosEstado;
+  const initialSetupLoading = loadingEmisores || loadingPuntos || loadingCompraDocumentosEstado;
   const initialSetupAllowedViews = new Set<WorkspaceView>(['dashboard', 'emisor', 'nuevo-emisor', 'firma', 'nueva-firma', 'punto-emision', 'nuevo-punto-emision', 'clientes', 'nuevo-cliente', 'productos', 'nuevo-producto', 'categorias', 'nueva-categoria', 'nueva-subcategoria', 'cotizaciones', 'comprar-documentos', 'recargas', 'perfil', 'portal', 'e-rubrica', 'perfil-e-rubrica', 'politica-privacidad']);
   const firmaSummary = getFirmaSummary(emisores, firmaEstados);
   const moduleByView = new Map<WorkspaceView, MobileModule>(modules.map((module) => [module.view, module]));

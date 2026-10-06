@@ -221,6 +221,7 @@ let activeBotSession: { userId: number; scope: BotSessionScope; sessionId: strin
 let botHistoryWrite = Promise.resolve();
 const BOT_HISTORY_TTL_MS = 24 * 60 * 60 * 1000;
 const BOT_HISTORY_KEY_PREFIX = 'efact.bot.history.key.';
+const BOT_WORKFLOW_STORAGE_PREFIX = 'efact.bot.workflow.';
 
 function historyFileUri(userId: number, scope: BotSessionScope = 'efact') {
   return userId > 0 && FileSystem.documentDirectory
@@ -314,17 +315,31 @@ function isBotMessage(value: unknown): value is BotMessage {
 
 export async function loadBotHistory(userId: number, scope: BotSessionScope = 'efact') {
   const uri = historyFileUri(userId, scope);
-  if (!uri) return null;
+  let storedWorkflow: BotWorkflowState | null = null;
+  if (userId > 0 && await SecureStore.isAvailableAsync()) {
+    try {
+      const rawWorkflow = await SecureStore.getItemAsync(workflowStorageKey(userId, scope));
+      if (rawWorkflow) {
+        const parsedWorkflow = JSON.parse(rawWorkflow) as { savedAt?: number; workflow?: unknown };
+        if (parsedWorkflow.savedAt && Date.now() - parsedWorkflow.savedAt <= BOT_HISTORY_TTL_MS) {
+          storedWorkflow = normalizeWorkflow(parsedWorkflow.workflow);
+        }
+      }
+    } catch {
+      storedWorkflow = null;
+    }
+  }
+  if (!uri) return storedWorkflow ? { messages: [], feedbackByMessage: {}, workflow: storedWorkflow } : null;
   try {
     const info = await FileSystem.getInfoAsync(uri);
-    if (!info.exists) return null;
+    if (!info.exists) return storedWorkflow ? { messages: [], feedbackByMessage: {}, workflow: storedWorkflow } : null;
     const decrypted = await decryptHistory(userId, scope, await FileSystem.readAsStringAsync(uri));
-    if (!decrypted) return null;
+    if (!decrypted) return storedWorkflow ? { messages: [], feedbackByMessage: {}, workflow: storedWorkflow } : null;
     const parsed = JSON.parse(decrypted) as { savedAt?: number; messages?: unknown; feedbackByMessage?: unknown; workflow?: unknown };
     if (!parsed.savedAt || Date.now() - parsed.savedAt > BOT_HISTORY_TTL_MS) {
       await FileSystem.deleteAsync(uri, { idempotent: true });
       await resetBotSession(userId, scope);
-      return null;
+      return storedWorkflow ? { messages: [], feedbackByMessage: {}, workflow: storedWorkflow } : null;
     }
     const messages = Array.isArray(parsed.messages) ? parsed.messages.filter(isBotMessage).slice(-100) : [];
     const feedbackByMessage: BotFeedbackState = {};
@@ -333,15 +348,15 @@ export async function loadBotHistory(userId: number, scope: BotSessionScope = 'e
         if (value === 'like' || value === 'dislike') feedbackByMessage[id] = value;
       }
     }
-    return { messages, feedbackByMessage, workflow: normalizeWorkflow(parsed.workflow) };
+    return { messages, feedbackByMessage, workflow: normalizeWorkflow(parsed.workflow) ?? storedWorkflow };
   } catch {
-    return null;
+    return storedWorkflow ? { messages: [], feedbackByMessage: {}, workflow: storedWorkflow } : null;
   }
 }
 
 export function saveBotHistory(userId: number, messages: BotMessage[], feedbackByMessage: BotFeedbackState, workflow: BotWorkflowState | null = null, scope: BotSessionScope = 'efact') {
   const uri = historyFileUri(userId, scope);
-  if (!uri) return Promise.resolve();
+  if (!uri && userId <= 0) return Promise.resolve();
   const value = JSON.stringify({
     savedAt: Date.now(),
     messages: messages.slice(-100).map(sanitizeHistoryMessage),
@@ -350,9 +365,12 @@ export function saveBotHistory(userId: number, messages: BotMessage[], feedbackB
   });
   botHistoryWrite = botHistoryWrite
     .then(async () => {
+      if (await SecureStore.isAvailableAsync()) {
+        if (workflow) await SecureStore.setItemAsync(workflowStorageKey(userId, scope), JSON.stringify({ savedAt: Date.now(), workflow }));
+        else await SecureStore.deleteItemAsync(workflowStorageKey(userId, scope));
+      }
       const encrypted = await encryptHistory(userId, scope, value);
-      if (!encrypted) return;
-      await FileSystem.writeAsStringAsync(uri, encrypted);
+      if (encrypted && uri) await FileSystem.writeAsStringAsync(uri, encrypted);
     })
     .catch(() => undefined);
   return botHistoryWrite;
@@ -366,6 +384,7 @@ export function clearBotHistory(userId: number, scope: BotSessionScope = 'efact'
       if (userId > 0 && await SecureStore.isAvailableAsync()) {
         await SecureStore.deleteItemAsync(historyKey(userId, scope));
         await SecureStore.deleteItemAsync(storageKey(userId, scope));
+        await SecureStore.deleteItemAsync(workflowStorageKey(userId, scope));
       }
     })
     .catch(() => undefined);
@@ -384,6 +403,10 @@ function buildRequestId() {
 
 function storageKey(userId: number, scope: BotSessionScope) {
   return `${BOT_SESSION_STORAGE_PREFIX}${scope}.${userId}`;
+}
+
+function workflowStorageKey(userId: number, scope: BotSessionScope) {
+  return `${BOT_WORKFLOW_STORAGE_PREFIX}${scope}.${userId}`;
 }
 
 async function readStoredSession(userId: number, scope: BotSessionScope) {
