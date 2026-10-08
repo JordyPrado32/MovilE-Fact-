@@ -70,7 +70,7 @@ export function DashboardHomeScreen({
       <View style={styles.dashboardNumiPanel} onLayout={({ nativeEvent }) => setBannerWidth(nativeEvent.layout.width)}>
         <Image source={require('../../../assets/numi-dashboard-banner.png')} style={[styles.dashboardNumiBanner, { height: bannerHeight }]} resizeMode="contain" />
         <Pressable accessibilityRole="button" accessibilityLabel="Generar documentos por voz con Númi" style={[styles.dashboardNumiBannerAction, styles.dashboardNumiBannerVoiceAction]} onPress={onOpenVoice} />
-        <Pressable accessibilityRole="button" accessibilityLabel="Abrir chat con Númi" style={[styles.dashboardNumiBannerAction, styles.dashboardNumiBannerChatAction]} onPress={() => onOpenView('bot')} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Emitir factura manual" style={[styles.dashboardNumiBannerAction, styles.dashboardNumiBannerChatAction]} onPress={() => onOpenView('nueva-factura')} />
       </View>
 
       <View style={styles.dashboardSectionHeader}>

@@ -353,7 +353,7 @@ export function BusinessHomeLayout({ context }: { context: BusinessHomeLayoutCon
         {!loadingMenus && activeView === 'e-rubrica' ? (
           <ERubricaMobileScreen
             data={erubricaData}
-            puedeFirmarSinPlan={isSuperAdmin(currentUser)}
+            puedeFirmarSinPlan={isSuperAdmin(currentUser) || hasDocumentsAvailable}
             initialPdf={erubricaInitialPdf}
             requestedTab={erubricaTabRequest}
             loading={loadingErubrica}

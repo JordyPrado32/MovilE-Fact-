@@ -281,10 +281,13 @@ function toNotaCreditoListItem(row: ApiRow): NotaCreditoListItem {
   const numeroCompleto = text(pickValue(row, ['numeroCompleto', 'NumeroCompleto', 'numeroDocumento', 'NumeroDocumento', 'documento', 'Documento']));
   const autorizadoRaw = pickValue(row, ['autorizado', 'Autorizado', 'estaAutorizado', 'EstaAutorizado']);
   const autorizado = booleanValue(autorizadoRaw);
-  const estadoGenerico = pickValue(row, ['estado', 'Estado']);
-  const estadoSri = text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estadoAutorizacion', 'EstadoAutorizacion']))
-    || (typeof estadoGenerico === 'string' && !['true', 'false', '1', '0'].includes(estadoGenerico.trim().toLowerCase()) ? estadoGenerico : '')
-    || (autorizado === true ? 'AUTORIZADO' : 'PENDIENTE');
+  const estadoGenerico = pickValue(row, ['estado', 'Estado', 'activo', 'Activo']);
+  const estado = booleanValue(estadoGenerico);
+  const estadoSri = estado === false
+    ? 'ANULADO'
+    : text(pickValue(row, ['estadoSri', 'EstadoSri', 'estadoSRI', 'EstadoSRI', 'estadoAutorizacion', 'EstadoAutorizacion']))
+      || (typeof estadoGenerico === 'string' && !['true', 'false', '1', '0'].includes(estadoGenerico.trim().toLowerCase()) ? estadoGenerico : '')
+      || (autorizado === true ? 'AUTORIZADO' : 'PENDIENTE');
 
   return {
     codNotaCredito: numberValue(pickValue(row, ['codNotaCredito', 'CodNotaCredito', 'codnotacredito', 'codNota', 'CodNota', 'secNotaCredito', 'SecNotaCredito', 'sec', 'Sec', 'idNotaCredito', 'IdNotaCredito', 'id', 'Id'])) ?? 0,
@@ -316,7 +319,7 @@ function toNotaCreditoListItem(row: ApiRow): NotaCreditoListItem {
     fechaVencimientoDocumento: text(pickValue(row, ['fechaVencimientoDocumento', 'FechaVencimientoDocumento'])) || null,
     saldoPendienteDocumento: numberValue(pickValue(row, ['saldoPendienteDocumento', 'SaldoPendienteDocumento'])),
     xmlUrl: text(pickValue(row, ['xmlUrl', 'XmlUrl'])) || null,
-    estado: booleanValue(pickValue(row, ['estado', 'Estado', 'activo', 'Activo'])),
+    estado,
   };
 }
 

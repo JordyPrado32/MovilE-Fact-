@@ -184,6 +184,7 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
   const [productoEstadoFiltro, setProductoEstadoFiltro] = useState<'activos' | 'inactivos' | 'todos'>('activos');
   const debouncedSearch = useDebouncedValue(search, 350);
   const [reloadKey, setReloadKey] = useState(0);
+  const appStateRef = useRef(AppState.currentState);
   const [adminItems, setAdminItems] = useState<AdminMobileItem[]>([]);
   const [adminTabByView, setAdminTabByView] = useState<Record<string, string>>({});
   const [operationalItems, setOperationalItems] = useState<OperationalMobileItem[]>([]);
@@ -505,7 +506,9 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
+      const previousState = appStateRef.current;
+      appStateRef.current = state;
+      if (state === 'active' && previousState === 'background') {
         setReloadKey((value) => value + 1);
       }
     });
@@ -3217,11 +3220,6 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
       setDirectoryMessage({ type: 'info', text: 'Esta factura ya fue autorizada por el SRI y no se puede volver a emitir.' });
       return;
     }
-    const prerequisitesError = await validateEmissionPrerequisites();
-    if (prerequisitesError) {
-      setDirectoryMessage({ type: 'error', text: prerequisitesError });
-      return;
-    }
     try {
       const result = await reintentarFacturaSri(catalogUserId, factura.codfactura);
       const estado = normalizeSriState(result.estado);
@@ -3501,6 +3499,9 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
         onPress: async () => {
           try {
             await anularNotaCredito(catalogUserId, nota.codNotaCredito);
+            setNotasCreditoList((current) => current.map((item) => item.codNotaCredito === nota.codNotaCredito
+              ? { ...item, estado: false, estadoSri: 'ANULADO' }
+              : item));
             setDirectoryMessage({ type: 'success', text: 'Nota de credito anulada correctamente.' });
             setReloadKey((value) => value + 1);
           } catch (error) {

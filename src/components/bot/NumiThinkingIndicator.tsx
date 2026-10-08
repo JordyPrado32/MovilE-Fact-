@@ -4,6 +4,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 function getThinkingDetail(request: string) {
   const normalized = request.toLowerCase();
+  const document = normalized.includes('nota de crédito') || normalized.includes('nota de credito') || normalized === 'nc' || normalized.includes(' nc ') ? 'la nota de crédito' : normalized.includes('nota de débito') || normalized.includes('nota de debito') || normalized === 'nd' || normalized.includes(' nd ') ? 'la nota de débito' : 'la factura';
+  if (normalized.includes('confirm') || normalized.includes('emitir') || normalized.includes('emite')) return [`Guardando ${document} de forma segura.`, `Enviando ${document} al SRI.`, 'Confirmando el resultado para evitar reenvíos.'];
   if (normalized.includes('cliente') || normalized.includes('proveedor')) return ['Consultando tus clientes y evitando pedir datos que ya existen.', 'Validando la información encontrada.', 'Preparando una respuesta clara.'];
   if (normalized.includes('producto') || normalized.includes('servicio')) return ['Consultando el catálogo y usando sus precios e IVA reales.', 'Validando precios e impuestos.', 'Preparando una respuesta clara.'];
   if (normalized.includes('factura') || normalized.includes('vender') || normalized.includes('venta')) return ['Consultando cliente, productos y valores de la factura.', 'Revisando los datos de la operación.', 'Preparando el siguiente paso.'];

@@ -30,7 +30,7 @@ export const botVoiceRecognitionAvailable = voiceRecognitionAvailable;
 const speechContext = [
   'Númi', 'e-fact', 'Jordy Prado', 'Jordy', 'Prado', 'factura', 'facturación', 'RUC', 'cédula', 'identificación',
   'cliente', 'proveedor', 'producto', 'servicio', 'servicios prestados', 'cantidad', 'precio', 'descuento', 'IVA', 'subtotal', 'impuesto', 'total',
-  'retención', 'guía de remisión', 'nota de crédito', 'nota de débito', 'emitir', 'anular', 'cancelar', 'confirmar', 'confirmado',
+  'retención', 'guía de remisión', 'nota de crédito', 'nota de débito', 'emitir', 'anular', 'cancelar', 'confirmar', 'confirmo', 'confirmado', 'autorizo', 'acepto', 'apruebo', 'adelante', 'procede',
   'contado', 'crédito', 'efectivo', 'transferencia', 'tarjeta', 'débito', 'cheque', 'banco', 'plazo', 'vencimiento',
   'modificar IVA', 'cambiar IVA', 'IVA cero', 'IVA quince', 'quitar IVA', 'aplicar IVA',
   'modificar precio', 'cambiar precio', 'subir precio', 'bajar precio', 'precio unitario',
@@ -290,23 +290,6 @@ export function EfactBotScreen({
   const abortBotRequest = () => {
     botRequestAbortRef.current?.abort();
     botRequestAbortRef.current = null;
-  };
-
-  const cancelPendingRequest = () => {
-    requestGenerationRef.current += 1;
-    queuedRequestsRef.current = [];
-    abortBotRequest();
-    sendingRef.current = false;
-    setSending(false);
-    setThinkingRequest('');
-    setRetryRequest(null);
-    setError('');
-    clearVoiceTimers();
-    disableHandsFreeState();
-    void stopBotSpeech();
-    if (voiceRecognitionStarted.current) ExpoSpeechRecognitionModule?.abort();
-    setListening(false);
-    transitionVoice('idle', null);
   };
 
   const createMessageId = (role: BotMessage['role']) => `${role}-${Date.now()}-${messageSequenceRef.current += 1}`;
@@ -571,7 +554,7 @@ export function EfactBotScreen({
             transitionVoice('processing', 'processing');
             void send('cancelar', 'voz');
           } else {
-            const voiceMessage = 'Para ejecutar esta operación di “confirmado” o pulsa el botón Confirmar.';
+            const voiceMessage = 'Para ejecutar esta operación di “confirmo”, “sí”, “dale” o “autorizo”.';
             setVoiceResponse(voiceMessage);
             transitionVoice('awaitingConfirmation', 'response');
             void speakCurrentBotText(voiceMessage);
@@ -796,7 +779,7 @@ export function EfactBotScreen({
       voicePermissionGrantedRef.current = true;
       if (!voiceHolding.current) {
         voiceShouldSubmit.current = false;
-        transitionVoice('idle', null);
+        transitionVoice('idle', handsFreeEnabledRef.current ? 'response' : null);
         return;
       }
       if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) {
@@ -819,7 +802,7 @@ export function EfactBotScreen({
       }
       if (!voiceHolding.current) {
         voiceShouldSubmit.current = false;
-        transitionVoice('idle', null);
+        transitionVoice('idle', handsFreeEnabledRef.current ? 'response' : null);
         return;
       }
       // Marcarla antes de llamar al módulo evita que una suelta durante la
@@ -867,11 +850,6 @@ export function EfactBotScreen({
       { label: 'Validar documento', command: '¿Cómo valido una firma electrónica?', icon: 'file-check-outline' as const },
       { label: 'Nueva solicitud', command: '¿Qué necesito para solicitar una firma electrónica?', icon: 'file-plus-outline' as const },
     ]
-    : Boolean(pendingOperation || (requiresConfirmation && invoiceState === 'EsperandoConfirmacion'))
-    ? [
-      { label: pendingOperation ? 'Confirmar operación' : 'Emitir factura', command: pendingOperation ? 'confirmar' : 'emitir', icon: 'check' as const },
-      { label: pendingOperation ? 'Cancelar operación' : 'Cancelar emisión', command: 'cancelar', icon: 'close' as const },
-    ]
     : invoiceDraft?.items?.length
       ? [
         { label: 'Agregar producto', command: 'Agrega otro producto', icon: 'plus' as const },
@@ -889,7 +867,6 @@ export function EfactBotScreen({
           { label: 'Consultar facturas', command: 'Muéstrame mis facturas', icon: 'file-document-outline' as const },
           { label: 'Ver cartera', command: 'Muéstrame mis cuentas por cobrar', icon: 'cash-multiple' as const },
         ];
-
   const stopVoiceInput = () => {
     clearVoiceTimers();
     voiceHolding.current = false;
@@ -952,6 +929,7 @@ export function EfactBotScreen({
   };
 
   const cancelVoiceInput = () => {
+    if (sendingRef.current) return;
     requestGenerationRef.current += 1;
     abortBotRequest();
     sendingRef.current = false;
@@ -1065,7 +1043,7 @@ export function EfactBotScreen({
           <Pressable accessibilityRole="button" accessibilityLabel={speechMuted ? 'Activar lectura en voz alta' : 'Silenciar lectura en voz alta'} onPress={toggleSpeechMuted} hitSlop={8} style={styles.botHeaderActionButton}>
             <MaterialCommunityIcons name={speechMuted ? 'volume-off' : 'volume-high'} size={19} color="#FFFFFF" />
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Volver al inicio" onPress={() => onNavigate?.('/dashboard')} hitSlop={8} style={styles.botHeaderActionButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Volver al inicio" onPress={() => onNavigate?.('/dashboard')} hitSlop={8} disabled={sending} style={[styles.botHeaderActionButton, sending && styles.botHeaderActionDisabled]}>
              <MaterialCommunityIcons name="home-outline" size={19} color="#FFFFFF" />
           </Pressable>
         </View>
@@ -1150,9 +1128,6 @@ export function EfactBotScreen({
             <Image source={require('../../../assets/numi-chat-avatar.jpg')} style={styles.botMessageAvatar} />
             <NumiThinkingIndicator request={thinkingRequest} />
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel="Cancelar solicitud" onPress={cancelPendingRequest}>
-            <Text style={styles.botRetryText}>Cancelar</Text>
-          </Pressable>
         </View>
       ) : null}
       {voiceTranscript && !voiceOverlayState ? <View style={styles.botVoiceTranscript}><MaterialCommunityIcons name="waveform" size={16} color="#0878C9" /><Text style={styles.botVoiceTranscriptText}>{voiceTranscript}</Text></View> : null}
@@ -1270,13 +1245,15 @@ function VoiceInteractionOverlay({ state, transcript, response, draft, missing, 
     return () => animation.stop();
   }, [pulse, reduceMotion, state]);
 
-  const title = state === 'listening' ? 'Númi está escuchando' : state === 'review' ? 'Revisa lo que entendí' : state === 'processing' ? 'Procesando comando' : confirmationExpiryInvalid ? 'Confirmación no disponible' : confirmationExpired ? 'Confirmación vencida' : needsConfirmation ? 'Revisa antes de continuar' : 'Númi respondió';
-  const subtitle = state === 'listening' ? 'Mantén presionado el micrófono; suéltalo para enviar.' : state === 'review' ? 'Corrige cualquier palabra antes de enviarla.' : state === 'processing' ? 'Estoy revisando tus datos y preparando el siguiente paso.' : confirmationExpiryInvalid ? 'La operación no tiene una vigencia válida. Solicítala nuevamente.' : confirmationExpired ? 'La operación no se ejecutó. Solicítala nuevamente para generar una nueva confirmación.' : needsConfirmation ? 'Mantén presionado el micrófono para confirmar.' : handsFreeEnabled ? 'Mantén presionado el micrófono para hablar y suéltalo para enviar.' : 'Esta respuesta también se guardó en el chat.';
+  const invoiceEmissionProcessing = state === 'processing' && (Boolean(pendingOperation) || requiresConfirmation || invoiceState === 'EsperandoConfirmacion');
+  const emissionDocument = getEmissionDocumentLabel(pendingOperation?.tipo);
+  const title = state === 'listening' ? 'Númi está escuchando' : state === 'review' ? 'Revisa lo que entendí' : state === 'processing' ? (invoiceEmissionProcessing ? `Emitiendo ${emissionDocument}` : 'Procesando comando') : confirmationExpiryInvalid ? 'Confirmación no disponible' : confirmationExpired ? 'Confirmación vencida' : needsConfirmation ? 'Revisa antes de continuar' : 'Númi respondió';
+  const subtitle = state === 'listening' ? 'Mantén presionado el micrófono; suéltalo para enviar.' : state === 'review' ? 'Corrige cualquier palabra antes de enviarla.' : state === 'processing' ? (invoiceEmissionProcessing ? `Espera mientras guardo ${emissionDocument} y la envío al SRI. No cierres esta ventana.` : 'Estoy revisando tus datos y preparando el siguiente paso.') : confirmationExpiryInvalid ? 'La operación no tiene una vigencia válida. Solicítala nuevamente.' : confirmationExpired ? 'La operación no se ejecutó. Solicítala nuevamente para generar una nueva confirmación.' : needsConfirmation ? 'Mantén presionado el micrófono para confirmar.' : handsFreeEnabled ? 'Mantén presionado el micrófono para hablar y suéltalo para enviar.' : 'Esta respuesta también se guardó en el chat.';
   const icon = state === 'listening' ? 'microphone' : state === 'review' ? 'text-box-check-outline' : state === 'processing' ? 'loading' : confirmationBlocked ? 'alert-circle-outline' : needsConfirmation ? 'shield-check-outline' : 'check-circle-outline';
 
   return (
     <View style={styles.botVoiceOverlayLayer} pointerEvents="box-none">
-      <Pressable accessibilityRole="button" accessibilityLabel="Cerrar respuesta de Númi" style={styles.botVoiceOverlayBackdrop} onPress={onCancel} />
+      <Pressable accessibilityRole="button" accessibilityLabel="Cerrar respuesta de Númi" style={styles.botVoiceOverlayBackdrop} onPress={() => undefined} />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0} style={styles.botVoiceOverlayKeyboardAvoider}>
       <View style={[styles.botVoiceOverlayCard, { maxHeight: Math.min(viewportHeight * 0.58, 520), width: Math.max(0, Math.min(viewportWidth - 24, 390)) }]}>
        <View style={styles.botVoiceOverlayHandle} />
@@ -1287,6 +1264,9 @@ function VoiceInteractionOverlay({ state, transcript, response, draft, missing, 
             <Text style={styles.botVoiceOverlayTitle}>{title}</Text>
             <Text style={styles.botVoiceOverlaySubtitle}>{subtitle}</Text>
           </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Cerrar respuesta de Númi" hitSlop={8} disabled={state === 'processing'} onPress={onCancel} style={{ alignItems: 'center', justifyContent: 'center', padding: 2 }}>
+            <MaterialCommunityIcons name="close" size={20} color={state === 'processing' ? '#B8C7D2' : '#5C748A'} />
+          </Pressable>
         </View>
         {handsFreeEnabled && state !== 'processing' ? (
           <Pressable accessibilityRole="button" accessibilityLabel={needsConfirmation ? 'Mantén presionado el micrófono para confirmar' : 'Mantén presionado el micrófono para hablar y suelta para enviar'} style={{ alignSelf: 'center' }} onPressIn={needsConfirmation ? onStartConfirmationVoice : onStartVoice} onPressOut={onStopVoice}>
@@ -1315,32 +1295,20 @@ function VoiceInteractionOverlay({ state, transcript, response, draft, missing, 
         {state === 'processing' ? (
           <View style={styles.botVoiceOverlayProcessingStatus}>
             <ActivityIndicator size="small" color="#0878C9" />
-            <Text style={styles.botVoiceOverlayProcessingText}>Procesando tu orden…</Text>
+            <Text style={styles.botVoiceOverlayProcessingText}>{invoiceEmissionProcessing ? `Espera: guardando ${emissionDocument} y enviándola al SRI…` : 'Procesando tu orden…'}</Text>
           </View>
         ) : null}
         {state === 'response' ? <Text style={styles.botVoiceOverlayResponse}>{response}</Text> : null}
         {pendingOperation && state === 'response' && !showWorkflow ? <View style={styles.botVoiceOverlayOperation}><Text style={styles.botVoiceOverlayOperationLabel}>Operación pendiente</Text><Text style={styles.botVoiceOverlayOperationText}>{pendingOperation.resumen || 'Operación que requiere confirmación'}</Text></View> : null}
-        {showWorkflow && state === 'response' ? <BotInvoiceWorkflowCard draft={draft} missing={missing} requiresConfirmation={requiresConfirmation} state={invoiceState} progress={progress} configurationRoutes={configurationRoutes} reduceMotion={reduceMotion} stale={stale} selectionOptions={selectionOptions} pendingOperation={pendingOperation} sending={false} showActions={false} onNavigate={onNavigate} onCommand={onCommand} /> : null}
+        {showWorkflow && state === 'response' ? <BotInvoiceWorkflowCard draft={draft} missing={missing} requiresConfirmation={requiresConfirmation} state={invoiceState} progress={progress} configurationRoutes={configurationRoutes} reduceMotion={reduceMotion} stale={stale} selectionOptions={selectionOptions} pendingOperation={pendingOperation} sending={false} onNavigate={onNavigate} onCommand={onCommand} /> : null}
         {state === 'review' ? (
           <>
             <View style={styles.botVoiceOverlayActions}>
-              <Pressable style={styles.botVoiceOverlayCancelButton} onPress={onCancel}><Text style={styles.botVoiceOverlayCancelText}>Cancelar</Text></Pressable>
               <Pressable style={[styles.botVoiceOverlayConfirmButton, !transcript.trim() && styles.botVoiceOverlayConfirmButtonDisabled]} onPress={onReviewSend} disabled={!transcript.trim()}><MaterialCommunityIcons name="send" size={16} color="#FFFFFF" /><Text style={styles.botVoiceOverlayConfirmText}>Enviar</Text></Pressable>
             </View>
             <Pressable style={styles.botVoiceOverlayCloseButton} onPress={onReviewEdit}><Text style={styles.botVoiceOverlayCloseText}>Editar en el chat</Text></Pressable>
           </>
-        ) : needsConfirmation ? (
-          <>
-            <View style={styles.botVoiceOverlayActions}>
-              <Pressable style={styles.botVoiceOverlayCancelButton} onPress={() => onCommand('cancelar')}><Text style={styles.botVoiceOverlayCancelText}>Cancelar</Text></Pressable>
-            </View>
-            <Pressable style={styles.botVoiceOverlayConfirmButtonFull} onPress={() => onCommand(pendingOperation ? 'confirmar' : 'emitir')}><MaterialCommunityIcons name="check" size={17} color="#FFFFFF" /><Text style={styles.botVoiceOverlayConfirmText}>Confirmar con botón</Text></Pressable>
-          </>
-        ) : state === 'response' ? (
-          <View style={styles.botVoiceOverlayActions}>
-            <Pressable style={styles.botVoiceOverlayCloseButton} onPress={onCancel}><Text style={styles.botVoiceOverlayCloseText}>Cerrar</Text></Pressable>
-          </View>
-        ) : <Pressable style={styles.botVoiceOverlayCloseButton} onPress={onCancel}><Text style={styles.botVoiceOverlayCloseText}>Cancelar</Text></Pressable>}
+        ) : null}
        </ScrollView>
       </View>
       </KeyboardAvoidingView>
@@ -1348,7 +1316,7 @@ function VoiceInteractionOverlay({ state, transcript, response, draft, missing, 
   );
 }
 
-function BotInvoiceWorkflowCard({ draft, missing, requiresConfirmation, state, progress, configurationRoutes, reduceMotion, stale, selectionOptions, pendingOperation, sending, showActions = true, onNavigate, onCommand }: {
+function BotInvoiceWorkflowCard({ draft, missing, requiresConfirmation, state, progress, configurationRoutes, reduceMotion, stale, selectionOptions, pendingOperation, sending, onNavigate, onCommand }: {
   draft: BotFacturaDraft | null;
   missing: string[];
   requiresConfirmation: boolean;
@@ -1360,7 +1328,6 @@ function BotInvoiceWorkflowCard({ draft, missing, requiresConfirmation, state, p
   selectionOptions: BotSelectionOption[];
   pendingOperation: { tipo?: string; resumen?: string; expiraEn?: string | null } | null;
   sending: boolean;
-  showActions?: boolean;
   onNavigate?: (route: string) => void;
   onCommand: (command: string) => void;
 }) {
@@ -1385,8 +1352,8 @@ function BotInvoiceWorkflowCard({ draft, missing, requiresConfirmation, state, p
     { id: 'pago', label: 'Pago', status: hasPayment ? 'completed' : undefined },
     { id: 'confirmacion', label: 'Confirmar', status: isCompleted ? 'completed' : undefined },
   ];
-  const hasDraftWorkflow = Boolean(draft?.cliente || draft?.items?.length || hasCalculatedValues || actualMissing.length || needsConfirmation || pendingOperation);
-  const workflowSteps = hasDraftWorkflow ? fallbackSteps : progress;
+  const workflowDocument = getEmissionDocumentLabel(pendingOperation?.tipo, progress);
+  const workflowSteps = progress.length > 0 ? progress : fallbackSteps;
   const currentStep = Math.max(0, workflowSteps.findIndex((step) => step.status !== 'completed'));
   const hasWorkflow = isCompleted || isCancelled || operationBlocked || actualMissing.length > 0 || needsConfirmation || selectionOptions.length > 0 || configurationRoutes.length > 0 || progress.length > 0 || Boolean(draft?.cliente || draft?.items?.length) || hasCalculatedValues || Boolean(pendingOperation);
   const workflowTone = isCompleted
@@ -1442,7 +1409,7 @@ function BotInvoiceWorkflowCard({ draft, missing, requiresConfirmation, state, p
         </View>
       </View>
       {workflowSteps.length > 0 ? (
-        <View style={styles.botWorkflowProgress} accessibilityLabel="Progreso de la factura">
+        <View style={styles.botWorkflowProgress} accessibilityLabel={`Progreso de ${workflowDocument}`}>
           {workflowSteps.map((step, index) => {
             const complete = step.status === 'completed' || (isCompleted && index === workflowSteps.length - 1);
             return (
@@ -1510,13 +1477,7 @@ function BotInvoiceWorkflowCard({ draft, missing, requiresConfirmation, state, p
         </View>
       ) : null}
       {operationBlocked ? <Text style={styles.botWorkflowExpiredHint}>Solicita nuevamente la operación para generar una nueva confirmación.</Text> : null}
-      {showActions && needsConfirmation && !stale ? (
-        <View style={styles.botWorkflowActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel={pendingOperation ? 'Cancelar operación' : 'Cancelar emisión'} disabled={sending} style={[styles.botWorkflowCancelButton, sending && styles.botWorkflowActionDisabled]} onPress={() => onCommand('cancelar')}><Text style={styles.botWorkflowCancelText}>{pendingOperation ? 'Cancelar operación' : 'Cancelar emisión'}</Text></Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={pendingOperation ? 'Confirmar operación' : 'Emitir factura'} accessibilityState={{ disabled: sending || operationBlocked }} disabled={sending || operationBlocked} style={[styles.botWorkflowConfirmButton, styles.botWorkflowConfirmButtonProminent, (sending || operationBlocked) && styles.botWorkflowActionDisabled]} onPress={() => onCommand(pendingOperation ? 'confirmar' : 'emitir')}><MaterialCommunityIcons name="check" size={18} color="#FFFFFF" /><Text style={styles.botWorkflowConfirmText}>{pendingOperation && operationBlocked ? 'Solicita nueva confirmación' : pendingOperation ? 'Confirmar operación' : 'Emitir factura'}</Text></Pressable>
-        </View>
-      ) : null}
-      {state === 'FacturaEmitida' ? <Text style={styles.botWorkflowSuccess}>Factura emitida correctamente.</Text> : null}
+      {state === 'FacturaEmitida' ? <Text style={styles.botWorkflowSuccess}>{workflowDocument.charAt(0).toUpperCase() + workflowDocument.slice(1)} emitida correctamente.</Text> : null}
       {isCancelled ? <Text style={styles.botWorkflowCancelled}>La operación quedó cancelada.</Text> : null}
       {isExpired ? <Text style={styles.botWorkflowExpiredHint}>La confirmación anterior ya no es válida; vuelve a solicitar la operación.</Text> : null}
     </Animated.View>
@@ -1636,6 +1597,16 @@ function normalizeVoiceCommand(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
+function getEmissionDocumentLabel(tipo?: string | null, progress: BotProgressStep[] = []) {
+  const normalized = normalizeVoiceCommand(`${tipo ?? ''} ${progress.map((step) => `${step.id} ${step.label}`).join(' ')}`);
+  if (normalized.includes('notacredito') || normalized.includes('nota de credito')) return 'la nota de crédito';
+  if (normalized.includes('notadebito') || normalized.includes('nota de debito')) return 'la nota de débito';
+  if (normalized.includes('liquidacion')) return 'la liquidación de compra';
+  if (normalized.includes('retencion')) return 'la retención';
+  if (normalized.includes('guia')) return 'la guía de remisión';
+  return 'la factura';
+}
+
 function isLikelyAmbientVoice(value: string) {
   return /^(ah+|eh+|mmm+|mm+|ok(?:ay)?|hola|gracias|si)$/i.test(normalizeVoiceCommand(value));
 }
@@ -1710,7 +1681,7 @@ function buildSpeechResponse(answer: string, options: BotSelectionOption[] = [])
 }
 
 function isExplicitConfirmation(value: string) {
-  return /\b(si|confirmar|confirmado|confirmo|dale|correcto|emitir|emite)\b/.test(normalizeVoiceCommand(value));
+  return /\b(si|confirmar|confirmo|confirmado|confirmada|confirmacion|dale|correcto|correcta|exacto|exacta|de acuerdo|ok|okay|listo|lista|adelante|procede|proceda|autorizo|autorizar|acepto|aceptar|apruebo|aprobar|hazlo|continuar|continua|emitir|emite|enviar|envia)\b/.test(normalizeVoiceCommand(value));
 }
 
 function sanitizeSpeechText(value: string) {

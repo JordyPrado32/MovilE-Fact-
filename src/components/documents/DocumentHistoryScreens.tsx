@@ -123,8 +123,9 @@ export function MisNotasCreditoMobileScreen({
       <View style={styles.listStack}>
         {visibleNotas.map((nota, index) => {
           const notaKey = listItemKey('mis-notas-credito', [nota.codNotaCredito, nota.numeroNota, nota.facturaModificada], index);
-          const statusLabel = nota.estadoSri ?? (nota.autorizado ? 'AUTORIZADO' : 'NO AUTORIZADO');
-          const isAuthorized = nota.autorizado || String(nota.estadoSri ?? '').toUpperCase().includes('AUTORIZ');
+          const isAnulada = nota.estado === false || String(nota.estadoSri ?? '').toUpperCase().includes('ANUL');
+          const statusLabel = isAnulada ? 'ANULADA' : nota.estadoSri ?? (nota.autorizado ? 'AUTORIZADO' : 'NO AUTORIZADO');
+          const isAuthorized = !isAnulada && (nota.autorizado || String(nota.estadoSri ?? '').toUpperCase().includes('AUTORIZ'));
           return (
             <View key={notaKey} style={styles.invoiceHistoryCard}>
               <View style={styles.invoiceHistoryCardHeader}>
@@ -186,8 +187,8 @@ export function MisNotasCreditoMobileScreen({
                   { label: 'Descargar XML', icon: 'file-code-outline', tone: 'success', onPress: () => onXml(nota) },
                   { label: 'Descargar PDF A4', icon: 'file-pdf-box', tone: 'danger', onPress: () => onPdf(nota, true) },
                   { label: 'Reenviar correo', icon: 'email-outline', tone: 'warning', onPress: () => onEmail(nota) },
-                  ...(!isAuthorized ? [{ label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary' as const, onPress: () => onEmitir(nota) }] : []),
-                  { label: 'Anular', icon: 'trash-can-outline', tone: 'danger', onPress: () => onAnular(nota) },
+                  ...(!isAuthorized && !isAnulada ? [{ label: 'Emitir SRI', icon: 'send-check-outline', tone: 'primary' as const, onPress: () => onEmitir(nota) }] : []),
+                  ...(!isAnulada ? [{ label: 'Anular', icon: 'trash-can-outline', tone: 'danger' as const, onPress: () => onAnular(nota) }] : []),
                 ]} />
               </View>
             </View>
