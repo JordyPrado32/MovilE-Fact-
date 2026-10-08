@@ -1,6 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, AppState, Easing, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, Animated, AppState, Easing, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import * as Speech from 'expo-speech';
 import type * as SpeechRecognition from 'expo-speech-recognition';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -12,6 +12,7 @@ import { NumiThinkingIndicator } from './NumiThinkingIndicator';
 import { styles } from '../../styles/appStyles';
 
 type SpeechRecognitionBindings = typeof SpeechRecognition;
+type SpeechVoiceSelection = { identifier: string; language: string };
 type VoiceOverlayState = 'listening' | 'review' | 'processing' | 'response';
 type VoiceFlowState = 'idle' | 'listening' | 'processing' | 'speaking' | 'awaitingConfirmation' | 'error';
 
@@ -160,20 +161,24 @@ export function EfactBotScreen({
   const voiceShouldSubmit = useRef(false);
   const voiceRecognitionStarted = useRef(false);
   const voiceTranscriptRef = useRef('');
+  const voiceFinalTranscriptRef = useRef('');
+  const voiceNoSpeechRef = useRef(false);
   const handsFreeEnabledRef = useRef(false);
   const handsFreeAwaitingConfirmationRef = useRef(false);
  
   const voiceNavigationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceRestartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceFlowStateRef = useRef<VoiceFlowState>('idle');
   const voiceStartInFlightRef = useRef(false);
   const voicePermissionGrantedRef = useRef(false);
   const voiceLanguageRef = useRef('es-EC');
   const voiceLocalesResolvedRef = useRef(false);
-  const speechVoicePromiseRef = useRef<Promise<string | undefined> | null>(null);
+  const speechVoicePromiseRef = useRef<Promise<SpeechVoiceSelection | undefined> | null>(null);
   const voiceAppStateRef = useRef(AppState.currentState);
   const voiceConfidenceRef = useRef(0);
   const handsFreeNoSpeechCountRef = useRef(0);
   const speechGenerationRef = useRef(0);
+  const speechStopPromiseRef = useRef<Promise<void>>(Promise.resolve());
   const speechMutedRef = useRef(false);
   const requestGenerationRef = useRef(0);
   const sendingRef = useRef(false);
@@ -241,6 +246,8 @@ export function EfactBotScreen({
   const clearVoiceTimers = () => {
     if (voiceNavigationTimerRef.current) clearTimeout(voiceNavigationTimerRef.current);
     voiceNavigationTimerRef.current = null;
+    if (voiceRestartTimerRef.current) clearTimeout(voiceRestartTimerRef.current);
+    voiceRestartTimerRef.current = null;
   };
 
   const transitionVoice = (state: VoiceFlowState, overlay: VoiceOverlayState | null) => {
@@ -261,13 +268,23 @@ export function EfactBotScreen({
     setHandsFreeEnabled(false);
   };
 
+  const stopSpeechPlayback = () => {
+    const stopPromise = speechStopPromiseRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          await Speech.stop();
+        } catch {
+          // Detener una locución previa no debe impedir la siguiente acción.
+        }
+      });
+    speechStopPromiseRef.current = stopPromise;
+    return stopPromise;
+  };
+
   const stopBotSpeech = async () => {
     speechGenerationRef.current += 1;
-    try {
-      await Speech.stop();
-    } catch {
-      // Detener una locución previa no debe impedir la siguiente acción.
-    }
+    await stopSpeechPlayback();
   };
 
   const abortBotRequest = () => {
@@ -298,9 +315,14 @@ export function EfactBotScreen({
     if (speechMutedRef.current) return Promise.resolve(false);
     const generation = ++speechGenerationRef.current;
     const speechVoice = speechVoicePromiseRef.current ??= resolveSpanishMaleVoice();
-    return speechVoice.then((voice) => {
+    const stopPromise = stopSpeechPlayback();
+    return speechVoice.then(async (voice) => {
+      await stopPromise;
       if (speechGenerationRef.current !== generation) return false;
-      return speakBotText(text, () => speechGenerationRef.current !== generation, voice);
+      const shouldCancel = () => speechGenerationRef.current !== generation;
+      const completed = await speakBotText(text, shouldCancel, voice);
+      if (completed || shouldCancel() || !voice) return completed;
+      return speakBotText(text, shouldCancel);
     });
   };
 
@@ -332,7 +354,10 @@ export function EfactBotScreen({
     handsFreeEnabledRef.current = false;
     handsFreeAwaitingConfirmationRef.current = false;
     setHandsFreeEnabled(false);
-    if (voiceRecognitionStarted.current) ExpoSpeechRecognitionModule?.abort();
+    if (voiceRecognitionStarted.current) {
+      voiceRecognitionStarted.current = false;
+      ExpoSpeechRecognitionModule?.abort();
+    }
     await clearBotHistory(userId, sessionScope);
     setMessages([]);
     setDraft('');
@@ -340,6 +365,9 @@ export function EfactBotScreen({
     onWorkflowChange?.(null);
     setError('');
     setVoiceTranscript('');
+    voiceTranscriptRef.current = '';
+    voiceFinalTranscriptRef.current = '';
+    voiceNoSpeechRef.current = false;
     setInvoiceDraft(null);
     setMissingData([]);
     setRequiresConfirmation(false);
@@ -372,10 +400,17 @@ export function EfactBotScreen({
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       voiceAppStateRef.current = nextState;
-      if (nextState !== 'active') {
+      // `inactive` puede ser transitorio al abrir permisos o al activar el audio.
+      // Cancelar en ese punto corta sesiones válidas antes de que llegue el resultado.
+      if (nextState === 'background') {
         clearVoiceTimers();
         void stopBotSpeech();
-        if (voiceRecognitionStarted.current) ExpoSpeechRecognitionModule?.abort();
+        voiceHolding.current = false;
+        voiceShouldSubmit.current = false;
+        if (voiceRecognitionStarted.current) {
+          voiceRecognitionStarted.current = false;
+          ExpoSpeechRecognitionModule?.abort();
+        }
         setListening(false);
         if (handsFreeEnabledRef.current) transitionVoice('idle', null);
         return;
@@ -383,7 +418,7 @@ export function EfactBotScreen({
     });
 
     return () => subscription.remove();
-  }, [sending]);
+  }, []);
 
   const measureChatTop = () => {
     requestAnimationFrame(() => {
@@ -431,7 +466,7 @@ export function EfactBotScreen({
       return;
     }
     voiceFlowStateRef.current = 'listening';
-    if (!handsFreeEnabledRef.current) setVoiceOverlayState('listening');
+    setVoiceOverlayState('listening');
   });
 
   useSpeechRecognitionEvent('result', (event) => {
@@ -439,9 +474,12 @@ export function EfactBotScreen({
     const transcript = result?.transcript.trim() ?? '';
     if (!transcript) return;
     handsFreeNoSpeechCountRef.current = 0;
+    voiceNoSpeechRef.current = false;
     voiceConfidenceRef.current = result?.confidence ?? 0;
-    voiceTranscriptRef.current = transcript;
-    setVoiceTranscript(transcript);
+    if (event.isFinal) voiceFinalTranscriptRef.current = [voiceFinalTranscriptRef.current, transcript].filter(Boolean).join(' ');
+    const completeTranscript = [voiceFinalTranscriptRef.current, event.isFinal ? '' : transcript].filter(Boolean).join(' ').trim();
+    voiceTranscriptRef.current = completeTranscript;
+    setVoiceTranscript(completeTranscript);
   });
 
   useSpeechRecognitionEvent('error', (event) => {
@@ -464,6 +502,10 @@ export function EfactBotScreen({
         handsFreeAwaitingConfirmationRef.current = false;
         voiceHolding.current = false;
         voiceShouldSubmit.current = false;
+        voiceTranscriptRef.current = '';
+        voiceFinalTranscriptRef.current = '';
+        voiceNoSpeechRef.current = false;
+        setVoiceTranscript('');
         setHandsFreeEnabled(false);
         const voiceMessage = 'No detecté una orden. Pausaré el modo manos libres; puedes activarlo nuevamente cuando quieras.';
         setVoiceResponse(voiceMessage);
@@ -471,7 +513,19 @@ export function EfactBotScreen({
         void speakCurrentBotText(voiceMessage);
         return;
       }
-      transitionVoice(handsFreeAwaitingConfirmationRef.current ? 'awaitingConfirmation' : 'listening', 'response');
+      voiceNoSpeechRef.current = true;
+      if (voiceHolding.current) {
+        voiceFinalTranscriptRef.current = voiceTranscriptRef.current.trim();
+        transitionVoice('listening', 'listening');
+        scheduleVoiceRestart();
+      } else {
+        voiceShouldSubmit.current = false;
+        voiceTranscriptRef.current = '';
+        voiceFinalTranscriptRef.current = '';
+        setVoiceTranscript('');
+        transitionVoice('idle', null);
+      }
+      return;
     }
     if (event.error !== 'no-speech') {
       voiceHolding.current = false;
@@ -479,7 +533,7 @@ export function EfactBotScreen({
       const message = event.message || 'No se pudo reconocer la voz. Mantén presionado el micrófono para reintentar.';
       showVoiceError(message);
       if (handsFreeEnabledRef.current && !permanentError) {
-        const voiceError = 'No pude entenderte bien. Mantén presionado el micrófono para repetir la orden.';
+        const voiceError = 'No pude entenderte bien. Mantén presionado el botón morado para repetir la orden.';
         setVoiceResponse(voiceError);
         transitionVoice('error', 'response');
         void speakCurrentBotText(voiceError);
@@ -490,7 +544,11 @@ export function EfactBotScreen({
   const handleVoiceEnd = () => {
     voiceRecognitionStarted.current = false;
     setListening(false);
-    if (handsFreeEnabledRef.current && voiceHolding.current) return;
+    if (handsFreeEnabledRef.current && voiceHolding.current) {
+      voiceFinalTranscriptRef.current = voiceTranscriptRef.current.trim();
+      scheduleVoiceRestart();
+      return;
+    }
     const shouldProcessTranscript = voiceShouldSubmit.current || voiceHolding.current;
     voiceHolding.current = false;
     if (!shouldProcessTranscript) {
@@ -520,7 +578,7 @@ export function EfactBotScreen({
           }
         } else {
           if ((voiceConfidenceRef.current > 0 && voiceConfidenceRef.current < 0.45) || isLikelyAmbientVoice(transcript)) {
-            const voiceMessage = 'No estoy suficientemente segura de lo que entendí. Mantén presionado el micrófono para repetir la orden.';
+            const voiceMessage = 'No estoy suficientemente segura de lo que entendí. Mantén presionado el botón morado para repetir la orden.';
             setVoiceResponse(voiceMessage);
             transitionVoice('error', 'response');
             void speakCurrentBotText(voiceMessage);
@@ -603,9 +661,7 @@ export function EfactBotScreen({
       if (uiAction && (navigationRequested || sessionScope === 'erubrica')) onUiAction?.(uiAction);
       const catalogListRequest = isCatalogListRequest(text);
       const visibleSelectionOptions = catalogListRequest ? botResult.selectionOptions.slice(0, 3) : botResult.selectionOptions;
-      const presentationAnswer = botResult.draft?.cliente || botResult.draft?.items?.length
-        ? buildVoiceResponse(limitCatalogListAnswer(botResult.answer, text), botResult.draft ?? null, botResult.missing)
-        : limitCatalogListAnswer(botResult.answer, text);
+      const presentationAnswer = limitCatalogListAnswer(botResult.answer, text);
       setMessages((current) => [...current, { id: createMessageId('assistant'), role: 'assistant', text: presentationAnswer }]);
       setInvoiceDraft(botResult.draft ?? null);
       setMissingData(botResult.missing);
@@ -640,13 +696,24 @@ export function EfactBotScreen({
         const voiceAnswer = `${buildSpeechResponse(presentationAnswer, visibleSelectionOptions)}${sessionScope === 'erubrica' ? getErubricaRouteVoiceHint(botResult.suggestedRoute) : ''}`.trim();
         setVoiceResponse(voiceAnswer);
         transitionVoice(handsFreeAwaitingConfirmationRef.current ? 'awaitingConfirmation' : 'speaking', 'response');
-        void speakCurrentBotText(voiceAnswer).then((completed) => {
+        const speechPromise = speakCurrentBotText(voiceAnswer);
+        const speechGeneration = speechGenerationRef.current;
+        void speechPromise.then((completed) => {
+          if (speechGenerationRef.current !== speechGeneration) return;
+          if (!completed && !speechMutedRef.current) {
+            setVoiceResponse('No pude reproducir la respuesta. Puedes tocar el icono de volumen para intentarlo nuevamente.');
+          }
           if (!handsFreeAwaitingConfirmationRef.current) transitionVoice('idle', handsFreeEnabledRef.current ? 'response' : null);
           if (navigationRequested && shouldSpeakResponse && botResult.suggestedRoute && isSupportedBotRoute(botResult.suggestedRoute)) {
             voiceNavigationTimerRef.current = setTimeout(() => {
               if (requestGeneration === requestGenerationRef.current) onNavigate?.(normalizeBotRoute(botResult.suggestedRoute as string));
             }, completed ? 150 : 0);
           }
+        });
+        speechPromise.catch(() => {
+          if (speechGenerationRef.current !== speechGeneration) return;
+          if (!speechMutedRef.current) setVoiceResponse('No pude reproducir la respuesta. Puedes tocar el icono de volumen para intentarlo nuevamente.');
+          if (!handsFreeAwaitingConfirmationRef.current) transitionVoice('idle', handsFreeEnabledRef.current ? 'response' : null);
         });
         }
       if (navigationRequested && !shouldSpeakResponse && botResult.suggestedRoute && isSupportedBotRoute(botResult.suggestedRoute)) {
@@ -691,7 +758,7 @@ export function EfactBotScreen({
     }
   };
 
-  const startVoiceInput = async () => {
+  const startVoiceInput = async (preserveTranscript = false) => {
     if (voiceStartInFlightRef.current || voiceAppStateRef.current !== 'active') return;
     if (voiceRecognitionStarted.current) {
       return;
@@ -701,14 +768,21 @@ export function EfactBotScreen({
       return;
     }
     setError('');
-    setVoiceTranscript('');
-    voiceTranscriptRef.current = '';
+    if (!preserveTranscript) {
+      setVoiceTranscript('');
+      voiceTranscriptRef.current = '';
+      voiceFinalTranscriptRef.current = '';
+      voiceNoSpeechRef.current = false;
+    }
     voiceConfidenceRef.current = 0;
     voiceHolding.current = true;
     voiceShouldSubmit.current = false;
     voiceStartInFlightRef.current = true;
+    if (handsFreeEnabledRef.current || voiceOnly) {
+      transitionVoice('listening', 'listening');
+    }
     try {
-      await stopBotSpeech();
+      void stopBotSpeech();
       const permission = voicePermissionGrantedRef.current
         ? { granted: true }
         : await ExpoSpeechRecognitionModule.requestPermissionsAsync();
@@ -733,24 +807,24 @@ export function EfactBotScreen({
       }
       let language = voiceLanguageRef.current;
       if (!voiceLocalesResolvedRef.current) {
-        try {
-          const supported = await ExpoSpeechRecognitionModule.getSupportedLocales({});
+        voiceLocalesResolvedRef.current = true;
+        void ExpoSpeechRecognitionModule.getSupportedLocales({}).then((supported) => {
           const locales = supported.locales ?? [];
-          language = locales.find((locale) => locale.toLowerCase() === 'es-ec')
-            ?? locales.find((locale) => locale.toLowerCase().startsWith('es-'))
-            ?? language;
-          voiceLanguageRef.current = language;
-        } catch {
+          const resolvedLanguage = locales.find((locale) => locale.toLowerCase() === 'es-ec')
+            ?? locales.find((locale) => locale.toLowerCase().startsWith('es-'));
+          if (resolvedLanguage) voiceLanguageRef.current = resolvedLanguage;
+        }).catch(() => {
           // El motor puede no exponer sus locales; es-EC sigue siendo válido para el reconocimiento en línea.
-        } finally {
-          voiceLocalesResolvedRef.current = true;
-        }
+        });
       }
       if (!voiceHolding.current) {
         voiceShouldSubmit.current = false;
         transitionVoice('idle', null);
         return;
       }
+      // Marcarla antes de llamar al módulo evita que una suelta durante la
+      // transición nativa ejecute handleVoiceEnd antes del evento `start`.
+      voiceRecognitionStarted.current = true;
       ExpoSpeechRecognitionModule.start({
         lang: language,
         interimResults: true,
@@ -769,12 +843,22 @@ export function EfactBotScreen({
           : undefined,
       });
     } catch (err) {
+      voiceRecognitionStarted.current = false;
       voiceHolding.current = false;
       disableHandsFreeState();
       showVoiceError(err instanceof Error ? err.message : 'No se pudo iniciar el micrófono.');
     } finally {
       voiceStartInFlightRef.current = false;
     }
+  };
+
+  const scheduleVoiceRestart = () => {
+    if (!handsFreeEnabledRef.current || !voiceHolding.current || voiceAppStateRef.current !== 'active') return;
+    if (voiceRestartTimerRef.current) clearTimeout(voiceRestartTimerRef.current);
+    voiceRestartTimerRef.current = setTimeout(() => {
+      voiceRestartTimerRef.current = null;
+      if (handsFreeEnabledRef.current && voiceHolding.current && voiceAppStateRef.current === 'active') void startVoiceInput(true);
+    }, 120);
   };
 
   const contextualActions = assistantContext
@@ -807,25 +891,14 @@ export function EfactBotScreen({
         ];
 
   const stopVoiceInput = () => {
+    clearVoiceTimers();
     voiceHolding.current = false;
-    voiceShouldSubmit.current = true;
+    voiceShouldSubmit.current = !voiceNoSpeechRef.current;
     if (voiceRecognitionStarted.current) {
       ExpoSpeechRecognitionModule?.stop();
     } else if (!voiceStartInFlightRef.current) {
       handleVoiceEnd();
     }
-  };
-
-  const startPushToTalk = () => {
-    if (!voiceRecognitionAvailable) {
-      showVoiceError('El reconocimiento de voz requiere abrir la app en un development build, no en Expo Go.');
-      return;
-    }
-    handsFreeEnabledRef.current = true;
-    handsFreeAwaitingConfirmationRef.current = false;
-    handsFreeNoSpeechCountRef.current = 0;
-    setHandsFreeEnabled(true);
-    void startVoiceInput();
   };
 
   const stopHandsFreeMode = () => {
@@ -835,7 +908,10 @@ export function EfactBotScreen({
     setHandsFreeEnabled(false);
     voiceHolding.current = false;
     voiceShouldSubmit.current = false;
-    if (voiceRecognitionStarted.current) ExpoSpeechRecognitionModule?.abort();
+    if (voiceRecognitionStarted.current) {
+      voiceRecognitionStarted.current = false;
+      ExpoSpeechRecognitionModule?.abort();
+    }
     setListening(false);
     transitionVoice('idle', null);
   };
@@ -891,11 +967,17 @@ export function EfactBotScreen({
     setHandsFreeEnabled(false);
     voiceHolding.current = false;
     voiceShouldSubmit.current = false;
-    if (voiceRecognitionStarted.current) ExpoSpeechRecognitionModule?.abort();
+    if (voiceRecognitionStarted.current) {
+      voiceRecognitionStarted.current = false;
+      ExpoSpeechRecognitionModule?.abort();
+    }
     setListening(false);
     transitionVoice('idle', null);
     setVoiceResponse('');
     setVoiceTranscript('');
+    voiceTranscriptRef.current = '';
+    voiceFinalTranscriptRef.current = '';
+    voiceNoSpeechRef.current = false;
   };
 
   useEffect(() => {
@@ -949,7 +1031,10 @@ export function EfactBotScreen({
         clearVoiceTimers();
         voiceHolding.current = false;
         voiceShouldSubmit.current = false;
-        if (voiceRecognitionStarted.current) ExpoSpeechRecognitionModule?.abort();
+        if (voiceRecognitionStarted.current) {
+          voiceRecognitionStarted.current = false;
+          ExpoSpeechRecognitionModule?.abort();
+        }
         setListening(false);
         void send(command, 'voz');
       }}
@@ -1118,17 +1203,10 @@ export function EfactBotScreen({
         {attachmentActions?.length ? <Pressable accessibilityRole="button" accessibilityLabel="Adjuntar archivo" accessibilityState={{ expanded: attachmentsOpen, disabled: sending || listening }} style={[styles.botToolButton, compactLayout && styles.botToolButtonCompact, attachmentsOpen && styles.botToolButtonActive]} disabled={sending || listening} onPress={() => { setQuickActionsOpen(false); setAttachmentsOpen((value) => !value); }}>
           <MaterialCommunityIcons name="paperclip" size={19} color={attachmentsOpen ? '#FFFFFF' : '#6E94B4'} />
         </Pressable> : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={listening ? 'Soltar para enviar la orden de voz' : 'Mantener presionado para hablar con Númi'}
-          style={[styles.botVoiceButton, compactLayout && styles.botVoiceButtonCompact, listening && styles.botVoiceButtonActive]}
-          disabled={!voiceRecognitionAvailable}
-          onPressIn={startPushToTalk}
-          onPressOut={stopVoiceInput}
-        >
-          <MaterialCommunityIcons name={listening ? 'stop' : 'microphone-outline'} size={20} color={listening ? '#FFFFFF' : '#0878C9'} />
+        <Pressable accessibilityRole="button" accessibilityLabel={handsFreeEnabled ? 'Desactivar modo manos libres' : 'Activar modo manos libres'} style={[styles.botToolButton, compactLayout && styles.botToolButtonCompact, handsFreeEnabled && styles.botToolButtonActive]} disabled={!voiceRecognitionAvailable} onPress={toggleHandsFreeMode}>
+          <MaterialCommunityIcons name="headset" size={19} color={handsFreeEnabled ? '#FFFFFF' : '#6E94B4'} />
         </Pressable>
-        <TextInput ref={voiceInputRef} value={draft} onChangeText={(value) => { setDraft(value); if (retryRequest && value.trim() !== retryRequest.text) setRetryRequest(null); }} placeholder={listening ? 'Escuchando... toca para detener' : voiceRecognitionAvailable ? 'Escribe o toca el micrófono para hablar...' : 'Escribe tu orden...'} placeholderTextColor="#8DA1B4" style={[styles.botInput, compactLayout && styles.botInputCompact]} editable={!listening} multiline maxLength={800} returnKeyType="send" blurOnSubmit accessibilityLabel="Escribe una instrucción para Númi" onFocus={() => { setTimeout(() => scrollMessagesToEnd(), 80); }} onSubmitEditing={() => void send()} />
+        <TextInput ref={voiceInputRef} value={draft} onChangeText={(value) => { setDraft(value); if (retryRequest && value.trim() !== retryRequest.text) setRetryRequest(null); }} placeholder={listening ? 'Escuchando...' : 'Escribe tu orden...'} placeholderTextColor="#8DA1B4" style={[styles.botInput, compactLayout && styles.botInputCompact]} editable={!listening} multiline maxLength={800} returnKeyType="send" blurOnSubmit accessibilityLabel="Escribe una instrucción para Númi" onFocus={() => { setTimeout(() => scrollMessagesToEnd(), 80); }} onSubmitEditing={() => void send()} />
         <Pressable accessibilityRole="button" accessibilityLabel="Mostrar acciones rápidas" style={[styles.botToolButton, compactLayout && styles.botToolButtonCompact, quickActionsOpen && styles.botToolButtonActive]} disabled={sending || listening} onPress={() => setQuickActionsOpen((value) => !value)}>
           <MaterialCommunityIcons name="lightning-bolt-outline" size={19} color={quickActionsOpen ? '#FFFFFF' : '#6E94B4'} />
         </Pressable>
@@ -1193,7 +1271,7 @@ function VoiceInteractionOverlay({ state, transcript, response, draft, missing, 
   }, [pulse, reduceMotion, state]);
 
   const title = state === 'listening' ? 'Númi está escuchando' : state === 'review' ? 'Revisa lo que entendí' : state === 'processing' ? 'Procesando comando' : confirmationExpiryInvalid ? 'Confirmación no disponible' : confirmationExpired ? 'Confirmación vencida' : needsConfirmation ? 'Revisa antes de continuar' : 'Númi respondió';
-  const subtitle = state === 'listening' ? 'Mantén presionado el micrófono; suéltalo para enviar.' : state === 'review' ? 'Corrige cualquier palabra antes de enviarla.' : state === 'processing' ? 'Estoy revisando tus datos y preparando el siguiente paso.' : confirmationExpiryInvalid ? 'La operación no tiene una vigencia válida. Solicítala nuevamente.' : confirmationExpired ? 'La operación no se ejecutó. Solicítala nuevamente para generar una nueva confirmación.' : needsConfirmation ? 'Di “confirmado” para ejecutar o usa el botón Confirmar.' : 'Esta respuesta también se guardó en el chat.';
+  const subtitle = state === 'listening' ? 'Mantén presionado el micrófono; suéltalo para enviar.' : state === 'review' ? 'Corrige cualquier palabra antes de enviarla.' : state === 'processing' ? 'Estoy revisando tus datos y preparando el siguiente paso.' : confirmationExpiryInvalid ? 'La operación no tiene una vigencia válida. Solicítala nuevamente.' : confirmationExpired ? 'La operación no se ejecutó. Solicítala nuevamente para generar una nueva confirmación.' : needsConfirmation ? 'Mantén presionado el micrófono para confirmar.' : handsFreeEnabled ? 'Mantén presionado el micrófono para hablar y suéltalo para enviar.' : 'Esta respuesta también se guardó en el chat.';
   const icon = state === 'listening' ? 'microphone' : state === 'review' ? 'text-box-check-outline' : state === 'processing' ? 'loading' : confirmationBlocked ? 'alert-circle-outline' : needsConfirmation ? 'shield-check-outline' : 'check-circle-outline';
 
   return (
@@ -1210,13 +1288,36 @@ function VoiceInteractionOverlay({ state, transcript, response, draft, missing, 
             <Text style={styles.botVoiceOverlaySubtitle}>{subtitle}</Text>
           </View>
         </View>
-        {handsFreeEnabled && state === 'response' && !needsConfirmation ? <Pressable accessibilityRole="button" accessibilityLabel="Mantén presionado para hablar y suelta para enviar" style={styles.botVoiceOverlayContinueButton} onPressIn={onStartVoice} onPressOut={onStopVoice}><MaterialCommunityIcons name="microphone" size={24} color="#FFFFFF" /><Text style={styles.botVoiceOverlayContinueText}>{listening ? 'Escuchando · Suelta para enviar' : 'Mantén para hablar'}</Text></Pressable> : null}
-        <Animated.View style={[styles.botVoiceOverlayOrb, state !== 'response' && { transform: [{ scale: pulse }] }]}>
-          <MaterialCommunityIcons name={icon} size={34} color="#FFFFFF" />
-        </Animated.View>
-        {state === 'listening' ? <Text style={styles.botVoiceOverlayTranscript}>{transcript || 'Te escucho…'}</Text> : null}
+        {handsFreeEnabled && state !== 'processing' ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={needsConfirmation ? 'Mantén presionado el micrófono para confirmar' : 'Mantén presionado el micrófono para hablar y suelta para enviar'} style={{ alignSelf: 'center' }} onPressIn={needsConfirmation ? onStartConfirmationVoice : onStartVoice} onPressOut={onStopVoice}>
+            <View style={styles.botVoiceOverlayMicWrap}>
+              <Animated.View style={[styles.botVoiceOverlayPulseRing, state === 'listening' && !reduceMotion && { transform: [{ scale: pulse }], opacity: pulse.interpolate({ inputRange: [1, 1.08], outputRange: [0.5, 0.12] }) }]} />
+              <Animated.View style={[styles.botVoiceOverlayOrb, state === 'listening' && !reduceMotion && { transform: [{ scale: pulse }] }]}>
+                <MaterialCommunityIcons name="microphone" size={34} color="#FFFFFF" />
+              </Animated.View>
+            </View>
+          </Pressable>
+        ) : (
+          <Animated.View style={[styles.botVoiceOverlayOrb, state !== 'response' && { transform: [{ scale: pulse }] }]}>
+            <MaterialCommunityIcons name={icon} size={34} color="#FFFFFF" />
+          </Animated.View>
+        )}
+        {state === 'listening' ? (
+          <>
+            <View style={styles.botVoiceOverlayListeningStatus}>
+              <View style={styles.botVoiceOverlayLiveDot} />
+              <Text style={styles.botVoiceOverlayListeningStatusText}>{needsConfirmation ? 'Micrófono activo · suelta para confirmar' : 'Micrófono activo · suelta para enviar'}</Text>
+            </View>
+            <Text style={styles.botVoiceOverlayTranscript}>{transcript || 'Te escucho…'}</Text>
+          </>
+        ) : null}
         {state === 'review' ? <TextInput autoFocus value={transcript} onChangeText={onChangeTranscript} multiline maxLength={800} style={styles.botVoiceOverlayEdit} /> : null}
-        {state === 'processing' ? <Text style={styles.botVoiceOverlayTranscript}>Analizando: “{transcript}”</Text> : null}
+        {state === 'processing' ? (
+          <View style={styles.botVoiceOverlayProcessingStatus}>
+            <ActivityIndicator size="small" color="#0878C9" />
+            <Text style={styles.botVoiceOverlayProcessingText}>Procesando tu orden…</Text>
+          </View>
+        ) : null}
         {state === 'response' ? <Text style={styles.botVoiceOverlayResponse}>{response}</Text> : null}
         {pendingOperation && state === 'response' && !showWorkflow ? <View style={styles.botVoiceOverlayOperation}><Text style={styles.botVoiceOverlayOperationLabel}>Operación pendiente</Text><Text style={styles.botVoiceOverlayOperationText}>{pendingOperation.resumen || 'Operación que requiere confirmación'}</Text></View> : null}
         {showWorkflow && state === 'response' ? <BotInvoiceWorkflowCard draft={draft} missing={missing} requiresConfirmation={requiresConfirmation} state={invoiceState} progress={progress} configurationRoutes={configurationRoutes} reduceMotion={reduceMotion} stale={stale} selectionOptions={selectionOptions} pendingOperation={pendingOperation} sending={false} showActions={false} onNavigate={onNavigate} onCommand={onCommand} /> : null}
@@ -1232,7 +1333,6 @@ function VoiceInteractionOverlay({ state, transcript, response, draft, missing, 
           <>
             <View style={styles.botVoiceOverlayActions}>
               <Pressable style={styles.botVoiceOverlayCancelButton} onPress={() => onCommand('cancelar')}><Text style={styles.botVoiceOverlayCancelText}>Cancelar</Text></Pressable>
-              {handsFreeEnabled ? <Pressable style={styles.botVoiceOverlayContinueButton} onPressIn={onStartConfirmationVoice} onPressOut={onStopVoice}><MaterialCommunityIcons name="microphone" size={16} color="#FFFFFF" /><Text style={styles.botVoiceOverlayContinueText}>{listening ? 'Escuchando · Suelta para confirmar' : 'Mantén para confirmar'}</Text></Pressable> : null}
             </View>
             <Pressable style={styles.botVoiceOverlayConfirmButtonFull} onPress={() => onCommand(pendingOperation ? 'confirmar' : 'emitir')}><MaterialCommunityIcons name="check" size={17} color="#FFFFFF" /><Text style={styles.botVoiceOverlayConfirmText}>Confirmar con botón</Text></Pressable>
           </>
@@ -1532,34 +1632,6 @@ function limitCatalogListAnswer(answer: string, request: string) {
   return [...prefix, ...firstItems, '¿Quieres que te muestre los siguientes 3 resultados?'].join('\n');
 }
 
-function buildVoiceResponse(answer: string, draft: BotFacturaDraft | null, missing: string[]) {
-  const details: string[] = [];
-  if (draft?.cliente?.nombre) details.push(`Cliente ${draft.cliente.nombre} encontrado.`);
-  const items = draft?.items ?? [];
-  const products = items.map((item) => item.descripcion).filter((value): value is string => Boolean(value?.trim()));
-  const productDetails = items
-    .filter((item) => item.descripcion?.trim())
-    .map((item) => [
-      `Producto ${item.descripcion}`,
-      item.cantidad !== undefined ? `cantidad ${item.cantidad}` : '',
-      item.precioUnitario !== undefined ? `valor unitario ${formatMoney(item.precioUnitario)}` : '',
-      item.impuesto !== undefined ? `IVA ${formatMoney(item.impuesto)}` : '',
-      item.total !== undefined ? `total ${formatMoney(item.total)}` : '',
-    ].filter(Boolean).join(', '));
-  if (productDetails.length) details.push(`${productDetails.join('. ')}.`);
-  else if (products.length === 1) details.push(`Producto ${products[0]} encontrado.`);
-  else if (products.length > 1) details.push(`${products.length} productos encontrados.`);
-  if (draft?.items?.length && (draft.subtotal !== undefined || draft.impuesto !== undefined || draft.total !== undefined)) {
-    details.push(`Valores calculados: subtotal ${formatMoney(draft.subtotal ?? 0)}, IVA ${formatMoney(draft.impuesto ?? 0)} y total ${formatMoney(draft.total ?? 0)}.`);
-  }
-  const unresolved = missing.filter((item) => !normalizeVoiceCommand(item).includes('confirm'));
-  if (unresolved.length) details.push(`Te falta completar ${unresolved.join(', ')}. Puedo ayudarte a crearlo o puedes decir continuar.`);
-  const compactAnswer = /cliente:|subtotal|descuento|impuestos|iva|total/i.test(answer)
-    ? answer.split(/\r?\n/).filter((line) => !/^(cliente:|-\s|subtotal|descuento|impuestos|iva|total)/i.test(line.trim())).join(' ').trim()
-    : answer.trim();
-  return [...details, compactAnswer].filter(Boolean).join(' ');
-}
-
 function normalizeVoiceCommand(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
@@ -1604,7 +1676,7 @@ function normalizeVoiceSelectionCommand(value: string, options: BotSelectionOpti
     decimo: 10,
     decima: 10,
   };
-  const match = normalized.match(/\b(?:opcion|alternativa|numero|el|la)?\s*(\d+|uno|primero|primera|dos|segundo|segunda|tres|tercero|tercera|cuatro|cuarto|cuarta|cinco|quinto|quinta|seis|sexto|sexta|siete|septimo|septima|ocho|octavo|octava|nueve|noveno|novena|diez|decimo|decima)\b/);
+  const match = normalized.match(/^(?:opcion|alternativa|numero|el|la)?\s*(\d+|uno|primero|primera|dos|segundo|segunda|tres|tercero|tercera|cuatro|cuarto|cuarta|cinco|quinto|quinta|seis|sexto|sexta|siete|septimo|septima|ocho|octavo|octava|nueve|noveno|novena|diez|decimo|decima)(?:\s+(?:opcion|alternativa))?[.!?]*$/);
   if (!match) return value;
 
   const index = Number(match[1]) || numberWords[match[1]];
@@ -1638,7 +1710,7 @@ function buildSpeechResponse(answer: string, options: BotSelectionOption[] = [])
 }
 
 function isExplicitConfirmation(value: string) {
-  return /\b(confirmado|confirmo)\b/.test(normalizeVoiceCommand(value));
+  return /\b(si|confirmar|confirmado|confirmo|dale|correcto|emitir|emite)\b/.test(normalizeVoiceCommand(value));
 }
 
 function sanitizeSpeechText(value: string) {
@@ -1651,7 +1723,7 @@ function isExplicitCancellation(value: string) {
   return /\b(cancelar|cancelo|anular|anulo)\b/.test(normalizeVoiceCommand(value));
 }
 
-async function speakBotText(text: string, shouldCancel: () => boolean = () => false, voice?: string) {
+async function speakBotText(text: string, shouldCancel: () => boolean = () => false, voice?: SpeechVoiceSelection) {
   const maxChunkLength = Number.isFinite(Speech.maxSpeechInputLength)
     ? Math.min(Math.max(Speech.maxSpeechInputLength, 500), 3500)
     : 3500;
@@ -1667,24 +1739,33 @@ async function speakBotText(text: string, shouldCancel: () => boolean = () => fa
   }
   if (chunk) chunks.push(chunk);
   if (!chunks.length) return true;
-  try {
-    await Speech.stop();
-  } catch {
-    // Detener una locución previa no debe impedir la respuesta actual.
-  }
   for (const part of chunks) {
     if (shouldCancel()) return false;
     const completed = await new Promise<boolean>((resolve) => {
-      Speech.speak(part, {
-        language: 'es-EC',
-        voice,
-        pitch: 0.9,
-        rate: 0.94,
-        useApplicationAudioSession: false,
-        onDone: () => resolve(true),
-        onStopped: () => resolve(false),
-        onError: () => resolve(false),
-      });
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+      const finish = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        if (timeout) clearTimeout(timeout);
+        resolve(value);
+      };
+      timeout = setTimeout(() => finish(false), Math.max(10000, Math.min(60000, 8000 + part.length * 80)));
+      try {
+        Speech.speak(part, {
+          language: voice?.language ?? 'es-ES',
+          ...(voice?.identifier ? { voice: voice.identifier } : {}),
+          pitch: 0.9,
+          rate: 0.94,
+          useApplicationAudioSession: false,
+          volume: 1,
+          onDone: () => finish(true),
+          onStopped: () => finish(false),
+          onError: () => finish(false),
+        });
+      } catch {
+        finish(false);
+      }
     });
     if (!completed || shouldCancel()) return false;
   }
@@ -1694,10 +1775,11 @@ async function speakBotText(text: string, shouldCancel: () => boolean = () => fa
 async function resolveSpanishMaleVoice() {
   try {
     const voices = await Speech.getAvailableVoicesAsync();
-    const spanishVoices = voices.filter((item) => /^es(?:-|_)/i.test(item.language));
+    const spanishVoices = voices.filter((item) => /^es(?:-|_)?/i.test(item.language));
     const maleVoice = spanishVoices.find((item) => /jorge|diego|carlos|miguel|juan|pablo|enrique|hombre|masculin|male/i.test(`${item.name} ${item.identifier}`));
     const enhancedVoice = spanishVoices.find((item) => item.quality === Speech.VoiceQuality.Enhanced);
-    return (maleVoice ?? enhancedVoice ?? spanishVoices[0])?.identifier;
+    const selectedVoice = maleVoice ?? enhancedVoice ?? spanishVoices[0];
+    return selectedVoice ? { identifier: selectedVoice.identifier, language: selectedVoice.language } : undefined;
   } catch {
     return undefined;
   }
