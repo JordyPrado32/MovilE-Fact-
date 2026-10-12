@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Animated, Easing, Image, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -25,6 +26,7 @@ export function AuthCard({ children, wide, login, reduceMotion }: { children: Re
 export function AppLaunchScreen({ reduceMotion }: { reduceMotion: boolean }) {
   const wave = useRef(new Animated.Value(0)).current;
   const progress = useRef(new Animated.Value(0)).current;
+  const [progressPercent, setProgressPercent] = useState(reduceMotion ? 100 : 4);
   useEffect(() => {
     if (reduceMotion) {
       wave.setValue(0);
@@ -35,12 +37,14 @@ export function AppLaunchScreen({ reduceMotion }: { reduceMotion: boolean }) {
       Animated.timing(wave, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       Animated.timing(wave, { toValue: 0, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
     ]));
-    const progressAnimation = Animated.timing(progress, { toValue: 1, duration: 1600, easing: Easing.linear, useNativeDriver: false });
+    const progressListener = progress.addListener(({ value }) => setProgressPercent(Math.max(4, Math.round(value * 100))));
+    const progressAnimation = Animated.timing(progress, { toValue: 1, duration: 8000, easing: Easing.linear, useNativeDriver: false });
     waveLoop.start();
     progressAnimation.start();
     return () => {
       waveLoop.stop();
       progressAnimation.stop();
+      progress.removeListener(progressListener);
     };
   }, [progress, reduceMotion, wave]);
   const handRotate = wave.interpolate({ inputRange: [0, 0.5, 1], outputRange: ['-5deg', '6deg', '-5deg'] });
@@ -51,6 +55,7 @@ export function AppLaunchScreen({ reduceMotion }: { reduceMotion: boolean }) {
   return (
     <SafeAreaView style={styles.launchScreen}>
       <View style={styles.launchOrbTop} />
+      <View style={styles.launchOrbTopRight} />
       <View style={styles.launchOrbBottom} />
       <View style={styles.launchHeaderBrand}>
         <Image source={require('../../../assets/logo-numerica.png')} style={styles.launchLogoImage} />
@@ -67,11 +72,20 @@ export function AppLaunchScreen({ reduceMotion }: { reduceMotion: boolean }) {
         <View style={styles.launchTextBlock}>
           <Text style={styles.launchEyebrow}>Hola, soy Numi</Text>
           <Text style={styles.launchTitle}>Te damos la bienvenida</Text>
-          <Text style={styles.launchSubtitle}>Preparando tu espacio de facturacion movil</Text>
+          <Text style={styles.launchSubtitle}>Preparando tu espacio de facturación móvil</Text>
         </View>
-        <View style={styles.launchProgressTrack}><Animated.View style={[styles.launchProgressFill, { width: progressWidth }]} /></View>
+        <View style={styles.launchProgressTrack}>
+          <Animated.View style={[styles.launchProgressFill, { width: progressWidth }]} />
+          <Text style={styles.launchProgressText}>{progressPercent}%</Text>
+        </View>
         <Text style={styles.launchStatusText}>Preparando todo...</Text>
-        <Text style={styles.launchFooterText}>Seguro  -  Rapido  -  Facil</Text>
+        <View style={styles.launchFeatures}>
+          <View style={styles.launchFeatureItem}><MaterialCommunityIcons name="shield-check-outline" size={27} color="#36E4FF" /><Text style={styles.launchFeatureText}>Seguro</Text></View>
+          <View style={styles.launchFeatureDivider} />
+          <View style={styles.launchFeatureItem}><MaterialCommunityIcons name="lightning-bolt-outline" size={27} color="#36E4FF" /><Text style={styles.launchFeatureText}>Rápido</Text></View>
+          <View style={styles.launchFeatureDivider} />
+          <View style={styles.launchFeatureItem}><MaterialCommunityIcons name="cog-outline" size={27} color="#36E4FF" /><Text style={styles.launchFeatureText}>Fácil</Text></View>
+        </View>
       </View>
       <StatusBar style="light" />
     </SafeAreaView>
