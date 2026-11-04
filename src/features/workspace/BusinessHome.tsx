@@ -4855,12 +4855,22 @@ export function BusinessHome({ currentUser, incomingPdfUri, onIncomingPdfHandled
 
   const clearVisibleNotifications = () => {
     const notificationIds = visibleNotifications.map((notification) => notification.id);
-    void dismissNotifications(notificationIds).catch(() => setNotificationsMessage({ type: 'info', text: 'No se pudo guardar el descarte. Inténtalo nuevamente.' }));
-    setDismissedNotificationIds((current) => {
-      const next = new Set(current);
-      notificationIds.forEach((notificationId) => next.add(notificationId));
-      return next;
-    });
+    if (!notificationIds.length) return;
+    Alert.alert('Borrar notificaciones', 'Se ocultarán todas las notificaciones visibles.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Borrar todo',
+        style: 'destructive',
+        onPress: () => {
+          void dismissNotifications(notificationIds).catch(() => setNotificationsMessage({ type: 'info', text: 'No se pudo guardar el descarte. Inténtalo nuevamente.' }));
+          setDismissedNotificationIds((current) => {
+            const next = new Set(current);
+            notificationIds.forEach((notificationId) => next.add(notificationId));
+            return next;
+          });
+        },
+      },
+    ]);
   };
 
   const openNotificationTarget = (notification: NotificacionItem) => {

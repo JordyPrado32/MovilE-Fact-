@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -21,6 +21,13 @@ export function InitialSequenceModal({
 }) {
   const [habiaGenerado, setHabiaGenerado] = useState<boolean | null>(null);
   const [secuenciaAnterior, setSecuenciaAnterior] = useState('');
+  useEffect(() => {
+    if (visible) {
+      setHabiaGenerado(null);
+      setSecuenciaAnterior('');
+    }
+  }, [documentLabel, serie, visible]);
+
   const cleanedSequence = secuenciaAnterior.replace(/\D/g, '').slice(0, 9);
   const nextHint = useMemo(() => {
     const current = Number(cleanedSequence);
@@ -40,7 +47,7 @@ export function InitialSequenceModal({
         <View style={styles.card}>
           <View style={styles.header}>
             <View style={styles.headerCopy}>
-              <Text style={styles.eyebrow}>CONFIGURACION DEL DOCUMENTO</Text>
+              <Text style={styles.eyebrow}>CONFIGURACIÓN DEL DOCUMENTO</Text>
               <Text style={styles.title}>Configurar secuencia</Text>
               <Text style={styles.help}>Esta serie no tiene secuencia. Indica si ya emitiste {documentLabel} antes.</Text>
             </View>
@@ -61,14 +68,14 @@ export function InitialSequenceModal({
               </View>
               <Text style={styles.question}>¿YA HABÍAS GENERADO {documentLabel.toUpperCase()} ANTES?</Text>
               <View style={styles.choiceRow}>
-                <Pressable style={[styles.choice, habiaGenerado === true && styles.choiceActive]} onPress={() => setHabiaGenerado(true)}>
-                  <Text style={[styles.choiceText, habiaGenerado === true && styles.choiceTextActive]}>Si</Text>
+                <Pressable accessibilityRole="radio" accessibilityState={{ selected: habiaGenerado === true }} style={[styles.choice, habiaGenerado === true && styles.choiceActive]} onPress={() => setHabiaGenerado(true)}>
+                  <Text style={[styles.choiceText, habiaGenerado === true && styles.choiceTextActive]}>Sí</Text>
                 </Pressable>
-                <Pressable style={[styles.choice, habiaGenerado === false && styles.choiceActive]} onPress={() => setHabiaGenerado(false)}>
+                <Pressable accessibilityRole="radio" accessibilityState={{ selected: habiaGenerado === false }} style={[styles.choice, habiaGenerado === false && styles.choiceActive]} onPress={() => setHabiaGenerado(false)}>
                   <Text style={[styles.choiceText, habiaGenerado === false && styles.choiceTextActive]}>No</Text>
                 </Pressable>
               </View>
-              <Text style={styles.note}>Si respondes “Si”, continuamos desde el último número usado.</Text>
+              <Text style={styles.note}>Si respondes “Sí”, continuamos desde el último número usado.</Text>
             </View>
 
             {habiaGenerado ? (
@@ -102,7 +109,7 @@ export function InitialSequenceModal({
 
           <View style={styles.footer}>
             <View style={styles.footerCopy}>
-              <Text style={styles.footerTitle}>Configuracion unica</Text>
+              <Text style={styles.footerTitle}>Configuración única</Text>
               <Text style={styles.note}>Solo se pide una vez por serie y documento.</Text>
             </View>
             <Pressable style={[styles.saveButton, (!canSave || saving) && styles.saveButtonDisabled]} onPress={handleSave}>
